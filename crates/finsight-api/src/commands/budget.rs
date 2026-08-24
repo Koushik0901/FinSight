@@ -163,8 +163,15 @@ fn member_budget_envelopes_for_month(
 
 /// Budget-vs-actual for the current month, scoped to one household member's
 /// share of the spend. The budgets themselves are the household's.
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct ListMemberBudgetEnvelopesRequest {
+    pub member_id: String,
+}
+
 #[utoipa::path(post, path = "/api/rpc/list_member_budget_envelopes",
-    request_body(content = String), responses((status = 200, body = Vec<MemberBudgetEnvelope>)))]
+    request_body(content = ListMemberBudgetEnvelopesRequest), responses((status = 200, body = Vec<MemberBudgetEnvelope>)))]
 pub async fn list_member_budget_envelopes(
     state: &ApiState,
     member_id: String,
@@ -181,7 +188,15 @@ pub async fn list_member_budget_envelopes(
     .map_err(AppError::from)
 }
 
-#[utoipa::path(post, path = "/api/rpc/set_budget", responses((status = 200, description = "Success")))]
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct SetBudgetRequest {
+    pub category_id: String,
+    pub amount_cents: i64,
+}
+
+#[utoipa::path(post, path = "/api/rpc/set_budget", request_body(content = SetBudgetRequest), responses((status = 200, description = "Success")))]
 pub async fn set_budget(state: &ApiState, category_id: String, amount_cents: i64) -> AppResult<()> {
     let db = (*state.db).clone();
     let month = Utc::now().format("%Y-%m").to_string();
@@ -329,8 +344,15 @@ pub async fn list_goals(state: &ApiState) -> AppResult<Vec<GoalDto>> {
     .map_err(AppError::from)
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct CreateGoalRequest {
+    pub input: NewGoalInput,
+}
+
 #[utoipa::path(post, path = "/api/rpc/create_goal",
-    request_body(content = NewGoalInput), responses((status = 200, body = GoalDto)))]
+    request_body(content = CreateGoalRequest), responses((status = 200, body = GoalDto)))]
 pub async fn create_goal(state: &ApiState, input: NewGoalInput) -> AppResult<GoalDto> {
     let db = (*state.db).clone();
     run(&db, move |conn| {
@@ -368,7 +390,15 @@ pub struct ProjectedValue {
     pub annual_rate: f64,
 }
 
-#[utoipa::path(post, path = "/api/rpc/project_goal_growth", responses((status = 200, body = ProjectedValue)))]
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct ProjectGoalGrowthRequest {
+    pub goal_id: String,
+    pub years: i32,
+}
+
+#[utoipa::path(post, path = "/api/rpc/project_goal_growth", request_body(content = ProjectGoalGrowthRequest), responses((status = 200, body = ProjectedValue)))]
 pub async fn project_goal_growth(
     state: &ApiState,
     goal_id: String,
@@ -460,7 +490,15 @@ fn ensure_manual_goal(conn: &mut rusqlite::Connection, id: &str) -> finsight_cor
     Ok(())
 }
 
-#[utoipa::path(post, path = "/api/rpc/update_goal_balance", responses((status = 200, description = "Success")))]
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct UpdateGoalBalanceRequest {
+    pub id: String,
+    pub current_cents: i64,
+}
+
+#[utoipa::path(post, path = "/api/rpc/update_goal_balance", request_body(content = UpdateGoalBalanceRequest), responses((status = 200, description = "Success")))]
 pub async fn update_goal_balance(
     state: &ApiState,
     id: String,
@@ -480,7 +518,17 @@ pub async fn update_goal_balance(
     .map_err(AppError::from)
 }
 
-#[utoipa::path(post, path = "/api/rpc/contribute_to_goal", responses((status = 200, body = GoalContributionDto)))]
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct ContributeToGoalRequest {
+    pub id: String,
+    pub amount_cents: i64,
+    pub note: Option<String>,
+    pub source: Option<String>,
+}
+
+#[utoipa::path(post, path = "/api/rpc/contribute_to_goal", request_body(content = ContributeToGoalRequest), responses((status = 200, body = GoalContributionDto)))]
 pub async fn contribute_to_goal(
     state: &ApiState,
     id: String,
@@ -504,8 +552,15 @@ pub async fn contribute_to_goal(
     .map_err(AppError::from)
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct ListGoalContributionsRequest {
+    pub goal_id: String,
+}
+
 #[utoipa::path(post, path = "/api/rpc/list_goal_contributions",
-    request_body(content = String), responses((status = 200, body = Vec<GoalContributionDto>)))]
+    request_body(content = ListGoalContributionsRequest), responses((status = 200, body = Vec<GoalContributionDto>)))]
 pub async fn list_goal_contributions(
     state: &ApiState,
     goal_id: String,
@@ -519,8 +574,15 @@ pub async fn list_goal_contributions(
     .map_err(AppError::from)
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct ArchiveGoalRequest {
+    pub id: String,
+}
+
 #[utoipa::path(post, path = "/api/rpc/archive_goal",
-    request_body(content = String), responses((status = 200, description = "Success")))]
+    request_body(content = ArchiveGoalRequest), responses((status = 200, description = "Success")))]
 pub async fn archive_goal(state: &ApiState, id: String) -> AppResult<()> {
     let db = (*state.db).clone();
     run(&db, move |conn| goals::archive(conn, &id))
@@ -528,7 +590,15 @@ pub async fn archive_goal(state: &ApiState, id: String) -> AppResult<()> {
         .map_err(AppError::from)
 }
 
-#[utoipa::path(post, path = "/api/rpc/update_goal_monthly", responses((status = 200, description = "Success")))]
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct UpdateGoalMonthlyRequest {
+    pub id: String,
+    pub monthly_cents: i64,
+}
+
+#[utoipa::path(post, path = "/api/rpc/update_goal_monthly", request_body(content = UpdateGoalMonthlyRequest), responses((status = 200, description = "Success")))]
 pub async fn update_goal_monthly(
     state: &ApiState,
     id: String,
@@ -551,7 +621,16 @@ pub async fn update_goal_monthly(
 /// Unrecognised strings fall back to the neutral defaults rather than erroring
 /// — this is a preference, and refusing to save a goal over a bad enum value
 /// would be a worse outcome than storing "normal".
-#[utoipa::path(post, path = "/api/rpc/update_goal_priority", responses((status = 200, description = "Success")))]
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct UpdateGoalPriorityRequest {
+    pub id: String,
+    pub priority: String,
+    pub deadline_strictness: String,
+}
+
+#[utoipa::path(post, path = "/api/rpc/update_goal_priority", request_body(content = UpdateGoalPriorityRequest), responses((status = 200, description = "Success")))]
 pub async fn update_goal_priority(
     state: &ApiState,
     id: String,
@@ -571,7 +650,15 @@ pub async fn update_goal_priority(
     .map_err(AppError::from)
 }
 
-#[utoipa::path(post, path = "/api/rpc/update_goal_purpose", responses((status = 200, description = "Success")))]
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct UpdateGoalPurposeRequest {
+    pub id: String,
+    pub purpose: Option<String>,
+}
+
+#[utoipa::path(post, path = "/api/rpc/update_goal_purpose", request_body(content = UpdateGoalPurposeRequest), responses((status = 200, description = "Success")))]
 pub async fn update_goal_purpose(
     state: &ApiState,
     id: String,
@@ -725,12 +812,17 @@ pub async fn get_plan_next_month_data(state: &ApiState) -> AppResult<PlanData> {
     .map_err(AppError::from)
 }
 
-/// Write next month's budget assignments. The Tauri wrapper additionally fires
-/// a best-effort desktop notification after this returns (see
-/// `crates/finsight-bindings/src/commands/budget.rs`); the server has no native
-/// notifications in Phase 1, so this body is purely the budget write.
+/// Write next month's budget assignments. The server has no native
+/// notifications, so this body is purely the budget write.
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct ApplyNextMonthPlanRequest {
+    pub assignments: Vec<PlanAssignment>,
+}
+
 #[utoipa::path(post, path = "/api/rpc/apply_next_month_plan",
-    request_body(content = Vec<PlanAssignment>), responses((status = 200, description = "Success")))]
+    request_body(content = ApplyNextMonthPlanRequest), responses((status = 200, description = "Success")))]
 pub async fn apply_next_month_plan(
     state: &ApiState,
     assignments: Vec<PlanAssignment>,
@@ -756,8 +848,15 @@ pub async fn apply_next_month_plan(
     .map_err(AppError::from)
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct ListBudgetHistoryRequest {
+    pub months: u32,
+}
+
 #[utoipa::path(post, path = "/api/rpc/list_budget_history",
-    request_body(content = u32), responses((status = 200, body = Vec<CategoryHistory>)))]
+    request_body(content = ListBudgetHistoryRequest), responses((status = 200, body = Vec<CategoryHistory>)))]
 pub async fn list_budget_history(state: &ApiState, months: u32) -> AppResult<Vec<CategoryHistory>> {
     let db = (*state.db).clone();
     let months = months.clamp(1, 24);

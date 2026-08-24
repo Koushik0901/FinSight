@@ -14,7 +14,17 @@ use utoipa::ToSchema;
 /// outflow. Returns the daily trajectory, the lowest point, the first day it
 /// breaches the buffer, the conservative safe-to-spend, upcoming dated events,
 /// and data-quality warnings.
-#[utoipa::path(post, path = "/api/rpc/get_cashflow_forecast", responses((status = 200, body = CashflowForecast)))]
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct GetCashflowForecastRequest {
+    pub horizon_days: Option<i64>,
+    pub buffer_cents: Option<i64>,
+    pub extra_expense_cents: Option<i64>,
+    pub extra_expense_date: Option<String>,
+}
+
+#[utoipa::path(post, path = "/api/rpc/get_cashflow_forecast", request_body(content = GetCashflowForecastRequest), responses((status = 200, body = CashflowForecast)))]
 pub async fn get_cashflow_forecast(
     state: &ApiState,
     horizon_days: Option<i64>,

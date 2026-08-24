@@ -53,8 +53,15 @@ pub struct ProviderTestResult {
     pub latency_ms: u64,
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct SetCompletionProviderRequest {
+    pub config: CompletionProviderConfig,
+}
+
 #[utoipa::path(post, path = "/api/rpc/set_completion_provider",
-    request_body(content = CompletionProviderConfig), responses((status = 200, description = "Success")))]
+    request_body(content = SetCompletionProviderRequest), responses((status = 200, description = "Success")))]
 pub async fn set_completion_provider(
     state: &ApiState,
     config: CompletionProviderConfig,
@@ -85,7 +92,15 @@ pub async fn get_completion_provider(state: &ApiState) -> AppResult<CompletionPr
     crate::provider::load_completion_provider_config(&db).map_err(AppError::from)
 }
 
-#[utoipa::path(post, path = "/api/rpc/save_provider_api_key", responses((status = 200, description = "Success")))]
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct SaveProviderApiKeyRequest {
+    pub provider_id: String,
+    pub key: String,
+}
+
+#[utoipa::path(post, path = "/api/rpc/save_provider_api_key", request_body(content = SaveProviderApiKeyRequest), responses((status = 200, description = "Success")))]
 pub async fn save_provider_api_key(
     state: &ApiState,
     provider_id: String,
@@ -115,8 +130,15 @@ pub async fn save_provider_api_key(
     Ok(())
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct ListProviderModelsRequest {
+    pub config: CompletionProviderConfig,
+}
+
 #[utoipa::path(post, path = "/api/rpc/list_provider_models",
-    request_body(content = CompletionProviderConfig), responses((status = 200, body = Vec<String>)))]
+    request_body(content = ListProviderModelsRequest), responses((status = 200, body = Vec<String>)))]
 pub async fn list_provider_models(
     _state: &ApiState,
     config: CompletionProviderConfig,
@@ -133,7 +155,15 @@ pub async fn list_provider_models(
     }
 }
 
-#[utoipa::path(post, path = "/api/rpc/test_completion_provider", responses((status = 200, body = ProviderTestResult)))]
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct TestCompletionProviderRequest {
+    pub config: CompletionProviderConfig,
+    pub api_key: Option<String>,
+}
+
+#[utoipa::path(post, path = "/api/rpc/test_completion_provider", request_body(content = TestCompletionProviderRequest), responses((status = 200, body = ProviderTestResult)))]
 pub async fn test_completion_provider(
     state: &ApiState,
     config: CompletionProviderConfig,
@@ -217,7 +247,7 @@ pub async fn test_completion_provider(
     }
 }
 
-#[utoipa::path(post, path = "/api/rpc/get_needs_review_count", responses((status = 200, body = u32)))]
+#[utoipa::path(post, path = "/api/rpc/get_needs_review_count", responses((status = 200, content_type = "application/json", body = u32)))]
 pub async fn get_needs_review_count(state: &ApiState) -> AppResult<u32> {
     let db = (*state.db).clone();
     run(&db, |conn| {
@@ -234,7 +264,7 @@ pub async fn get_needs_review_count(state: &ApiState) -> AppResult<u32> {
     .map_err(AppError::from)
 }
 
-#[utoipa::path(post, path = "/api/rpc/recompute_anomalies", responses((status = 200, body = u32)))]
+#[utoipa::path(post, path = "/api/rpc/recompute_anomalies", responses((status = 200, content_type = "application/json", body = u32)))]
 pub async fn recompute_anomalies(state: &ApiState) -> AppResult<u32> {
     let db = (*state.db).clone();
     run(&db, |conn| {
@@ -244,7 +274,15 @@ pub async fn recompute_anomalies(state: &ApiState) -> AppResult<u32> {
     .map_err(AppError::from)
 }
 
-#[utoipa::path(post, path = "/api/rpc/set_anomaly_dismissed", responses((status = 200, description = "Success")))]
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct SetAnomalyDismissedRequest {
+    pub txn_id: String,
+    pub dismissed: bool,
+}
+
+#[utoipa::path(post, path = "/api/rpc/set_anomaly_dismissed", request_body(content = SetAnomalyDismissedRequest), responses((status = 200, description = "Success")))]
 pub async fn set_anomaly_dismissed(
     state: &ApiState,
     txn_id: String,
@@ -286,8 +324,15 @@ pub async fn list_rule_proposals(state: &ApiState) -> AppResult<Vec<RuleProposal
         .map_err(AppError::from)
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct AcceptRuleProposalRequest {
+    pub id: String,
+}
+
 #[utoipa::path(post, path = "/api/rpc/accept_rule_proposal",
-    request_body(content = String), responses((status = 200, description = "Success")))]
+    request_body(content = AcceptRuleProposalRequest), responses((status = 200, description = "Success")))]
 pub async fn accept_rule_proposal(state: &ApiState, id: String) -> AppResult<()> {
     let db = (*state.db).clone();
     run(&db, move |conn| {
@@ -309,8 +354,15 @@ pub async fn accept_rule_proposal(state: &ApiState, id: String) -> AppResult<()>
     .map_err(AppError::from)
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct DeclineRuleProposalRequest {
+    pub id: String,
+}
+
 #[utoipa::path(post, path = "/api/rpc/decline_rule_proposal",
-    request_body(content = String), responses((status = 200, description = "Success")))]
+    request_body(content = DeclineRuleProposalRequest), responses((status = 200, description = "Success")))]
 pub async fn decline_rule_proposal(state: &ApiState, id: String) -> AppResult<()> {
     let db = (*state.db).clone();
     run(&db, move |conn| {
@@ -320,8 +372,15 @@ pub async fn decline_rule_proposal(state: &ApiState, id: String) -> AppResult<()
     .map_err(AppError::from)
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct ListRecentAgentActivityRequest {
+    pub limit: u32,
+}
+
 #[utoipa::path(post, path = "/api/rpc/list_recent_agent_activity",
-    request_body(content = u32), responses((status = 200, body = Vec<AgentActivity>)))]
+    request_body(content = ListRecentAgentActivityRequest), responses((status = 200, body = Vec<AgentActivity>)))]
 pub async fn list_recent_agent_activity(
     state: &ApiState,
     limit: u32,
@@ -2531,7 +2590,15 @@ async fn router_classify(provider: &Arc<dyn CompletionProvider>, question: &str)
     }
 }
 
-#[utoipa::path(post, path = "/api/rpc/ask_agent", responses((status = 200, body = AgentAnswer)))]
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct AskAgentRequest {
+    pub question: String,
+    pub mode: Option<String>,
+}
+
+#[utoipa::path(post, path = "/api/rpc/ask_agent", request_body(content = AskAgentRequest), responses((status = 200, body = AgentAnswer)))]
 pub async fn ask_agent(
     state: &ApiState,
     question: String,

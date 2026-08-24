@@ -18,8 +18,15 @@ pub async fn list_accounts(state: &ApiState) -> AppResult<Vec<AccountSummary>> {
     Ok(result)
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct CreateAccountRequest {
+    pub input: NewAccount,
+}
+
 #[utoipa::path(post, path = "/api/rpc/create_account",
-    request_body(content = NewAccount), responses((status = 200, body = Account)))]
+    request_body(content = CreateAccountRequest), responses((status = 200, body = Account)))]
 pub async fn create_account(state: &ApiState, mut input: NewAccount) -> AppResult<Account> {
     // Always force source to "manual" — the frontend cannot create sample accounts.
     // Without this, a caller could mislabel user-created accounts as imported data.
@@ -30,7 +37,15 @@ pub async fn create_account(state: &ApiState, mut input: NewAccount) -> AppResul
         .map_err(AppError::from)
 }
 
-#[utoipa::path(post, path = "/api/rpc/update_account", responses((status = 200, body = Account)))]
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct UpdateAccountRequest {
+    pub id: String,
+    pub patch: AccountPatch,
+}
+
+#[utoipa::path(post, path = "/api/rpc/update_account", request_body(content = UpdateAccountRequest), responses((status = 200, body = Account)))]
 pub async fn update_account(
     state: &ApiState,
     id: String,
@@ -42,8 +57,15 @@ pub async fn update_account(
         .map_err(AppError::from)
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct ArchiveAccountRequest {
+    pub id: String,
+}
+
 #[utoipa::path(post, path = "/api/rpc/archive_account",
-    request_body(content = String), responses((status = 200, description = "Success")))]
+    request_body(content = ArchiveAccountRequest), responses((status = 200, description = "Success")))]
 pub async fn archive_account(state: &ApiState, id: String) -> AppResult<()> {
     let db = (*state.db).clone();
     run(&db, move |conn| accounts::archive(conn, &id))
@@ -51,7 +73,15 @@ pub async fn archive_account(state: &ApiState, id: String) -> AppResult<()> {
         .map_err(AppError::from)
 }
 
-#[utoipa::path(post, path = "/api/rpc/set_account_balance", responses((status = 200, description = "Success")))]
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct SetAccountBalanceRequest {
+    pub id: String,
+    pub balance_cents: i64,
+}
+
+#[utoipa::path(post, path = "/api/rpc/set_account_balance", request_body(content = SetAccountBalanceRequest), responses((status = 200, description = "Success")))]
 pub async fn set_account_balance(
     state: &ApiState,
     id: String,
@@ -65,7 +95,15 @@ pub async fn set_account_balance(
     .map_err(AppError::from)
 }
 
-#[utoipa::path(post, path = "/api/rpc/list_account_balance_history", responses((status = 200, body = Vec<AccountBalancePoint>)))]
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct ListAccountBalanceHistoryRequest {
+    pub account_id: String,
+    pub days: u32,
+}
+
+#[utoipa::path(post, path = "/api/rpc/list_account_balance_history", request_body(content = ListAccountBalanceHistoryRequest), responses((status = 200, body = Vec<AccountBalancePoint>)))]
 pub async fn list_account_balance_history(
     state: &ApiState,
     account_id: String,
@@ -86,7 +124,15 @@ pub async fn list_account_balance_history(
 /// Unlike [`list_account_balance_history`], which reads the sparse stored
 /// snapshots, this derives every point — so it can answer "when was this account
 /// at its highest" rather than "which recorded day was highest".
-#[utoipa::path(post, path = "/api/rpc/get_account_balance_timeline", responses((status = 200, body = AccountBalanceTimeline)))]
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct GetAccountBalanceTimelineRequest {
+    pub account_id: String,
+    pub since: Option<String>,
+}
+
+#[utoipa::path(post, path = "/api/rpc/get_account_balance_timeline", request_body(content = GetAccountBalanceTimelineRequest), responses((status = 200, body = AccountBalanceTimeline)))]
 pub async fn get_account_balance_timeline(
     state: &ApiState,
     account_id: String,
@@ -100,8 +146,15 @@ pub async fn get_account_balance_timeline(
     .map_err(AppError::from)
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct ListAccountBalanceSparklinesRequest {
+    pub days: u32,
+}
+
 #[utoipa::path(post, path = "/api/rpc/list_account_balance_sparklines",
-    request_body(content = u32), responses((status = 200, body = Vec<AccountSparkline>)))]
+    request_body(content = ListAccountBalanceSparklinesRequest), responses((status = 200, body = Vec<AccountSparkline>)))]
 pub async fn list_account_balance_sparklines(
     state: &ApiState,
     days: u32,
@@ -117,8 +170,15 @@ pub async fn list_account_balance_sparklines(
 /// Returns the CSV content for one account's transactions (caller downloads
 /// it client-side — no server-side file I/O). Real implementation as of
 /// Phase 4; previously 501'd behind a native-dialog-only Tauri command.
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct ExportAccountCsvRequest {
+    pub account_id: String,
+}
+
 #[utoipa::path(post, path = "/api/rpc/export_account_csv",
-    request_body(content = String), responses((status = 200, body = String)))]
+    request_body(content = ExportAccountCsvRequest), responses((status = 200, content_type = "application/json", body = String)))]
 pub async fn export_account_csv(state: &ApiState, account_id: String) -> AppResult<String> {
     let db = (*state.db).clone();
     run(&db, move |conn| {

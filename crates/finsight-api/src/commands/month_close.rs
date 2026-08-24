@@ -345,7 +345,15 @@ fn load_row(
 
 /// The close for a given month: live figures/flags while unopened or in
 /// progress; the frozen record (plus drift) once completed.
-#[utoipa::path(post, path = "/api/rpc/get_month_close", responses((status = 200, body = MonthCloseView)))]
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct GetMonthCloseRequest {
+    pub year: i32,
+    pub month: i32,
+}
+
+#[utoipa::path(post, path = "/api/rpc/get_month_close", request_body(content = GetMonthCloseRequest), responses((status = 200, body = MonthCloseView)))]
 pub async fn get_month_close(state: &ApiState, year: i32, month: i32) -> AppResult<MonthCloseView> {
     let action_items = inbox::get_action_items(state).await?;
     let db = (*state.db).clone();
@@ -432,8 +440,15 @@ pub async fn get_month_close(state: &ApiState, year: i32, month: i32) -> AppResu
 /// acknowledged flags; `in_progress`/`skipped` only move status + notes and
 /// leave any prior frozen record intact (reopen keeps history; re-completing
 /// re-freezes explicitly).
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct SaveMonthCloseRequest {
+    pub input: SaveMonthCloseInput,
+}
+
 #[utoipa::path(post, path = "/api/rpc/save_month_close",
-    request_body(content = SaveMonthCloseInput), responses((status = 200, body = MonthCloseView)))]
+    request_body(content = SaveMonthCloseRequest), responses((status = 200, body = MonthCloseView)))]
 pub async fn save_month_close(
     state: &ApiState,
     input: SaveMonthCloseInput,

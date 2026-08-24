@@ -74,7 +74,7 @@ pub struct PushDeliveryReport {
 
 /// The JSON body `push-sw.js` parses. Keep the field names in lockstep with it
 /// — the contract is pinned by `ui/src/pwa/push.test.ts`.
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 #[schema(rename_all="camelCase")]
 pub struct PushPayload {
@@ -164,7 +164,17 @@ pub async fn get_push_status(state: &ApiState) -> AppResult<PushStatus> {
     })
 }
 
-#[utoipa::path(post, path = "/api/rpc/save_push_subscription", responses((status = 200, description = "Success")))]
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct SavePushSubscriptionRequest {
+    pub endpoint: String,
+    pub p256dh: String,
+    pub auth: String,
+    pub label: Option<String>,
+}
+
+#[utoipa::path(post, path = "/api/rpc/save_push_subscription", request_body(content = SavePushSubscriptionRequest), responses((status = 200, description = "Success")))]
 pub async fn save_push_subscription(
     state: &ApiState,
     endpoint: String,
@@ -186,8 +196,15 @@ pub async fn save_push_subscription(
     .map_err(AppError::from)
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct DeletePushSubscriptionRequest {
+    pub endpoint: String,
+}
+
 #[utoipa::path(post, path = "/api/rpc/delete_push_subscription",
-    request_body(content = String), responses((status = 200, body = bool)))]
+    request_body(content = DeletePushSubscriptionRequest), responses((status = 200, content_type = "application/json", body = bool)))]
 pub async fn delete_push_subscription(state: &ApiState, endpoint: String) -> AppResult<bool> {
     let db = (*state.db).clone();
     run(&db, move |conn| {
@@ -240,15 +257,29 @@ pub async fn send_test_push(state: &ApiState) -> AppResult<PushDeliveryReport> {
 /// report instead. A 404/410 from the push service means the subscription is
 /// permanently gone, and the row is deleted — otherwise every future send
 /// retries a device that will never come back.
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct SendPushRequest {
+    pub payload: PushPayload,
+}
+
 #[utoipa::path(post, path = "/api/rpc/send_push",
-    request_body(content = PushPayload), responses((status = 200, body = PushDeliveryReport)))]
+    request_body(content = SendPushRequest), responses((status = 200, body = PushDeliveryReport)))]
 pub async fn send_push(state: &ApiState, payload: PushPayload) -> AppResult<PushDeliveryReport> {
     send_push_for_db(&state.db, payload).await
 }
 
 /// See `vapid_keypair_for_db` — the `Db`-only entry point, for the background
 /// scheduler.
-#[utoipa::path(post, path = "/api/rpc/send_push_for_db", responses((status = 200, body = PushDeliveryReport)))]
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct SendPushForDbRequest {
+    pub payload: PushPayload,
+}
+
+#[utoipa::path(post, path = "/api/rpc/send_push_for_db", request_body(content = SendPushForDbRequest), responses((status = 200, body = PushDeliveryReport)))]
 pub async fn send_push_for_db(
     db: &finsight_core::Db,
     payload: PushPayload,

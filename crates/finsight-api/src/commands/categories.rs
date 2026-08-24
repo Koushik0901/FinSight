@@ -4,7 +4,15 @@ use finsight_core::models::{Category, CategoryGroup};
 use finsight_core::repos::{categories, run};
 use utoipa::ToSchema;
 
-#[utoipa::path(post, path = "/api/rpc/update_category_color", responses((status = 200, description = "Success")))]
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct UpdateCategoryColorRequest {
+    pub id: String,
+    pub color: String,
+}
+
+#[utoipa::path(post, path = "/api/rpc/update_category_color", request_body(content = UpdateCategoryColorRequest), responses((status = 200, description = "Success")))]
 pub async fn update_category_color(state: &ApiState, id: String, color: String) -> AppResult<()> {
     let db = (*state.db).clone();
     run(&db, move |conn| categories::update_color(conn, &id, &color))
@@ -12,7 +20,16 @@ pub async fn update_category_color(state: &ApiState, id: String, color: String) 
         .map_err(AppError::from)
 }
 
-#[utoipa::path(post, path = "/api/rpc/create_category", responses((status = 200, body = Category)))]
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct CreateCategoryRequest {
+    pub label: String,
+    pub group_id: Option<String>,
+    pub color: String,
+}
+
+#[utoipa::path(post, path = "/api/rpc/create_category", request_body(content = CreateCategoryRequest), responses((status = 200, body = Category)))]
 pub async fn create_category(
     state: &ApiState,
     label: String,
@@ -27,7 +44,15 @@ pub async fn create_category(
     .map_err(AppError::from)
 }
 
-#[utoipa::path(post, path = "/api/rpc/rename_category", responses((status = 200, description = "Success")))]
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct RenameCategoryRequest {
+    pub id: String,
+    pub label: String,
+}
+
+#[utoipa::path(post, path = "/api/rpc/rename_category", request_body(content = RenameCategoryRequest), responses((status = 200, description = "Success")))]
 pub async fn rename_category(state: &ApiState, id: String, label: String) -> AppResult<()> {
     let db = (*state.db).clone();
     run(&db, move |conn| categories::rename(conn, &id, &label))
@@ -35,8 +60,15 @@ pub async fn rename_category(state: &ApiState, id: String, label: String) -> App
         .map_err(AppError::from)
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct ArchiveCategoryRequest {
+    pub id: String,
+}
+
 #[utoipa::path(post, path = "/api/rpc/archive_category",
-    request_body(content = String), responses((status = 200, description = "Success")))]
+    request_body(content = ArchiveCategoryRequest), responses((status = 200, description = "Success")))]
 pub async fn archive_category(state: &ApiState, id: String) -> AppResult<()> {
     let db = (*state.db).clone();
     run(&db, move |conn| categories::archive(conn, &id))
@@ -44,7 +76,15 @@ pub async fn archive_category(state: &ApiState, id: String) -> AppResult<()> {
         .map_err(AppError::from)
 }
 
-#[utoipa::path(post, path = "/api/rpc/set_category_guidance", responses((status = 200, description = "Success")))]
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct SetCategoryGuidanceRequest {
+    pub id: String,
+    pub guidance: Option<String>,
+}
+
+#[utoipa::path(post, path = "/api/rpc/set_category_guidance", request_body(content = SetCategoryGuidanceRequest), responses((status = 200, description = "Success")))]
 pub async fn set_category_guidance(
     state: &ApiState,
     id: String,
@@ -66,7 +106,15 @@ pub async fn list_category_groups(state: &ApiState) -> AppResult<Vec<CategoryGro
         .map_err(AppError::from)
 }
 
-#[utoipa::path(post, path = "/api/rpc/create_category_group", responses((status = 200, body = CategoryGroup)))]
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct CreateCategoryGroupRequest {
+    pub label: String,
+    pub hint: Option<String>,
+}
+
+#[utoipa::path(post, path = "/api/rpc/create_category_group", request_body(content = CreateCategoryGroupRequest), responses((status = 200, body = CategoryGroup)))]
 pub async fn create_category_group(
     state: &ApiState,
     label: String,
@@ -80,7 +128,15 @@ pub async fn create_category_group(
     .map_err(AppError::from)
 }
 
-#[utoipa::path(post, path = "/api/rpc/set_category_group", responses((status = 200, description = "Success")))]
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct SetCategoryGroupRequest {
+    pub category_id: String,
+    pub group_id: String,
+}
+
+#[utoipa::path(post, path = "/api/rpc/set_category_group", request_body(content = SetCategoryGroupRequest), responses((status = 200, description = "Success")))]
 pub async fn set_category_group(
     state: &ApiState,
     category_id: String,

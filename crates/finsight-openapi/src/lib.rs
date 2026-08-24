@@ -704,8 +704,167 @@ pub const COMMANDS: &[&str] = &[
         finsight_api::commands::onboarding::LlmProviderConfig,
         finsight_api::commands::agent::CompletionProviderConfig,
         finsight_core::repos::imports::Import,
-        finsight_core::repos::imports::ImportSource)),
-    info(title = "FinSight API", version = "0.1.0", description = "FinSight RPC API — every command is POST /api/rpc/{cmd} with a JSON object body. The OpenAPI file is the contract for the generated TypeScript client (replaces tauri-specta bindings.ts).", license(name = "AGPL-3.0-or-later"))
+        finsight_core::repos::imports::ImportSource,
+        finsight_api::commands::accounts::ArchiveAccountRequest,
+        finsight_api::commands::accounts::CreateAccountRequest,
+        finsight_api::commands::accounts::ExportAccountCsvRequest,
+        finsight_api::commands::accounts::GetAccountBalanceTimelineRequest,
+        finsight_api::commands::accounts::ListAccountBalanceHistoryRequest,
+        finsight_api::commands::accounts::ListAccountBalanceSparklinesRequest,
+        finsight_api::commands::accounts::SetAccountBalanceRequest,
+        finsight_api::commands::accounts::UpdateAccountRequest,
+        finsight_api::commands::agent::AcceptRuleProposalRequest,
+        finsight_api::commands::agent::AskAgentRequest,
+        finsight_api::commands::agent::DeclineRuleProposalRequest,
+        finsight_api::commands::agent::ListProviderModelsRequest,
+        finsight_api::commands::agent::ListRecentAgentActivityRequest,
+        finsight_api::commands::agent::SaveProviderApiKeyRequest,
+        finsight_api::commands::agent::SetAnomalyDismissedRequest,
+        finsight_api::commands::agent::SetCompletionProviderRequest,
+        finsight_api::commands::agent::TestCompletionProviderRequest,
+        finsight_api::commands::assets::ComputeDebtPayoffRequest,
+        finsight_api::commands::assets::CreateManualAssetRequest,
+        finsight_api::commands::assets::DeleteManualAssetRequest,
+        finsight_api::commands::assets::ListNetWorthHistoryRequest,
+        finsight_api::commands::assets::UpdateManualAssetRequest,
+        finsight_api::commands::budget::ApplyNextMonthPlanRequest,
+        finsight_api::commands::budget::ArchiveGoalRequest,
+        finsight_api::commands::budget::ContributeToGoalRequest,
+        finsight_api::commands::budget::CreateGoalRequest,
+        finsight_api::commands::budget::ListBudgetHistoryRequest,
+        finsight_api::commands::budget::ListGoalContributionsRequest,
+        finsight_api::commands::budget::ListMemberBudgetEnvelopesRequest,
+        finsight_api::commands::budget::ProjectGoalGrowthRequest,
+        finsight_api::commands::budget::SetBudgetRequest,
+        finsight_api::commands::budget::UpdateGoalBalanceRequest,
+        finsight_api::commands::budget::UpdateGoalMonthlyRequest,
+        finsight_api::commands::budget::UpdateGoalPriorityRequest,
+        finsight_api::commands::budget::UpdateGoalPurposeRequest,
+        finsight_api::commands::cashflow::GetCashflowForecastRequest,
+        finsight_api::commands::categories::ArchiveCategoryRequest,
+        finsight_api::commands::categories::CreateCategoryGroupRequest,
+        finsight_api::commands::categories::CreateCategoryRequest,
+        finsight_api::commands::categories::RenameCategoryRequest,
+        finsight_api::commands::categories::SetCategoryGroupRequest,
+        finsight_api::commands::categories::SetCategoryGuidanceRequest,
+        finsight_api::commands::categories::UpdateCategoryColorRequest,
+        finsight_api::commands::category_examples::AddCategoryExampleRequest,
+        finsight_api::commands::category_examples::ListCategoryExamplesRequest,
+        finsight_api::commands::category_examples::RemoveCategoryExampleRequest,
+        finsight_api::commands::category_proposals::AcceptCategoryProposalRequest,
+        finsight_api::commands::category_proposals::CorrectCategoryProposalRequest,
+        finsight_api::commands::category_proposals::RejectCategoryProposalRequest,
+        finsight_api::commands::copilot::ApproveActionItemRequest,
+        finsight_api::commands::copilot::CloseAgentSessionRequest,
+        finsight_api::commands::copilot::CreateAgentSessionRequest,
+        finsight_api::commands::copilot::ExecuteActionBundleRequest,
+        finsight_api::commands::copilot::GetActionBundleRequest,
+        finsight_api::commands::copilot::ListActionBundlesRequest,
+        finsight_api::commands::copilot::ListExecutionLogRequest,
+        finsight_api::commands::copilot::RejectActionItemRequest,
+        finsight_api::commands::copilot_chat::DeleteConversationMessagesAfterRequest,
+        finsight_api::commands::copilot_chat::DeleteConversationRequest,
+        finsight_api::commands::copilot_chat::EditConversationUserMessageRequest,
+        finsight_api::commands::copilot_chat::GetConversationMessagesRequest,
+        finsight_api::commands::copilot_chat::StreamCopilotMessageRequest,
+        finsight_api::commands::data_health::StageRestoreBackupRequest,
+        finsight_api::commands::household::CreateHouseholdMemberRequest,
+        finsight_api::commands::household::DeleteHouseholdMemberRequest,
+        finsight_api::commands::household::SetAccountOwnerSharesRequest,
+        finsight_api::commands::household::SetAccountOwnersRequest,
+        finsight_api::commands::household::SetAssetOwnersRequest,
+        finsight_api::commands::household::SetSelfMemberRequest,
+        finsight_api::commands::import::DiscardUnfinishedImportRequest,
+        finsight_api::commands::import::GetSavedCsvMappingRequest,
+        finsight_api::commands::import::ImportCsvRequest,
+        finsight_api::commands::import::PrepareCsvImportRequest,
+        finsight_api::commands::import::PreviewCsvColumnsRequest,
+        finsight_api::commands::insights::ForgetAgentMemoryRequest,
+        finsight_api::commands::investments::GetInvestmentSummaryRequest,
+        finsight_api::commands::investments::ListAccountPositionsRequest,
+        finsight_api::commands::metrics::ExplainFinancialMetricsRequest,
+        finsight_api::commands::metrics::GetFinancialMetricsRequest,
+        finsight_api::commands::metrics::SetFinancialAssumptionsRequest,
+        finsight_api::commands::metrics::SetFinancialPhilosophyRequest,
+        finsight_api::commands::month_close::GetMonthCloseRequest,
+        finsight_api::commands::month_close::SaveMonthCloseRequest,
+        finsight_api::commands::notifications::ListNotificationsRequest,
+        finsight_api::commands::notifications::MarkNotificationReadRequest,
+        finsight_api::commands::notifications::SetNotificationPrefsRequest,
+        finsight_api::commands::onboarding::CommitStarterCategoriesRequest,
+        finsight_api::commands::onboarding::ProbeOllamaRequest,
+        finsight_api::commands::onboarding::SaveLlmProviderRequest,
+        finsight_api::commands::planned_transactions::CreatePlannedTransactionRequest,
+        finsight_api::commands::planned_transactions::DeletePlannedTransactionRequest,
+        finsight_api::commands::planned_transactions::GetPlannedTransactionRequest,
+        finsight_api::commands::planned_transactions::ListPlannedTransactionsRequest,
+        finsight_api::commands::planned_transactions::UpdatePlannedTransactionRequest,
+        finsight_api::commands::push::DeletePushSubscriptionRequest,
+        finsight_api::commands::push::SavePushSubscriptionRequest,
+        finsight_api::commands::push::SendPushForDbRequest,
+        finsight_api::commands::push::SendPushRequest,
+        finsight_api::commands::recipes::CreateRecipeRequest,
+        finsight_api::commands::recipes::DeleteRecipeRequest,
+        finsight_api::commands::recipes::ListRecipeRunsRequest,
+        finsight_api::commands::recipes::ListRecipesRequest,
+        finsight_api::commands::recipes::PauseRecipeRequest,
+        finsight_api::commands::recipes::ResumeRecipeRequest,
+        finsight_api::commands::recipes::TriggerRecipeRequest,
+        finsight_api::commands::recipes::UpdateRecipeRequest,
+        finsight_api::commands::recurring::MarkSubscriptionCancelledRequest,
+        finsight_api::commands::recurring::SetSubscriptionTrialRequest,
+        finsight_api::commands::recurring::SetSubscriptionVerdictRequest,
+        finsight_api::commands::reports::GetReportDataRequest,
+        finsight_api::commands::restoration::AddRestorationLegRequest,
+        finsight_api::commands::restoration::CloseRestorationEnvelopeRequest,
+        finsight_api::commands::restoration::CreateRestorationEnvelopeRequest,
+        finsight_api::commands::restoration::DeleteRestorationEnvelopeRequest,
+        finsight_api::commands::restoration::GetRestorationStatusRequest,
+        finsight_api::commands::restoration::RemoveRestorationLegRequest,
+        finsight_api::commands::scenarios::ApplyScenarioRequest,
+        finsight_api::commands::scenarios::ArchiveScenarioRequest,
+        finsight_api::commands::scenarios::ClearScenarioRevisionRequest,
+        finsight_api::commands::scenarios::DeleteScenarioRequest,
+        finsight_api::commands::scenarios::DuplicateScenarioRequest,
+        finsight_api::commands::scenarios::ExplainScenarioRequest,
+        finsight_api::commands::scenarios::PromoteScenarioRequest,
+        finsight_api::commands::scenarios::ReviseScenarioRequest,
+        finsight_api::commands::scenarios::RunScenarioRequest,
+        finsight_api::commands::scenarios::SaveScenarioRequest,
+        finsight_api::commands::settings::SetAutoCategorizeEnabledRequest,
+        finsight_api::commands::settings::SetCurrencyRequest,
+        finsight_api::commands::settings::SetNotificationsEnabledRequest,
+        finsight_api::commands::simplefin::AcceptImportCandidateMatchRequest,
+        finsight_api::commands::simplefin::AcknowledgeSimplefinAlertRequest,
+        finsight_api::commands::simplefin::ConfirmSimplefinTransferRequest,
+        finsight_api::commands::simplefin::CreateImportCandidateTransactionRequest,
+        finsight_api::commands::simplefin::DeleteSimplefinConnectionRequest,
+        finsight_api::commands::simplefin::DismissImportCandidateRequest,
+        finsight_api::commands::simplefin::ImportSimplefinAccountsRequest,
+        finsight_api::commands::simplefin::RejectSimplefinTransferRequest,
+        finsight_api::commands::simplefin::SaveSimplefinSetupTokenRequest,
+        finsight_api::commands::simplefin::SetSimplefinSyncSettingsRequest,
+        finsight_api::commands::simplefin::SyncSimplefinAccountRequest,
+        finsight_api::commands::spending::GetSpendingPathBackRequest,
+        finsight_api::commands::spending::SetSpendingAnnotationRequest,
+        finsight_api::commands::transactions::ApplyCounterpartyVerdictToSimilarRequest,
+        finsight_api::commands::transactions::ApplyTransferVerdictToSimilarRequest,
+        finsight_api::commands::transactions::CreateRuleRequest,
+        finsight_api::commands::transactions::CreateTransactionRequest,
+        finsight_api::commands::transactions::DeleteTransactionRequest,
+        finsight_api::commands::transactions::ExportSearchTransactionsCsvRequest,
+        finsight_api::commands::transactions::ExportTransactionsCsvRequest,
+        finsight_api::commands::transactions::GetTransactionSplitsRequest,
+        finsight_api::commands::transactions::ListTransactionsRequest,
+        finsight_api::commands::transactions::SetCategorySpendingTypeRequest,
+        finsight_api::commands::transactions::SetCounterpartyVerdictRequest,
+        finsight_api::commands::transactions::SetTransactionFlagsRequest,
+        finsight_api::commands::transactions::SetTransactionOwnerRequest,
+        finsight_api::commands::transactions::SetTransactionSplitsRequest,
+        finsight_api::commands::transactions::SetTransactionTransferRequest,
+        finsight_api::commands::transactions::ToggleRuleRequest,
+        finsight_api::commands::transactions::UpdateTransactionRequest,)),
+    info(title = "FinSight API", version = "0.1.0", description = "FinSight RPC API — every command is POST /api/rpc/{cmd} with a JSON object body. The OpenAPI file is the contract for the generated TypeScript client.", license(name = "AGPL-3.0-or-later"))
 )]
 struct ApiDoc;
 
@@ -789,5 +948,74 @@ mod tests {
         let json = serde_json::to_value(&spec).unwrap();
         let path = json["paths"]["/api/rpc/list_accounts"]["post"].to_string();
         assert!(path.contains("$ref") || path.contains("AccountSummary"), "list_accounts should ref AccountSummary, got {path}");
+    }
+
+    #[test]
+    fn openapi_request_bodies_are_json_objects() {
+        let json = build_openapi_value();
+        let paths = json["paths"].as_object().expect("paths");
+        for (path, item) in paths {
+            if !path.starts_with("/api/rpc/") {
+                continue;
+            }
+            let post = &item["post"];
+            if let Some(rb) = post.get("requestBody") {
+                let content = rb["content"].as_object().expect("requestBody content must be object");
+                assert!(
+                    content.contains_key("application/json"),
+                    "{path} has requestBody but no application/json (has {:?})",
+                    content.keys().collect::<Vec<_>>()
+                );
+                assert!(
+                    !content.contains_key("text/plain"),
+                    "{path} requestBody must not be text/plain — use JSON object wrapper"
+                );
+                let schema = &content["application/json"]["schema"];
+                // requestBody should be a $ref to a Request wrapper or an object with properties, not a primitive
+                let s = schema.to_string();
+                assert!(
+                    s.contains("$ref") || s.contains("properties") || s.contains("type"),
+                    "{path} requestBody schema should be object ref, got {s}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn openapi_responses_are_json_when_present() {
+        let json = build_openapi_value();
+        let paths = json["paths"].as_object().expect("paths");
+        for (path, item) in paths {
+            if !path.starts_with("/api/rpc/") {
+                continue;
+            }
+            let post = &item["post"];
+            let responses = post["responses"].as_object().expect("responses");
+            let ok = &responses["200"];
+            if let Some(content) = ok.get("content") {
+                let map = content.as_object().expect("200 content must be object");
+                assert!(
+                    map.contains_key("application/json"),
+                    "{path} 200 response has content but no application/json (has {:?})",
+                    map.keys().collect::<Vec<_>>()
+                );
+                assert!(
+                    !map.contains_key("text/plain"),
+                    "{path} response must not be text/plain — use application/json"
+                );
+            } else {
+                // void handlers have no content — allowed, but ensure they don't have text/plain elsewhere
+            }
+        }
+    }
+
+    #[test]
+    fn openapi_no_text_plain_anywhere() {
+        let json = build_openapi_value();
+        let s = json.to_string();
+        assert!(
+            !s.contains("text/plain"),
+            "openapi must not contain text/plain — all bodies should be application/json, found text/plain in spec"
+        );
     }
 }

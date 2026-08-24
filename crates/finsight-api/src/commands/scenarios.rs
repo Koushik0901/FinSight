@@ -255,7 +255,16 @@ label is a short title for the scenario.";
     })
 }
 
-#[utoipa::path(post, path = "/api/rpc/run_scenario", responses((status = 200, body = RanScenario)))]
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct RunScenarioRequest {
+    pub description: String,
+    pub months: u32,
+    pub params: Option<ScenarioParamsInput>,
+}
+
+#[utoipa::path(post, path = "/api/rpc/run_scenario", request_body(content = RunScenarioRequest), responses((status = 200, body = RanScenario)))]
 pub async fn run_scenario(
     state: &ApiState,
     description: String,
@@ -278,7 +287,16 @@ pub async fn run_scenario(
 /// Save a scenario durably: capture the current baseline, re-project the params
 /// against it, and store params + baseline + result together so the scenario
 /// can later be recomputed, compared, and checked for staleness.
-#[utoipa::path(post, path = "/api/rpc/save_scenario", responses((status = 200, body = SavedScenarioDetail)))]
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct SaveScenarioRequest {
+    pub description: String,
+    pub params: ScenarioParamsInput,
+    pub months: u32,
+}
+
+#[utoipa::path(post, path = "/api/rpc/save_scenario", request_body(content = SaveScenarioRequest), responses((status = 200, body = SavedScenarioDetail)))]
 pub async fn save_scenario(
     state: &ApiState,
     description: String,
@@ -318,7 +336,15 @@ pub async fn save_scenario(
 /// what-if params alongside the immutable original; the returned detail carries
 /// the recalculated `revised_result` next to the original and current results.
 /// Never touches the active plan, and never overwrites the original params.
-#[utoipa::path(post, path = "/api/rpc/revise_scenario", responses((status = 200, body = SavedScenarioDetail)))]
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct ReviseScenarioRequest {
+    pub id: String,
+    pub params: ScenarioParamsInput,
+}
+
+#[utoipa::path(post, path = "/api/rpc/revise_scenario", request_body(content = ReviseScenarioRequest), responses((status = 200, body = SavedScenarioDetail)))]
 pub async fn revise_scenario(
     state: &ApiState,
     id: String,
@@ -355,8 +381,15 @@ pub async fn revise_scenario(
 }
 
 /// Discard a scenario's revision, reverting to the original assumptions only.
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct ClearScenarioRevisionRequest {
+    pub id: String,
+}
+
 #[utoipa::path(post, path = "/api/rpc/clear_scenario_revision",
-    request_body(content = String), responses((status = 200, body = SavedScenarioDetail)))]
+    request_body(content = ClearScenarioRevisionRequest), responses((status = 200, body = SavedScenarioDetail)))]
 pub async fn clear_scenario_revision(
     state: &ApiState,
     id: String,
@@ -462,8 +495,15 @@ pub async fn list_saved_scenarios(state: &ApiState) -> AppResult<Vec<SavedScenar
 /// with the scenario card). A pre-V055 legacy row that can't be recomputed gets
 /// the legacy variant: a withheld value with the reason, never a fabricated
 /// breakdown.
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct ExplainScenarioRequest {
+    pub id: String,
+}
+
 #[utoipa::path(post, path = "/api/rpc/explain_scenario",
-    request_body(content = String), responses((status = 200, body = MetricExplanation)))]
+    request_body(content = ExplainScenarioRequest), responses((status = 200, body = MetricExplanation)))]
 pub async fn explain_scenario(
     state: &ApiState,
     id: String,
@@ -508,8 +548,15 @@ pub async fn explain_scenario(
     }
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct DuplicateScenarioRequest {
+    pub id: String,
+}
+
 #[utoipa::path(post, path = "/api/rpc/duplicate_scenario",
-    request_body(content = String), responses((status = 200, body = Option<SavedScenarioDetail>)))]
+    request_body(content = DuplicateScenarioRequest), responses((status = 200, body = Option<SavedScenarioDetail>)))]
 pub async fn duplicate_scenario(
     state: &ApiState,
     id: String,
@@ -522,7 +569,15 @@ pub async fn duplicate_scenario(
     Ok(row.map(|r| detail_from_row(r, &current)))
 }
 
-#[utoipa::path(post, path = "/api/rpc/archive_scenario", responses((status = 200, description = "Success")))]
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct ArchiveScenarioRequest {
+    pub id: String,
+    pub archived: bool,
+}
+
+#[utoipa::path(post, path = "/api/rpc/archive_scenario", request_body(content = ArchiveScenarioRequest), responses((status = 200, description = "Success")))]
 pub async fn archive_scenario(state: &ApiState, id: String, archived: bool) -> AppResult<()> {
     let db = (*state.db).clone();
     run(&db, move |conn| {
@@ -535,8 +590,15 @@ pub async fn archive_scenario(state: &ApiState, id: String, archived: bool) -> A
 /// Promote a scenario into a REVIEWABLE set of proposed plan changes. This
 /// writes nothing: it grounds each proposal in the current baseline and hands
 /// them back for the user to approve and apply themselves.
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct PromoteScenarioRequest {
+    pub id: String,
+}
+
 #[utoipa::path(post, path = "/api/rpc/promote_scenario",
-    request_body(content = String), responses((status = 200, body = ScenarioPlanProposal)))]
+    request_body(content = PromoteScenarioRequest), responses((status = 200, body = ScenarioPlanProposal)))]
 pub async fn promote_scenario(state: &ApiState, id: String) -> AppResult<ScenarioPlanProposal> {
     let current = build_snapshot(state).await?;
     let db = (*state.db).clone();
@@ -692,7 +754,15 @@ pub struct SkippedChange {
 /// re-apply detects it and skips rather than duplicating. Aggregate deltas and
 /// goal mentions are never written — they remain recommendations. The scenario
 /// itself is never mutated: applying records a decision, it doesn't consume it.
-#[utoipa::path(post, path = "/api/rpc/apply_scenario", responses((status = 200, body = ApplyScenarioResult)))]
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct ApplyScenarioRequest {
+    pub id: String,
+    pub approved_change_ids: Vec<String>,
+}
+
+#[utoipa::path(post, path = "/api/rpc/apply_scenario", request_body(content = ApplyScenarioRequest), responses((status = 200, body = ApplyScenarioResult)))]
 pub async fn apply_scenario(
     state: &ApiState,
     id: String,
@@ -826,8 +896,15 @@ fn month_offset_date(from: chrono::NaiveDate, months: u32) -> String {
         .to_string()
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct DeleteScenarioRequest {
+    pub id: String,
+}
+
 #[utoipa::path(post, path = "/api/rpc/delete_scenario",
-    request_body(content = String), responses((status = 200, description = "Success")))]
+    request_body(content = DeleteScenarioRequest), responses((status = 200, description = "Success")))]
 pub async fn delete_scenario(state: &ApiState, id: String) -> AppResult<()> {
     let db = (*state.db).clone();
     run(&db, move |conn| scenarios_repo::delete(conn, &id))

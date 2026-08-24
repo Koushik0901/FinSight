@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "FinSight API",
-    "description": "FinSight RPC API — every command is POST /api/rpc/{cmd} with a JSON object body. The OpenAPI file is the contract for the generated TypeScript client (replaces tauri-specta bindings.ts).",
+    "description": "FinSight RPC API — every command is POST /api/rpc/{cmd} with a JSON object body. The OpenAPI file is the contract for the generated TypeScript client.",
     "license": {
       "name": "AGPL-3.0-or-later"
     },
@@ -14,14 +14,12 @@
         "tags": [
           "finsight_api::commands::category_proposals"
         ],
-        "summary": "The user agrees with the proposed category. Writes it as if the user had",
-        "description": "typed it into the transaction-edit drawer — the write is a `source='user'`\ncategorization from this point on, not an unreviewed AI guess.",
         "operationId": "accept_category_proposal",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/AcceptCategoryProposalRequest"
               }
             }
           },
@@ -47,6 +45,16 @@
           "finsight_api::commands::simplefin"
         ],
         "operationId": "accept_import_candidate_match",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcceptImportCandidateMatchRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "Success"
@@ -62,9 +70,9 @@
         "operationId": "accept_rule_proposal",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/AcceptRuleProposalRequest"
               }
             }
           },
@@ -85,9 +93,9 @@
         "operationId": "acknowledge_simplefin_alert",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/AcknowledgeSimplefinAlertRequest"
               }
             }
           },
@@ -105,9 +113,17 @@
         "tags": [
           "finsight_api::commands::category_examples"
         ],
-        "summary": "Attach an exemplar description to a category, keyed by the category's",
-        "description": "stable id (so it rides through renames). Idempotent per (category, text).\n\n`source_txn_id` is an optional provenance breadcrumb for an \"add this\ntransaction as an example\" affordance; the example survives that\ntransaction being deleted.",
         "operationId": "add_category_example",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddCategoryExampleRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "",
@@ -127,8 +143,17 @@
         "tags": [
           "finsight_api::commands::restoration"
         ],
-        "summary": "Attribute money that has gone back into the pot.",
         "operationId": "add_restoration_leg",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddRestorationLegRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "",
@@ -168,14 +193,22 @@
         "tags": [
           "finsight_api::commands::transactions"
         ],
-        "summary": "Apply one counterparty verdict to every undecided transaction matching a",
-        "description": "counterparty pattern (from [`UnresolvedCounterpartyDto::pattern`] or\n`TransferVerdictResult::similar_pattern`). One decision clears a whole\nperson's e-transfer history from the review list.",
         "operationId": "apply_counterparty_verdict_to_similar",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplyCounterpartyVerdictToSimilarRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
                   "type": "integer",
                   "format": "int32",
@@ -192,17 +225,12 @@
         "tags": [
           "finsight_api::commands::budget"
         ],
-        "summary": "Write next month's budget assignments. The Tauri wrapper additionally fires",
-        "description": "a best-effort desktop notification after this returns (see\n`crates/finsight-bindings/src/commands/budget.rs`); the server has no native\nnotifications in Phase 1, so this body is purely the budget write.",
         "operationId": "apply_next_month_plan",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/components/schemas/PlanAssignment"
-                }
+                "$ref": "#/components/schemas/ApplyNextMonthPlanRequest"
               }
             }
           },
@@ -220,9 +248,17 @@
         "tags": [
           "finsight_api::commands::scenarios"
         ],
-        "summary": "Apply the approved, applyable changes of a scenario to the active plan (#72).",
-        "description": "The ONLY mechanically-applyable change today is a one-time amount, which\nbecomes a dated planned transaction (part of the plan, shown on `/recurring`).\nIdempotent: the created transaction is tagged with the scenario id, so a\nre-apply detects it and skips rather than duplicating. Aggregate deltas and\ngoal mentions are never written — they remain recommendations. The scenario\nitself is never mutated: applying records a decision, it doesn't consume it.",
         "operationId": "apply_scenario",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplyScenarioRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "",
@@ -243,11 +279,21 @@
           "finsight_api::commands::transactions"
         ],
         "operationId": "apply_transfer_verdict_to_similar",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplyTransferVerdictToSimilarRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
                   "type": "integer",
                   "format": "int32",
@@ -267,9 +313,9 @@
         "operationId": "approve_action_item",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/ApproveActionItemRequest"
               }
             }
           },
@@ -290,9 +336,9 @@
         "operationId": "archive_account",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/ArchiveAccountRequest"
               }
             }
           },
@@ -313,9 +359,9 @@
         "operationId": "archive_category",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/ArchiveCategoryRequest"
               }
             }
           },
@@ -336,9 +382,9 @@
         "operationId": "archive_goal",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/ArchiveGoalRequest"
               }
             }
           },
@@ -357,6 +403,16 @@
           "finsight_api::commands::scenarios"
         ],
         "operationId": "archive_scenario",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ArchiveScenarioRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "Success"
@@ -370,6 +426,16 @@
           "finsight_api::commands::agent"
         ],
         "operationId": "ask_agent",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AskAgentRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "",
@@ -402,13 +468,12 @@
         "tags": [
           "finsight_api::commands::scenarios"
         ],
-        "summary": "Discard a scenario's revision, reverting to the original assumptions only.",
         "operationId": "clear_scenario_revision",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/ClearScenarioRevisionRequest"
               }
             }
           },
@@ -436,9 +501,9 @@
         "operationId": "close_agent_session",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/CloseAgentSessionRequest"
               }
             }
           },
@@ -456,14 +521,12 @@
         "tags": [
           "finsight_api::commands::restoration"
         ],
-        "summary": "Reconcile and finish. The design nags toward this rather than letting",
-        "description": "envelopes accumulate.",
         "operationId": "close_restoration_envelope",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/CloseRestorationEnvelopeRequest"
               }
             }
           },
@@ -486,10 +549,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/components/schemas/StarterCategory"
-                }
+                "$ref": "#/components/schemas/CommitStarterCategoriesRequest"
               }
             }
           },
@@ -510,10 +570,9 @@
         "operationId": "compute_debt_payoff",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "integer",
-                "format": "int64"
+                "$ref": "#/components/schemas/ComputeDebtPayoffRequest"
               }
             }
           },
@@ -544,9 +603,9 @@
         "operationId": "confirm_simplefin_transfer",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/ConfirmSimplefinTransferRequest"
               }
             }
           },
@@ -565,6 +624,16 @@
           "finsight_api::commands::budget"
         ],
         "operationId": "contribute_to_goal",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContributeToGoalRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "",
@@ -584,8 +653,17 @@
         "tags": [
           "finsight_api::commands::category_proposals"
         ],
-        "summary": "The user picks a DIFFERENT category than what was proposed.",
         "operationId": "correct_category_proposal",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CorrectCategoryProposalRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "",
@@ -610,7 +688,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/NewAccount"
+                "$ref": "#/components/schemas/CreateAccountRequest"
               }
             }
           },
@@ -636,6 +714,16 @@
           "finsight_api::commands::copilot"
         ],
         "operationId": "create_agent_session",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAgentSessionRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "",
@@ -656,6 +744,16 @@
           "finsight_api::commands::categories"
         ],
         "operationId": "create_category",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCategoryRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "",
@@ -676,6 +774,16 @@
           "finsight_api::commands::categories"
         ],
         "operationId": "create_category_group",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCategoryGroupRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "",
@@ -700,7 +808,7 @@
           "200": {
             "description": "",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
                   "type": "string"
                 }
@@ -720,7 +828,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/NewGoalInput"
+                "$ref": "#/components/schemas/CreateGoalRequest"
               }
             }
           },
@@ -746,6 +854,16 @@
           "finsight_api::commands::household"
         ],
         "operationId": "create_household_member",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateHouseholdMemberRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "",
@@ -768,9 +886,9 @@
         "operationId": "create_import_candidate_transaction",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/CreateImportCandidateTransactionRequest"
               }
             }
           },
@@ -780,7 +898,7 @@
           "200": {
             "description": "",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
                   "type": "string"
                 }
@@ -800,7 +918,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/NewManualAsset"
+                "$ref": "#/components/schemas/CreateManualAssetRequest"
               }
             }
           },
@@ -850,7 +968,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/NewPlannedTransaction"
+                "$ref": "#/components/schemas/CreatePlannedTransactionRequest"
               }
             }
           },
@@ -876,6 +994,16 @@
           "finsight_api::commands::recipes"
         ],
         "operationId": "create_recipe",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRecipeRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "",
@@ -900,7 +1028,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/RestorationEnvelopeInput"
+                "$ref": "#/components/schemas/CreateRestorationEnvelopeRequest"
               }
             }
           },
@@ -926,6 +1054,16 @@
           "finsight_api::commands::transactions"
         ],
         "operationId": "create_rule",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRuleRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "",
@@ -950,7 +1088,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/NewTransaction"
+                "$ref": "#/components/schemas/CreateTransactionRequest"
               }
             }
           },
@@ -978,9 +1116,9 @@
         "operationId": "decline_rule_proposal",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/DeclineRuleProposalRequest"
               }
             }
           },
@@ -1014,9 +1152,9 @@
         "operationId": "delete_conversation",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/DeleteConversationRequest"
               }
             }
           },
@@ -1035,11 +1173,21 @@
           "finsight_api::commands::copilot_chat"
         ],
         "operationId": "delete_conversation_messages_after",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeleteConversationMessagesAfterRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
                   "type": "integer",
                   "format": "int32",
@@ -1059,9 +1207,9 @@
         "operationId": "delete_household_member",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/DeleteHouseholdMemberRequest"
               }
             }
           },
@@ -1082,9 +1230,9 @@
         "operationId": "delete_manual_asset",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/DeleteManualAssetRequest"
               }
             }
           },
@@ -1105,9 +1253,9 @@
         "operationId": "delete_planned_transaction",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/DeletePlannedTransactionRequest"
               }
             }
           },
@@ -1128,9 +1276,9 @@
         "operationId": "delete_push_subscription",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/DeletePushSubscriptionRequest"
               }
             }
           },
@@ -1140,7 +1288,7 @@
           "200": {
             "description": "",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
                   "type": "boolean"
                 }
@@ -1158,9 +1306,9 @@
         "operationId": "delete_recipe",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/DeleteRecipeRequest"
               }
             }
           },
@@ -1181,9 +1329,9 @@
         "operationId": "delete_restoration_envelope",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/DeleteRestorationEnvelopeRequest"
               }
             }
           },
@@ -1204,9 +1352,9 @@
         "operationId": "delete_scenario",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/DeleteScenarioRequest"
               }
             }
           },
@@ -1227,9 +1375,9 @@
         "operationId": "delete_simplefin_connection",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/DeleteSimplefinConnectionRequest"
               }
             }
           },
@@ -1250,9 +1398,9 @@
         "operationId": "delete_transaction",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/DeleteTransactionRequest"
               }
             }
           },
@@ -1273,9 +1421,9 @@
         "operationId": "discard_unfinished_import",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/DiscardUnfinishedImportRequest"
               }
             }
           },
@@ -1309,9 +1457,9 @@
         "operationId": "dismiss_import_candidate",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/DismissImportCandidateRequest"
               }
             }
           },
@@ -1332,9 +1480,9 @@
         "operationId": "duplicate_scenario",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/DuplicateScenarioRequest"
               }
             }
           },
@@ -1369,7 +1517,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/EditConversationMessageInput"
+                "$ref": "#/components/schemas/EditConversationUserMessageRequest"
               }
             }
           },
@@ -1390,9 +1538,9 @@
         "operationId": "execute_action_bundle",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/ExecuteActionBundleRequest"
               }
             }
           },
@@ -1417,19 +1565,16 @@
         "tags": [
           "finsight_api::commands::metrics"
         ],
-        "summary": "Structured \"explain this number\" provenance for the decision-driving",
-        "description": "dashboard metrics, optionally scoped to one household member. Every value is\npulled from the same `finsight-core::metrics` layer `get_financial_metrics`\nreads, so an explanation can never disagree with the number shown elsewhere.\nThe single source of truth is shared verbatim with the Copilot's\n`explain_metric` tool.",
         "operationId": "explain_financial_metrics",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "type": "string",
-                "nullable": true
+                "$ref": "#/components/schemas/ExplainFinancialMetricsRequest"
               }
             }
           },
-          "required": false
+          "required": true
         },
         "responses": {
           "200": {
@@ -1478,14 +1623,12 @@
         "tags": [
           "finsight_api::commands::scenarios"
         ],
-        "summary": "Structured \"explain this scenario\" — the same recomputed projection the",
-        "description": "comparison shows, described via `provenance::scenario_explanation` (its\nnarrative `considerations` become the tradeoffs, so this can never disagree\nwith the scenario card). A pre-V055 legacy row that can't be recomputed gets\nthe legacy variant: a withheld value with the reason, never a fabricated\nbreakdown.",
         "operationId": "explain_scenario",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/ExplainScenarioRequest"
               }
             }
           },
@@ -1510,14 +1653,12 @@
         "tags": [
           "finsight_api::commands::accounts"
         ],
-        "summary": "Returns the CSV content for one account's transactions (caller downloads",
-        "description": "it client-side — no server-side file I/O). Real implementation as of\nPhase 4; previously 501'd behind a native-dialog-only Tauri command.",
         "operationId": "export_account_csv",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/ExportAccountCsvRequest"
               }
             }
           },
@@ -1527,7 +1668,7 @@
           "200": {
             "description": "",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
                   "type": "string"
                 }
@@ -1548,7 +1689,7 @@
           "200": {
             "description": "",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
                   "type": "string"
                 }
@@ -1569,7 +1710,7 @@
           "200": {
             "description": "",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
                   "type": "string"
                 }
@@ -1584,14 +1725,12 @@
         "tags": [
           "finsight_api::commands::transactions"
         ],
-        "summary": "Re-run the Copilot `search_transactions` query and return the matching",
-        "description": "rows as CSV content (caller downloads it client-side). Shares\n`transactions::search` with the Copilot tool so the exported rows match\nexactly what the card displayed. Real implementation as of Phase 4;\npreviously 501'd behind a native-dialog-only Tauri command.",
         "operationId": "export_search_transactions_csv",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/SearchTxnQueryInput"
+                "$ref": "#/components/schemas/ExportSearchTransactionsCsvRequest"
               }
             }
           },
@@ -1601,7 +1740,7 @@
           "200": {
             "description": "",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
                   "type": "string"
                 }
@@ -1616,14 +1755,12 @@
         "tags": [
           "finsight_api::commands::transactions"
         ],
-        "summary": "Returns the CSV content for transactions matching a filter (caller",
-        "description": "downloads it client-side — no server-side file I/O). Real implementation\nas of Phase 4; previously 501'd behind a native-dialog-only Tauri command.",
         "operationId": "export_transactions_csv",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/TxnFilterInput"
+                "$ref": "#/components/schemas/ExportTransactionsCsvRequest"
               }
             }
           },
@@ -1633,7 +1770,7 @@
           "200": {
             "description": "",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
                   "type": "string"
                 }
@@ -1651,9 +1788,9 @@
         "operationId": "forget_agent_memory",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/ForgetAgentMemoryRequest"
               }
             }
           },
@@ -1671,9 +1808,17 @@
         "tags": [
           "finsight_api::commands::accounts"
         ],
-        "summary": "Reconstruct an account's balance curve from its ledger, with the peak and",
-        "description": "trough over the requested window. `since` is an ISO `YYYY-MM-DD` date; omit\nit for all-time.\n\nUnlike [`list_account_balance_history`], which reads the sparse stored\nsnapshots, this derives every point — so it can answer \"when was this account\nat its highest\" rather than \"which recorded day was highest\".",
         "operationId": "get_account_balance_timeline",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GetAccountBalanceTimelineRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "",
@@ -1696,9 +1841,9 @@
         "operationId": "get_action_bundle",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/GetActionBundleRequest"
               }
             }
           },
@@ -1776,7 +1921,7 @@
           "200": {
             "description": "",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
                   "type": "boolean"
                 }
@@ -1791,9 +1936,17 @@
         "tags": [
           "finsight_api::commands::cashflow"
         ],
-        "summary": "Project the liquid balance forward `horizon_days` (default 30, clamped",
-        "description": "7–90), optionally against a safety `buffer_cents` and a hypothetical one-off\noutflow. Returns the daily trajectory, the lowest point, the first day it\nbreaches the buffer, the conservative safe-to-spend, upcoming dated events,\nand data-quality warnings.",
         "operationId": "get_cashflow_forecast",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GetCashflowForecastRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "",
@@ -1836,9 +1989,9 @@
         "operationId": "get_conversation_messages",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/GetConversationMessagesRequest"
               }
             }
           },
@@ -1871,7 +2024,7 @@
           "200": {
             "description": "",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
                   "type": "string"
                 }
@@ -1931,12 +2084,11 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "string",
-                "nullable": true
+                "$ref": "#/components/schemas/GetFinancialMetricsRequest"
               }
             }
           },
-          "required": false
+          "required": true
         },
         "responses": {
           "200": {
@@ -2002,9 +2154,9 @@
         "operationId": "get_investment_summary",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/GetInvestmentSummaryRequest"
               }
             }
           },
@@ -2049,9 +2201,17 @@
         "tags": [
           "finsight_api::commands::month_close"
         ],
-        "summary": "The close for a given month: live figures/flags while unopened or in",
-        "description": "progress; the frozen record (plus drift) once completed.",
         "operationId": "get_month_close",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GetMonthCloseRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "",
@@ -2096,7 +2256,7 @@
           "200": {
             "description": "",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
                   "type": "integer",
                   "format": "int32",
@@ -2138,7 +2298,7 @@
           "200": {
             "description": "",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
                   "type": "boolean"
                 }
@@ -2196,9 +2356,9 @@
         "operationId": "get_planned_transaction",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/GetPlannedTransactionRequest"
               }
             }
           },
@@ -2249,6 +2409,16 @@
           "finsight_api::commands::reports"
         ],
         "operationId": "get_report_data",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GetReportDataRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "",
@@ -2268,13 +2438,12 @@
         "tags": [
           "finsight_api::commands::restoration"
         ],
-        "summary": "The three reliable numbers plus the honest ceiling, for one envelope.",
         "operationId": "get_restoration_status",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/GetRestorationStatusRequest"
               }
             }
           },
@@ -2307,9 +2476,9 @@
         "operationId": "get_saved_csv_mapping",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/GetSavedCsvMappingRequest"
               }
             }
           },
@@ -2423,6 +2592,16 @@
           "finsight_api::commands::spending"
         ],
         "operationId": "get_spending_path_back",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GetSpendingPathBackRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "",
@@ -2452,7 +2631,7 @@
           "200": {
             "description": "",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
                   "type": "integer",
                   "format": "int64"
@@ -2471,9 +2650,9 @@
         "operationId": "get_transaction_splits",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/GetTransactionSplitsRequest"
               }
             }
           },
@@ -2548,9 +2727,17 @@
         "tags": [
           "finsight_api::commands::import"
         ],
-        "summary": "Import a CSV file, running the deterministic post-import cascade",
-        "description": "(categorization, transfer pairing, anomaly refresh, net-worth refresh) and\nenqueuing the AI categorizer. Progress and completion are pushed through the\n`sink` (`\"import-progress\"` / `\"import-complete\"`, unchanged event names and\npayload shapes) — the Tauri wrapper feeds a `TauriFrameSink` that emits real\nwindow events, and ALSO fires the desktop \"check_and_fire\" notification\nafter this returns (that notification is native-only and stays in the\nwrapper, not here — see `crates/finsight-bindings/src/commands/import.rs`).",
         "operationId": "import_csv",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImportCsvRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "",
@@ -2575,10 +2762,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/components/schemas/SimpleFinAccountImportRequest"
-                }
+                "$ref": "#/components/schemas/ImportSimplefinAccountsRequest"
               }
             }
           },
@@ -2607,6 +2791,16 @@
           "finsight_api::commands::accounts"
         ],
         "operationId": "list_account_balance_history",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ListAccountBalanceHistoryRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "",
@@ -2632,11 +2826,9 @@
         "operationId": "list_account_balance_sparklines",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "integer",
-                "format": "int32",
-                "minimum": 0
+                "$ref": "#/components/schemas/ListAccountBalanceSparklinesRequest"
               }
             }
           },
@@ -2690,9 +2882,9 @@
         "operationId": "list_account_positions",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/ListAccountPositionsRequest"
               }
             }
           },
@@ -2744,6 +2936,16 @@
           "finsight_api::commands::copilot"
         ],
         "operationId": "list_action_bundles",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ListActionBundlesRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "",
@@ -2861,11 +3063,9 @@
         "operationId": "list_budget_history",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "integer",
-                "format": "int32",
-                "minimum": 0
+                "$ref": "#/components/schemas/ListBudgetHistoryRequest"
               }
             }
           },
@@ -2939,14 +3139,12 @@
         "tags": [
           "finsight_api::commands::category_examples"
         ],
-        "summary": "Every exemplar for a category, oldest first.",
-        "description": "Returns rows for ARCHIVED categories too, mirroring how `list_categories`\nstill returns `guidance` on an archived row — archiving hides examples from\nactive consumers, it does not delete them.",
         "operationId": "list_category_examples",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/ListCategoryExamplesRequest"
               }
             }
           },
@@ -3047,9 +3245,9 @@
         "operationId": "list_execution_log",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/ListExecutionLogRequest"
               }
             }
           },
@@ -3080,9 +3278,9 @@
         "operationId": "list_goal_contributions",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/ListGoalContributionsRequest"
               }
             }
           },
@@ -3202,14 +3400,12 @@
         "tags": [
           "finsight_api::commands::budget"
         ],
-        "summary": "Budget-vs-actual for the current month, scoped to one household member's",
-        "description": "share of the spend. The budgets themselves are the household's.",
         "operationId": "list_member_budget_envelopes",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/ListMemberBudgetEnvelopesRequest"
               }
             }
           },
@@ -3265,11 +3461,9 @@
         "operationId": "list_net_worth_history",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "integer",
-                "format": "int32",
-                "minimum": 0
+                "$ref": "#/components/schemas/ListNetWorthHistoryRequest"
               }
             }
           },
@@ -3297,19 +3491,16 @@
         "tags": [
           "finsight_api::commands::notifications"
         ],
-        "summary": "The notification history. `includeResolved=false` (default view) shows only",
-        "description": "still-active items; held (quiet-hours) items appear here too so they're never\nlost, just not pushed.",
         "operationId": "list_notifications",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "type": "boolean",
-                "nullable": true
+                "$ref": "#/components/schemas/ListNotificationsRequest"
               }
             }
           },
-          "required": false
+          "required": true
         },
         "responses": {
           "200": {
@@ -3338,7 +3529,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/PlannedTxnFilter"
+                "$ref": "#/components/schemas/ListPlannedTransactionsRequest"
               }
             }
           },
@@ -3371,7 +3562,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/CompletionProviderConfig"
+                "$ref": "#/components/schemas/ListProviderModelsRequest"
               }
             }
           },
@@ -3425,11 +3616,9 @@
         "operationId": "list_recent_agent_activity",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "integer",
-                "format": "int32",
-                "minimum": 0
+                "$ref": "#/components/schemas/ListRecentAgentActivityRequest"
               }
             }
           },
@@ -3458,6 +3647,16 @@
           "finsight_api::commands::recipes"
         ],
         "operationId": "list_recipe_runs",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ListRecipeRunsRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "",
@@ -3483,9 +3682,9 @@
         "operationId": "list_recipes",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "boolean"
+                "$ref": "#/components/schemas/ListRecipesRequest"
               }
             }
           },
@@ -3727,7 +3926,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/TxnFilterInput"
+                "$ref": "#/components/schemas/ListTransactionsRequest"
               }
             }
           },
@@ -3808,7 +4007,7 @@
           "200": {
             "description": "",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
                   "type": "integer",
                   "format": "int32",
@@ -3828,9 +4027,9 @@
         "operationId": "mark_notification_read",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/MarkNotificationReadRequest"
               }
             }
           },
@@ -3861,9 +4060,17 @@
         "tags": [
           "finsight_api::commands::recurring"
         ],
-        "summary": "Mark a detected subscription CANCELLED as of `cancelled_at` (`YYYY-MM-DD`).",
-        "description": "Ongoing price/renewal alerts stop; a charge dated after the cancel date is\nsurfaced as a surprise. `label` names the service in that alert (#75).",
         "operationId": "mark_subscription_cancelled",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MarkSubscriptionCancelledRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "Success"
@@ -3882,7 +4089,7 @@
           "200": {
             "description": "",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
                   "type": "integer",
                   "format": "int64"
@@ -3901,9 +4108,9 @@
         "operationId": "pause_recipe",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/PauseRecipeRequest"
               }
             }
           },
@@ -3922,6 +4129,16 @@
           "finsight_api::commands::import"
         ],
         "operationId": "prepare_csv_import",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PrepareCsvImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "",
@@ -3942,6 +4159,16 @@
           "finsight_api::commands::import"
         ],
         "operationId": "preview_csv_columns",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreviewCsvColumnsRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "",
@@ -3964,9 +4191,9 @@
         "operationId": "probe_ollama",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/ProbeOllamaRequest"
               }
             }
           },
@@ -3992,6 +4219,16 @@
           "finsight_api::commands::budget"
         ],
         "operationId": "project_goal_growth",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectGoalGrowthRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "",
@@ -4011,14 +4248,12 @@
         "tags": [
           "finsight_api::commands::scenarios"
         ],
-        "summary": "Promote a scenario into a REVIEWABLE set of proposed plan changes. This",
-        "description": "writes nothing: it grounds each proposal in the current baseline and hands\nthem back for the user to approve and apply themselves.",
         "operationId": "promote_scenario",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/PromoteScenarioRequest"
               }
             }
           },
@@ -4068,7 +4303,7 @@
           "200": {
             "description": "",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
                   "type": "integer",
                   "format": "int32",
@@ -4129,9 +4364,9 @@
         "operationId": "reject_action_item",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/RejectActionItemRequest"
               }
             }
           },
@@ -4149,14 +4384,12 @@
         "tags": [
           "finsight_api::commands::category_proposals"
         ],
-        "summary": "The user dismisses the proposal without providing a replacement category.",
-        "description": "Canonical `transactions.category_id` is left untouched (it already holds\nthe LLM's applied guess) — this only removes the item from the review\nqueue.",
         "operationId": "reject_category_proposal",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/RejectCategoryProposalRequest"
               }
             }
           },
@@ -4177,9 +4410,9 @@
         "operationId": "reject_simplefin_transfer",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/RejectSimplefinTransferRequest"
               }
             }
           },
@@ -4197,13 +4430,12 @@
         "tags": [
           "finsight_api::commands::category_examples"
         ],
-        "summary": "Remove one exemplar by its own id. No-op if it's already gone.",
         "operationId": "remove_category_example",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/RemoveCategoryExampleRequest"
               }
             }
           },
@@ -4224,9 +4456,9 @@
         "operationId": "remove_restoration_leg",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/RemoveRestorationLegRequest"
               }
             }
           },
@@ -4245,6 +4477,16 @@
           "finsight_api::commands::categories"
         ],
         "operationId": "rename_category",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenameCategoryRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "Success"
@@ -4273,9 +4515,9 @@
         "operationId": "resume_recipe",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/ResumeRecipeRequest"
               }
             }
           },
@@ -4293,9 +4535,17 @@
         "tags": [
           "finsight_api::commands::scenarios"
         ],
-        "summary": "Revise a saved scenario's assumptions (issue #73). Stores a second set of",
-        "description": "what-if params alongside the immutable original; the returned detail carries\nthe recalculated `revised_result` next to the original and current results.\nNever touches the active plan, and never overwrites the original params.",
         "operationId": "revise_scenario",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviseScenarioRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "",
@@ -4316,6 +4566,16 @@
           "finsight_api::commands::scenarios"
         ],
         "operationId": "run_scenario",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunScenarioRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "",
@@ -4340,7 +4600,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/LlmProviderConfig"
+                "$ref": "#/components/schemas/SaveLlmProviderRequest"
               }
             }
           },
@@ -4358,14 +4618,12 @@
         "tags": [
           "finsight_api::commands::month_close"
         ],
-        "summary": "Advance the close lifecycle. `completed` freezes the snapshot, baseline, and",
-        "description": "acknowledged flags; `in_progress`/`skipped` only move status + notes and\nleave any prior frozen record intact (reopen keeps history; re-completing\nre-freezes explicitly).",
         "operationId": "save_month_close",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/SaveMonthCloseInput"
+                "$ref": "#/components/schemas/SaveMonthCloseRequest"
               }
             }
           },
@@ -4391,6 +4649,16 @@
           "finsight_api::commands::agent"
         ],
         "operationId": "save_provider_api_key",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveProviderApiKeyRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "Success"
@@ -4404,6 +4672,16 @@
           "finsight_api::commands::push"
         ],
         "operationId": "save_push_subscription",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SavePushSubscriptionRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "Success"
@@ -4416,9 +4694,17 @@
         "tags": [
           "finsight_api::commands::scenarios"
         ],
-        "summary": "Save a scenario durably: capture the current baseline, re-project the params",
-        "description": "against it, and store params + baseline + result together so the scenario\ncan later be recomputed, compared, and checked for staleness.",
         "operationId": "save_scenario",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveScenarioRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "",
@@ -4441,9 +4727,9 @@
         "operationId": "save_simplefin_setup_token",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/SaveSimplefinSetupTokenRequest"
               }
             }
           },
@@ -4494,6 +4780,16 @@
           "finsight_api::commands::accounts"
         ],
         "operationId": "set_account_balance",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetAccountBalanceRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "Success"
@@ -4507,6 +4803,16 @@
           "finsight_api::commands::household"
         ],
         "operationId": "set_account_owner_shares",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetAccountOwnerSharesRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "Success"
@@ -4520,6 +4826,16 @@
           "finsight_api::commands::household"
         ],
         "operationId": "set_account_owners",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetAccountOwnersRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "Success"
@@ -4533,6 +4849,16 @@
           "finsight_api::commands::agent"
         ],
         "operationId": "set_anomaly_dismissed",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetAnomalyDismissedRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "Success"
@@ -4546,6 +4872,16 @@
           "finsight_api::commands::household"
         ],
         "operationId": "set_asset_owners",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetAssetOwnersRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "Success"
@@ -4561,9 +4897,9 @@
         "operationId": "set_auto_categorize_enabled",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "boolean"
+                "$ref": "#/components/schemas/SetAutoCategorizeEnabledRequest"
               }
             }
           },
@@ -4582,6 +4918,16 @@
           "finsight_api::commands::budget"
         ],
         "operationId": "set_budget",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetBudgetRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "Success"
@@ -4595,6 +4941,16 @@
           "finsight_api::commands::categories"
         ],
         "operationId": "set_category_group",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetCategoryGroupRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "Success"
@@ -4608,6 +4964,16 @@
           "finsight_api::commands::categories"
         ],
         "operationId": "set_category_guidance",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetCategoryGuidanceRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "Success"
@@ -4621,6 +4987,16 @@
           "finsight_api::commands::transactions"
         ],
         "operationId": "set_category_spending_type",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetCategorySpendingTypeRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "Success"
@@ -4638,7 +5014,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/CompletionProviderConfig"
+                "$ref": "#/components/schemas/SetCompletionProviderRequest"
               }
             }
           },
@@ -4656,9 +5032,17 @@
         "tags": [
           "finsight_api::commands::transactions"
         ],
-        "summary": "Record the user's 3-way verdict (transfer / settle-up / real spending) on",
-        "description": "a transfer-review counterparty transaction. Sticky: survives re-imports\nand categorizer re-runs.",
         "operationId": "set_counterparty_verdict",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetCounterpartyVerdictRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "",
@@ -4681,9 +5065,9 @@
         "operationId": "set_currency",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/SetCurrencyRequest"
               }
             }
           },
@@ -4706,7 +5090,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/FinancialAssumptionsInput"
+                "$ref": "#/components/schemas/SetFinancialAssumptionsRequest"
               }
             }
           },
@@ -4729,7 +5113,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/FinancialPhilosophyDto"
+                "$ref": "#/components/schemas/SetFinancialPhilosophyRequest"
               }
             }
           },
@@ -4752,7 +5136,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/NotificationPrefsDto"
+                "$ref": "#/components/schemas/SetNotificationPrefsRequest"
               }
             }
           },
@@ -4773,9 +5157,9 @@
         "operationId": "set_notifications_enabled",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "boolean"
+                "$ref": "#/components/schemas/SetNotificationsEnabledRequest"
               }
             }
           },
@@ -4796,9 +5180,9 @@
         "operationId": "set_self_member",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/SetSelfMemberRequest"
               }
             }
           },
@@ -4821,7 +5205,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/SimpleFinSyncSettings"
+                "$ref": "#/components/schemas/SetSimplefinSyncSettingsRequest"
               }
             }
           },
@@ -4840,6 +5224,16 @@
           "finsight_api::commands::spending"
         ],
         "operationId": "set_spending_annotation",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetSpendingAnnotationRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "Success"
@@ -4852,9 +5246,17 @@
         "tags": [
           "finsight_api::commands::recurring"
         ],
-        "summary": "Mark a detected subscription as a free TRIAL converting on `trial_ends_at`",
-        "description": "(`YYYY-MM-DD`), or clear it with `trial_ends_at = None`. `label` is the\ndisplay name captured for the reminder. A heads-up fires shortly before the\ndate (#75).",
         "operationId": "set_subscription_trial",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetSubscriptionTrialRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "Success"
@@ -4867,9 +5269,17 @@
         "tags": [
           "finsight_api::commands::recurring"
         ],
-        "summary": "Set (or clear, with `verdict = None`) the user's confirm/dismiss verdict on a",
-        "description": "detected subscription. `verdict` accepts \"confirmed\" | \"dismissed\"; any other\nvalue (or null) clears it, so a bad string can't corrupt state.",
         "operationId": "set_subscription_verdict",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetSubscriptionVerdictRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "Success"
@@ -4883,6 +5293,16 @@
           "finsight_api::commands::transactions"
         ],
         "operationId": "set_transaction_flags",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetTransactionFlagsRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "",
@@ -4903,6 +5323,16 @@
           "finsight_api::commands::transactions"
         ],
         "operationId": "set_transaction_owner",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetTransactionOwnerRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "Success"
@@ -4916,6 +5346,16 @@
           "finsight_api::commands::transactions"
         ],
         "operationId": "set_transaction_splits",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetTransactionSplitsRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "Success"
@@ -4929,6 +5369,16 @@
           "finsight_api::commands::transactions"
         ],
         "operationId": "set_transaction_transfer",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetTransactionTransferRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "",
@@ -4951,9 +5401,9 @@
         "operationId": "stage_restore_backup",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/StageRestoreBackupRequest"
               }
             }
           },
@@ -4971,14 +5421,22 @@
         "tags": [
           "finsight_api::commands::copilot_chat"
         ],
-        "summary": "Send a message to the Copilot within a conversation.",
-        "description": "1. Persists the user message.\n2. Runs the reasoning engine (deep-mode agent pipeline).\n3. Streams the answer word-by-word via `copilot-stream-frame` frames pushed\nthrough `sink` (a real Tauri window event on desktop, an SSE broadcast on\nfinsight-server).\n4. Persists the assistant message and emits the `Done` frame.\n5. Auto-generates a title for new conversations after the first message.",
         "operationId": "stream_copilot_message",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StreamCopilotMessageRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
                   "type": "string"
                 }
@@ -5019,9 +5477,9 @@
         "operationId": "sync_simplefin_account",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/SyncSimplefinAccountRequest"
               }
             }
           },
@@ -5047,6 +5505,16 @@
           "finsight_api::commands::agent"
         ],
         "operationId": "test_completion_provider",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TestCompletionProviderRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "",
@@ -5067,6 +5535,16 @@
           "finsight_api::commands::transactions"
         ],
         "operationId": "toggle_rule",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ToggleRuleRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "Success"
@@ -5108,9 +5586,9 @@
         "operationId": "trigger_recipe",
         "requestBody": {
           "content": {
-            "text/plain": {
+            "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/TriggerRecipeRequest"
               }
             }
           },
@@ -5120,7 +5598,7 @@
           "200": {
             "description": "",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
                   "type": "string"
                 }
@@ -5136,6 +5614,16 @@
           "finsight_api::commands::accounts"
         ],
         "operationId": "update_account",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAccountRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "",
@@ -5156,6 +5644,16 @@
           "finsight_api::commands::categories"
         ],
         "operationId": "update_category_color",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCategoryColorRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "Success"
@@ -5169,6 +5667,16 @@
           "finsight_api::commands::budget"
         ],
         "operationId": "update_goal_balance",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateGoalBalanceRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "Success"
@@ -5182,6 +5690,16 @@
           "finsight_api::commands::budget"
         ],
         "operationId": "update_goal_monthly",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateGoalMonthlyRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "Success"
@@ -5194,9 +5712,17 @@
         "tags": [
           "finsight_api::commands::budget"
         ],
-        "summary": "Set how much a goal matters and what its date commits the user to.",
-        "description": "The two travel together because neither is meaningful to the planner alone:\na hard deadline on a `someday` goal and a `critical` goal with no date are\nboth coherent, and allocation needs to see the pair to order them.\n\nUnrecognised strings fall back to the neutral defaults rather than erroring\n— this is a preference, and refusing to save a goal over a bad enum value\nwould be a worse outcome than storing \"normal\".",
         "operationId": "update_goal_priority",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateGoalPriorityRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "Success"
@@ -5210,6 +5736,16 @@
           "finsight_api::commands::budget"
         ],
         "operationId": "update_goal_purpose",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateGoalPurposeRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "Success"
@@ -5223,6 +5759,16 @@
           "finsight_api::commands::assets"
         ],
         "operationId": "update_manual_asset",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateManualAssetRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "",
@@ -5243,6 +5789,16 @@
           "finsight_api::commands::planned_transactions"
         ],
         "operationId": "update_planned_transaction",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdatePlannedTransactionRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "",
@@ -5263,6 +5819,16 @@
           "finsight_api::commands::recipes"
         ],
         "operationId": "update_recipe",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateRecipeRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "",
@@ -5283,6 +5849,16 @@
           "finsight_api::commands::transactions"
         ],
         "operationId": "update_transaction",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateTransactionRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "",
@@ -5300,6 +5876,44 @@
   },
   "components": {
     "schemas": {
+      "AcceptCategoryProposalRequest": {
+        "type": "object",
+        "description": "The user agrees with the proposed category. Writes it as if the user had\ntyped it into the transaction-edit drawer — the write is a `source='user'`\ncategorization from this point on, not an unreviewed AI guess.",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        }
+      },
+      "AcceptImportCandidateMatchRequest": {
+        "type": "object",
+        "required": [
+          "candidateId",
+          "transactionId"
+        ],
+        "properties": {
+          "candidateId": {
+            "type": "string"
+          },
+          "transactionId": {
+            "type": "string"
+          }
+        }
+      },
+      "AcceptRuleProposalRequest": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        }
+      },
       "Account": {
         "type": "object",
         "required": [
@@ -5911,6 +6525,17 @@
           "Other"
         ]
       },
+      "AcknowledgeSimplefinAlertRequest": {
+        "type": "object",
+        "required": [
+          "alertId"
+        ],
+        "properties": {
+          "alertId": {
+            "type": "string"
+          }
+        }
+      },
       "ActionItem": {
         "type": "object",
         "description": "A single prioritized action item in the Financial Inbox.",
@@ -5960,6 +6585,51 @@
           },
           "title": {
             "type": "string"
+          }
+        }
+      },
+      "AddCategoryExampleRequest": {
+        "type": "object",
+        "description": "Attach an exemplar description to a category, keyed by the category's\nstable id (so it rides through renames). Idempotent per (category, text).\n\n`source_txn_id` is an optional provenance breadcrumb for an \"add this\ntransaction as an example\" affordance; the example survives that\ntransaction being deleted.",
+        "required": [
+          "categoryId",
+          "exampleText"
+        ],
+        "properties": {
+          "categoryId": {
+            "type": "string"
+          },
+          "exampleText": {
+            "type": "string"
+          },
+          "sourceTxnId": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "AddRestorationLegRequest": {
+        "type": "object",
+        "description": "Attribute money that has gone back into the pot.",
+        "required": [
+          "envelopeId",
+          "amountCents",
+          "notedOn"
+        ],
+        "properties": {
+          "amountCents": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "envelopeId": {
+            "type": "string"
+          },
+          "notedOn": {
+            "type": "string"
+          },
+          "transactionId": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -7774,6 +8444,56 @@
           }
         }
       },
+      "ApplyCounterpartyVerdictToSimilarRequest": {
+        "type": "object",
+        "description": "Apply one counterparty verdict to every undecided transaction matching a\ncounterparty pattern (from [`UnresolvedCounterpartyDto::pattern`] or\n`TransferVerdictResult::similar_pattern`). One decision clears a whole\nperson's e-transfer history from the review list.",
+        "required": [
+          "pattern",
+          "verdict"
+        ],
+        "properties": {
+          "pattern": {
+            "type": "string"
+          },
+          "verdict": {
+            "$ref": "#/components/schemas/CounterpartyVerdict"
+          }
+        }
+      },
+      "ApplyNextMonthPlanRequest": {
+        "type": "object",
+        "description": "Write next month's budget assignments. The server has no native\nnotifications, so this body is purely the budget write.",
+        "required": [
+          "assignments"
+        ],
+        "properties": {
+          "assignments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PlanAssignment"
+            }
+          }
+        }
+      },
+      "ApplyScenarioRequest": {
+        "type": "object",
+        "description": "Apply the approved, applyable changes of a scenario to the active plan (#72).\n\nThe ONLY mechanically-applyable change today is a one-time amount, which\nbecomes a dated planned transaction (part of the plan, shown on `/recurring`).\nIdempotent: the created transaction is tagged with the scenario id, so a\nre-apply detects it and skips rather than duplicating. Aggregate deltas and\ngoal mentions are never written — they remain recommendations. The scenario\nitself is never mutated: applying records a decision, it doesn't consume it.",
+        "required": [
+          "id",
+          "approvedChangeIds"
+        ],
+        "properties": {
+          "approvedChangeIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "id": {
+            "type": "string"
+          }
+        }
+      },
       "ApplyScenarioResult": {
         "type": "object",
         "description": "The outcome of applying approved scenario changes to the plan (#72).",
@@ -7800,6 +8520,95 @@
               "$ref": "#/components/schemas/SkippedChange"
             },
             "description": "Approved-but-not-written changes, with why (unsupported, or already applied)."
+          }
+        }
+      },
+      "ApplyTransferVerdictToSimilarRequest": {
+        "type": "object",
+        "required": [
+          "pattern",
+          "isTransfer"
+        ],
+        "properties": {
+          "isTransfer": {
+            "type": "boolean"
+          },
+          "pattern": {
+            "type": "string"
+          }
+        }
+      },
+      "ApproveActionItemRequest": {
+        "type": "object",
+        "required": [
+          "itemId"
+        ],
+        "properties": {
+          "itemId": {
+            "type": "string"
+          }
+        }
+      },
+      "ArchiveAccountRequest": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        }
+      },
+      "ArchiveCategoryRequest": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        }
+      },
+      "ArchiveGoalRequest": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        }
+      },
+      "ArchiveScenarioRequest": {
+        "type": "object",
+        "required": [
+          "id",
+          "archived"
+        ],
+        "properties": {
+          "archived": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          }
+        }
+      },
+      "AskAgentRequest": {
+        "type": "object",
+        "required": [
+          "question"
+        ],
+        "properties": {
+          "mode": {
+            "type": "string",
+            "nullable": true
+          },
+          "question": {
+            "type": "string"
           }
         }
       },
@@ -8524,6 +9333,29 @@
           }
         }
       },
+      "ClearScenarioRevisionRequest": {
+        "type": "object",
+        "description": "Discard a scenario's revision, reverting to the original assumptions only.",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        }
+      },
+      "CloseAgentSessionRequest": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        }
+      },
       "CloseFlag": {
         "type": "object",
         "description": "A data-quality or subscription-change item to review at close. Mirrors an\nInbox action item (or #58 subscription changes) and carries a route to the\nscreen that resolves it — the close never resolves it inline.",
@@ -8566,6 +9398,18 @@
           }
         }
       },
+      "CloseRestorationEnvelopeRequest": {
+        "type": "object",
+        "description": "Reconcile and finish. The design nags toward this rather than letting\nenvelopes accumulate.",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        }
+      },
       "ColumnRole": {
         "type": "string",
         "enum": [
@@ -8584,6 +9428,20 @@
           "Quantity",
           "UnitPrice"
         ]
+      },
+      "CommitStarterCategoriesRequest": {
+        "type": "object",
+        "required": [
+          "categories"
+        ],
+        "properties": {
+          "categories": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StarterCategory"
+            }
+          }
+        }
       },
       "CompletionProviderConfig": {
         "oneOf": [
@@ -8670,6 +9528,53 @@
         ],
         "discriminator": {
           "propertyName": "kind"
+        }
+      },
+      "ComputeDebtPayoffRequest": {
+        "type": "object",
+        "required": [
+          "extraMonthlyCents"
+        ],
+        "properties": {
+          "extraMonthlyCents": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "ConfirmSimplefinTransferRequest": {
+        "type": "object",
+        "required": [
+          "transferId"
+        ],
+        "properties": {
+          "transferId": {
+            "type": "string"
+          }
+        }
+      },
+      "ContributeToGoalRequest": {
+        "type": "object",
+        "required": [
+          "id",
+          "amountCents"
+        ],
+        "properties": {
+          "amountCents": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "id": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string",
+            "nullable": true
+          },
+          "source": {
+            "type": "string",
+            "nullable": true
+          }
         }
       },
       "ConversationMessage": {
@@ -9334,6 +10239,22 @@
           "propertyName": "type"
         }
       },
+      "CorrectCategoryProposalRequest": {
+        "type": "object",
+        "description": "The user picks a DIFFERENT category than what was proposed.",
+        "required": [
+          "id",
+          "categoryId"
+        ],
+        "properties": {
+          "categoryId": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          }
+        }
+      },
       "CounterpartyVerdict": {
         "type": "string",
         "description": "Serializable mirror of `finsight_core::repos::transactions::Verdict` —\nthe core enum has no serde/specta derives by design (finsight-core has no\nTauri/specta dependency), so this DTO crosses the specta boundary instead.",
@@ -9342,6 +10263,199 @@
           "settleUp",
           "real"
         ]
+      },
+      "CreateAccountRequest": {
+        "type": "object",
+        "required": [
+          "input"
+        ],
+        "properties": {
+          "input": {
+            "$ref": "#/components/schemas/NewAccount"
+          }
+        }
+      },
+      "CreateAgentSessionRequest": {
+        "type": "object",
+        "required": [
+          "title",
+          "taskType"
+        ],
+        "properties": {
+          "taskType": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "CreateCategoryGroupRequest": {
+        "type": "object",
+        "required": [
+          "label"
+        ],
+        "properties": {
+          "hint": {
+            "type": "string",
+            "nullable": true
+          },
+          "label": {
+            "type": "string"
+          }
+        }
+      },
+      "CreateCategoryRequest": {
+        "type": "object",
+        "required": [
+          "label",
+          "color"
+        ],
+        "properties": {
+          "color": {
+            "type": "string"
+          },
+          "groupId": {
+            "type": "string",
+            "nullable": true
+          },
+          "label": {
+            "type": "string"
+          }
+        }
+      },
+      "CreateGoalRequest": {
+        "type": "object",
+        "required": [
+          "input"
+        ],
+        "properties": {
+          "input": {
+            "$ref": "#/components/schemas/NewGoalInput"
+          }
+        }
+      },
+      "CreateHouseholdMemberRequest": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "color": {
+            "type": "string",
+            "nullable": true
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "CreateImportCandidateTransactionRequest": {
+        "type": "object",
+        "required": [
+          "candidateId"
+        ],
+        "properties": {
+          "candidateId": {
+            "type": "string"
+          }
+        }
+      },
+      "CreateManualAssetRequest": {
+        "type": "object",
+        "required": [
+          "input"
+        ],
+        "properties": {
+          "input": {
+            "$ref": "#/components/schemas/NewManualAsset"
+          }
+        }
+      },
+      "CreatePlannedTransactionRequest": {
+        "type": "object",
+        "required": [
+          "input"
+        ],
+        "properties": {
+          "input": {
+            "$ref": "#/components/schemas/NewPlannedTransaction"
+          }
+        }
+      },
+      "CreateRecipeRequest": {
+        "type": "object",
+        "required": [
+          "title",
+          "description",
+          "recipeKind",
+          "promptTemplate",
+          "cadence"
+        ],
+        "properties": {
+          "cadence": {
+            "type": "string"
+          },
+          "dayOfMonth": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "dayOfWeek": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "description": {
+            "type": "string"
+          },
+          "promptTemplate": {
+            "type": "string"
+          },
+          "recipeKind": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "CreateRestorationEnvelopeRequest": {
+        "type": "object",
+        "required": [
+          "input"
+        ],
+        "properties": {
+          "input": {
+            "$ref": "#/components/schemas/RestorationEnvelopeInput"
+          }
+        }
+      },
+      "CreateRuleRequest": {
+        "type": "object",
+        "required": [
+          "pattern",
+          "categoryId"
+        ],
+        "properties": {
+          "categoryId": {
+            "type": "string"
+          },
+          "pattern": {
+            "type": "string"
+          }
+        }
+      },
+      "CreateTransactionRequest": {
+        "type": "object",
+        "required": [
+          "input"
+        ],
+        "properties": {
+          "input": {
+            "$ref": "#/components/schemas/NewTransaction"
+          }
+        }
       },
       "CsvImportMapping": {
         "type": "object",
@@ -9588,6 +10702,142 @@
           }
         }
       },
+      "DeclineRuleProposalRequest": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        }
+      },
+      "DeleteConversationMessagesAfterRequest": {
+        "type": "object",
+        "required": [
+          "conversationId",
+          "messageId"
+        ],
+        "properties": {
+          "conversationId": {
+            "type": "string"
+          },
+          "messageId": {
+            "type": "string"
+          }
+        }
+      },
+      "DeleteConversationRequest": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        }
+      },
+      "DeleteHouseholdMemberRequest": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        }
+      },
+      "DeleteManualAssetRequest": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        }
+      },
+      "DeletePlannedTransactionRequest": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        }
+      },
+      "DeletePushSubscriptionRequest": {
+        "type": "object",
+        "required": [
+          "endpoint"
+        ],
+        "properties": {
+          "endpoint": {
+            "type": "string"
+          }
+        }
+      },
+      "DeleteRecipeRequest": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        }
+      },
+      "DeleteRestorationEnvelopeRequest": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        }
+      },
+      "DeleteScenarioRequest": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        }
+      },
+      "DeleteSimplefinConnectionRequest": {
+        "type": "object",
+        "required": [
+          "connectionId"
+        ],
+        "properties": {
+          "connectionId": {
+            "type": "string"
+          }
+        }
+      },
+      "DeleteTransactionRequest": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        }
+      },
       "DigestFrequency": {
         "type": "string",
         "description": "How often to batch routine notifications into one summary instead of pushing\neach individually (#69).",
@@ -9596,6 +10846,28 @@
           "daily",
           "weekly"
         ]
+      },
+      "DiscardUnfinishedImportRequest": {
+        "type": "object",
+        "required": [
+          "importId"
+        ],
+        "properties": {
+          "importId": {
+            "type": "string"
+          }
+        }
+      },
+      "DismissImportCandidateRequest": {
+        "type": "object",
+        "required": [
+          "candidateId"
+        ],
+        "properties": {
+          "candidateId": {
+            "type": "string"
+          }
+        }
       },
       "Disposition": {
         "type": "string",
@@ -9691,6 +10963,17 @@
           }
         }
       },
+      "DuplicateScenarioRequest": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        }
+      },
       "EditConversationMessageInput": {
         "type": "object",
         "required": [
@@ -9706,6 +10989,28 @@
             "type": "string"
           },
           "messageId": {
+            "type": "string"
+          }
+        }
+      },
+      "EditConversationUserMessageRequest": {
+        "type": "object",
+        "required": [
+          "input"
+        ],
+        "properties": {
+          "input": {
+            "$ref": "#/components/schemas/EditConversationMessageInput"
+          }
+        }
+      },
+      "ExecuteActionBundleRequest": {
+        "type": "object",
+        "required": [
+          "bundleId"
+        ],
+        "properties": {
+          "bundleId": {
             "type": "string"
           }
         }
@@ -9772,6 +11077,64 @@
             "type": "integer",
             "format": "int32",
             "minimum": 0
+          }
+        }
+      },
+      "ExplainFinancialMetricsRequest": {
+        "type": "object",
+        "description": "Structured \"explain this number\" provenance for the decision-driving\ndashboard metrics, optionally scoped to one household member. Every value is\npulled from the same `finsight-core::metrics` layer `get_financial_metrics`\nreads, so an explanation can never disagree with the number shown elsewhere.\nThe single source of truth is shared verbatim with the Copilot's\n`explain_metric` tool.",
+        "properties": {
+          "memberId": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "ExplainScenarioRequest": {
+        "type": "object",
+        "description": "Structured \"explain this scenario\" — the same recomputed projection the\ncomparison shows, described via `provenance::scenario_explanation` (its\nnarrative `considerations` become the tradeoffs, so this can never disagree\nwith the scenario card). A pre-V055 legacy row that can't be recomputed gets\nthe legacy variant: a withheld value with the reason, never a fabricated\nbreakdown.",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        }
+      },
+      "ExportAccountCsvRequest": {
+        "type": "object",
+        "description": "Returns the CSV content for one account's transactions (caller downloads\nit client-side — no server-side file I/O). Real implementation as of\nPhase 4; previously 501'd behind a native-dialog-only Tauri command.",
+        "required": [
+          "accountId"
+        ],
+        "properties": {
+          "accountId": {
+            "type": "string"
+          }
+        }
+      },
+      "ExportSearchTransactionsCsvRequest": {
+        "type": "object",
+        "description": "Re-run the Copilot `search_transactions` query and return the matching\nrows as CSV content (caller downloads it client-side). Shares\n`transactions::search` with the Copilot tool so the exported rows match\nexactly what the card displayed. Real implementation as of Phase 4;\npreviously 501'd behind a native-dialog-only Tauri command.",
+        "required": [
+          "query"
+        ],
+        "properties": {
+          "query": {
+            "$ref": "#/components/schemas/SearchTxnQueryInput"
+          }
+        }
+      },
+      "ExportTransactionsCsvRequest": {
+        "type": "object",
+        "description": "Returns the CSV content for transactions matching a filter (caller\ndownloads it client-side — no server-side file I/O). Real implementation\nas of Phase 4; previously 501'd behind a native-dialog-only Tauri command.",
+        "required": [
+          "filter"
+        ],
+        "properties": {
+          "filter": {
+            "$ref": "#/components/schemas/TxnFilterInput"
           }
         }
       },
@@ -9939,6 +11302,192 @@
           "riskTolerance": {
             "type": "string",
             "description": "\"cautious\" | \"balanced\" | \"aggressive\""
+          }
+        }
+      },
+      "ForgetAgentMemoryRequest": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        }
+      },
+      "GetAccountBalanceTimelineRequest": {
+        "type": "object",
+        "description": "Reconstruct an account's balance curve from its ledger, with the peak and\ntrough over the requested window. `since` is an ISO `YYYY-MM-DD` date; omit\nit for all-time.\n\nUnlike [`list_account_balance_history`], which reads the sparse stored\nsnapshots, this derives every point — so it can answer \"when was this account\nat its highest\" rather than \"which recorded day was highest\".",
+        "required": [
+          "accountId"
+        ],
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "since": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "GetActionBundleRequest": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        }
+      },
+      "GetCashflowForecastRequest": {
+        "type": "object",
+        "description": "Project the liquid balance forward `horizon_days` (default 30, clamped\n7–90), optionally against a safety `buffer_cents` and a hypothetical one-off\noutflow. Returns the daily trajectory, the lowest point, the first day it\nbreaches the buffer, the conservative safe-to-spend, upcoming dated events,\nand data-quality warnings.",
+        "properties": {
+          "bufferCents": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "extraExpenseCents": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "extraExpenseDate": {
+            "type": "string",
+            "nullable": true
+          },
+          "horizonDays": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          }
+        }
+      },
+      "GetConversationMessagesRequest": {
+        "type": "object",
+        "required": [
+          "conversationId"
+        ],
+        "properties": {
+          "conversationId": {
+            "type": "string"
+          }
+        }
+      },
+      "GetFinancialMetricsRequest": {
+        "type": "object",
+        "properties": {
+          "memberId": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "GetInvestmentSummaryRequest": {
+        "type": "object",
+        "required": [
+          "accountId"
+        ],
+        "properties": {
+          "accountId": {
+            "type": "string"
+          }
+        }
+      },
+      "GetMonthCloseRequest": {
+        "type": "object",
+        "description": "The close for a given month: live figures/flags while unopened or in\nprogress; the frozen record (plus drift) once completed.",
+        "required": [
+          "year",
+          "month"
+        ],
+        "properties": {
+          "month": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "year": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "GetPlannedTransactionRequest": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        }
+      },
+      "GetReportDataRequest": {
+        "type": "object",
+        "required": [
+          "scope"
+        ],
+        "properties": {
+          "memberId": {
+            "type": "string",
+            "nullable": true
+          },
+          "scope": {
+            "type": "string"
+          }
+        }
+      },
+      "GetRestorationStatusRequest": {
+        "type": "object",
+        "description": "The three reliable numbers plus the honest ceiling, for one envelope.",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        }
+      },
+      "GetSavedCsvMappingRequest": {
+        "type": "object",
+        "required": [
+          "accountId"
+        ],
+        "properties": {
+          "accountId": {
+            "type": "string"
+          }
+        }
+      },
+      "GetSpendingPathBackRequest": {
+        "type": "object",
+        "properties": {
+          "period": {
+            "type": "string",
+            "nullable": true
+          },
+          "targetMonthlyCents": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          }
+        }
+      },
+      "GetTransactionSplitsRequest": {
+        "type": "object",
+        "required": [
+          "transactionId"
+        ],
+        "properties": {
+          "transactionId": {
+            "type": "string"
           }
         }
       },
@@ -10406,6 +11955,26 @@
           }
         }
       },
+      "ImportCsvRequest": {
+        "type": "object",
+        "description": "Import a CSV file, running the deterministic post-import cascade\n(categorization, transfer pairing, anomaly refresh, net-worth refresh) and\nenqueuing the AI categorizer. Progress and completion are pushed through the\n`sink` (`\"import-progress\"` / `\"import-complete\"`, unchanged event names and\npayload shapes) — the Tauri wrapper feeds a `TauriFrameSink` that emits real\nwindow events, and ALSO fires the desktop \"check_and_fire\" notification\nafter this returns (that notification is native-only and stays in the\nwrapper, not here — see `crates/finsight-bindings/src/commands/import.rs`).",
+        "required": [
+          "path",
+          "accountId",
+          "mapping"
+        ],
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "mapping": {
+            "$ref": "#/components/schemas/CsvImportMapping"
+          },
+          "path": {
+            "type": "string"
+          }
+        }
+      },
       "ImportResult": {
         "type": "object",
         "description": "The import outcome plus what still needs a category. Surfacing the\nuncategorized count (and whether the AI pass was auto-started) makes the\ncloud LLM categorization a visible, informed choice rather than a silent\nbackground enqueue.",
@@ -10440,6 +12009,20 @@
             "type": "integer",
             "format": "int64",
             "description": "Uncategorized non-transfer EXPENSE rows in this account after the builtin\npass — exactly what an AI categorization run would work on."
+          }
+        }
+      },
+      "ImportSimplefinAccountsRequest": {
+        "type": "object",
+        "required": [
+          "accounts"
+        ],
+        "properties": {
+          "accounts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SimpleFinAccountImportRequest"
+            }
           }
         }
       },
@@ -10668,6 +12251,222 @@
           }
         }
       },
+      "ListAccountBalanceHistoryRequest": {
+        "type": "object",
+        "required": [
+          "accountId",
+          "days"
+        ],
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "days": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "ListAccountBalanceSparklinesRequest": {
+        "type": "object",
+        "required": [
+          "days"
+        ],
+        "properties": {
+          "days": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "ListAccountPositionsRequest": {
+        "type": "object",
+        "required": [
+          "accountId"
+        ],
+        "properties": {
+          "accountId": {
+            "type": "string"
+          }
+        }
+      },
+      "ListActionBundlesRequest": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true,
+            "minimum": 0
+          },
+          "sessionId": {
+            "type": "string",
+            "nullable": true
+          },
+          "statusFilter": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "ListBudgetHistoryRequest": {
+        "type": "object",
+        "required": [
+          "months"
+        ],
+        "properties": {
+          "months": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "ListCategoryExamplesRequest": {
+        "type": "object",
+        "description": "Every exemplar for a category, oldest first.\n\nReturns rows for ARCHIVED categories too, mirroring how `list_categories`\nstill returns `guidance` on an archived row — archiving hides examples from\nactive consumers, it does not delete them.",
+        "required": [
+          "categoryId"
+        ],
+        "properties": {
+          "categoryId": {
+            "type": "string"
+          }
+        }
+      },
+      "ListExecutionLogRequest": {
+        "type": "object",
+        "required": [
+          "bundleId"
+        ],
+        "properties": {
+          "bundleId": {
+            "type": "string"
+          }
+        }
+      },
+      "ListGoalContributionsRequest": {
+        "type": "object",
+        "required": [
+          "goalId"
+        ],
+        "properties": {
+          "goalId": {
+            "type": "string"
+          }
+        }
+      },
+      "ListMemberBudgetEnvelopesRequest": {
+        "type": "object",
+        "description": "Budget-vs-actual for the current month, scoped to one household member's\nshare of the spend. The budgets themselves are the household's.",
+        "required": [
+          "memberId"
+        ],
+        "properties": {
+          "memberId": {
+            "type": "string"
+          }
+        }
+      },
+      "ListNetWorthHistoryRequest": {
+        "type": "object",
+        "required": [
+          "days"
+        ],
+        "properties": {
+          "days": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "ListNotificationsRequest": {
+        "type": "object",
+        "description": "The notification history. `includeResolved=false` (default view) shows only\nstill-active items; held (quiet-hours) items appear here too so they're never\nlost, just not pushed.",
+        "properties": {
+          "includeResolved": {
+            "type": "boolean",
+            "nullable": true
+          }
+        }
+      },
+      "ListPlannedTransactionsRequest": {
+        "type": "object",
+        "required": [
+          "filter"
+        ],
+        "properties": {
+          "filter": {
+            "$ref": "#/components/schemas/PlannedTxnFilter"
+          }
+        }
+      },
+      "ListProviderModelsRequest": {
+        "type": "object",
+        "required": [
+          "config"
+        ],
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/CompletionProviderConfig"
+          }
+        }
+      },
+      "ListRecentAgentActivityRequest": {
+        "type": "object",
+        "required": [
+          "limit"
+        ],
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "ListRecipeRunsRequest": {
+        "type": "object",
+        "required": [
+          "recipeId"
+        ],
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true,
+            "minimum": 0
+          },
+          "recipeId": {
+            "type": "string"
+          }
+        }
+      },
+      "ListRecipesRequest": {
+        "type": "object",
+        "required": [
+          "includePaused"
+        ],
+        "properties": {
+          "includePaused": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ListTransactionsRequest": {
+        "type": "object",
+        "required": [
+          "filter"
+        ],
+        "properties": {
+          "filter": {
+            "$ref": "#/components/schemas/TxnFilterInput"
+          }
+        }
+      },
       "LlmProviderConfig": {
         "oneOf": [
           {
@@ -10811,6 +12610,37 @@
             "type": "integer",
             "format": "int64",
             "nullable": true
+          }
+        }
+      },
+      "MarkNotificationReadRequest": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        }
+      },
+      "MarkSubscriptionCancelledRequest": {
+        "type": "object",
+        "description": "Mark a detected subscription CANCELLED as of `cancelled_at` (`YYYY-MM-DD`).\nOngoing price/renewal alerts stop; a charge dated after the cancel date is\nsurfaced as a surprise. `label` names the service in that alert (#75).",
+        "required": [
+          "merchantKey",
+          "label",
+          "cancelledAt"
+        ],
+        "properties": {
+          "cancelledAt": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "merchantKey": {
+            "type": "string"
           }
         }
       },
@@ -12063,6 +13893,17 @@
           }
         }
       },
+      "PauseRecipeRequest": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        }
+      },
       "PeriodAssessment": {
         "type": "object",
         "required": [
@@ -12361,6 +14202,25 @@
           }
         }
       },
+      "PrepareCsvImportRequest": {
+        "type": "object",
+        "required": [
+          "path",
+          "accountId",
+          "mapping"
+        ],
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "mapping": {
+            "$ref": "#/components/schemas/CsvImportMapping"
+          },
+          "path": {
+            "type": "string"
+          }
+        }
+      },
       "PreparedImportPreview": {
         "type": "object",
         "description": "A lightweight, bounded preview of what an import WOULD do — counts + a\ncapped error list + a staleness signature — so the UI can show\n\"N new · D duplicates · R to review\" before the user commits to importing.\nDeliberately excludes per-row decisions: those can number in the\nthousands and must never cross the Tauri IPC boundary wholesale.",
@@ -12404,6 +14264,23 @@
           }
         }
       },
+      "PreviewCsvColumnsRequest": {
+        "type": "object",
+        "required": [
+          "path",
+          "skipHeaderRows"
+        ],
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "skipHeaderRows": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
       "PriceChangeDto": {
         "type": "object",
         "description": "A detected material change in a fixed-price recurring charge's amount (#58).",
@@ -12444,6 +14321,17 @@
           "hide_amounts"
         ]
       },
+      "ProbeOllamaRequest": {
+        "type": "object",
+        "required": [
+          "baseUrl"
+        ],
+        "properties": {
+          "baseUrl": {
+            "type": "string"
+          }
+        }
+      },
       "ProgressPayload": {
         "type": "object",
         "required": [
@@ -12467,6 +14355,22 @@
           }
         }
       },
+      "ProjectGoalGrowthRequest": {
+        "type": "object",
+        "required": [
+          "goalId",
+          "years"
+        ],
+        "properties": {
+          "goalId": {
+            "type": "string"
+          },
+          "years": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
       "ProjectedValue": {
         "type": "object",
         "required": [
@@ -12486,6 +14390,18 @@
           "years": {
             "type": "integer",
             "format": "int32"
+          }
+        }
+      },
+      "PromoteScenarioRequest": {
+        "type": "object",
+        "description": "Promote a scenario into a REVIEWABLE set of proposed plan changes. This\nwrites nothing: it grounds each proposal in the current baseline and hands\nthem back for the user to approve and apply themselves.",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
           }
         }
       },
@@ -12808,6 +14724,78 @@
           }
         }
       },
+      "RejectActionItemRequest": {
+        "type": "object",
+        "required": [
+          "itemId"
+        ],
+        "properties": {
+          "itemId": {
+            "type": "string"
+          }
+        }
+      },
+      "RejectCategoryProposalRequest": {
+        "type": "object",
+        "description": "The user dismisses the proposal without providing a replacement category.\nCanonical `transactions.category_id` is left untouched (it already holds\nthe LLM's applied guess) — this only removes the item from the review\nqueue.",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        }
+      },
+      "RejectSimplefinTransferRequest": {
+        "type": "object",
+        "required": [
+          "transferId"
+        ],
+        "properties": {
+          "transferId": {
+            "type": "string"
+          }
+        }
+      },
+      "RemoveCategoryExampleRequest": {
+        "type": "object",
+        "description": "Remove one exemplar by its own id. No-op if it's already gone.",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        }
+      },
+      "RemoveRestorationLegRequest": {
+        "type": "object",
+        "required": [
+          "legId"
+        ],
+        "properties": {
+          "legId": {
+            "type": "string"
+          }
+        }
+      },
+      "RenameCategoryRequest": {
+        "type": "object",
+        "required": [
+          "id",
+          "label"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          }
+        }
+      },
       "ReportData": {
         "type": "object",
         "required": [
@@ -13021,6 +15009,33 @@
           }
         }
       },
+      "ResumeRecipeRequest": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        }
+      },
+      "ReviseScenarioRequest": {
+        "type": "object",
+        "description": "Revise a saved scenario's assumptions (issue #73). Stores a second set of\nwhat-if params alongside the immutable original; the returned detail carries\nthe recalculated `revised_result` next to the original and current results.\nNever touches the active plan, and never overwrites the original params.",
+        "required": [
+          "id",
+          "params"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "params": {
+            "$ref": "#/components/schemas/ScenarioParamsInput"
+          }
+        }
+      },
       "RowError": {
         "type": "object",
         "required": [
@@ -13149,6 +15164,42 @@
           }
         }
       },
+      "RunScenarioRequest": {
+        "type": "object",
+        "required": [
+          "description",
+          "months"
+        ],
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "months": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "params": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ScenarioParamsInput"
+              }
+            ],
+            "nullable": true
+          }
+        }
+      },
+      "SaveLlmProviderRequest": {
+        "type": "object",
+        "required": [
+          "config"
+        ],
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/LlmProviderConfig"
+          }
+        }
+      },
       "SaveMonthCloseInput": {
         "type": "object",
         "required": [
@@ -13179,6 +15230,89 @@
           "year": {
             "type": "integer",
             "format": "int32"
+          }
+        }
+      },
+      "SaveMonthCloseRequest": {
+        "type": "object",
+        "description": "Advance the close lifecycle. `completed` freezes the snapshot, baseline, and\nacknowledged flags; `in_progress`/`skipped` only move status + notes and\nleave any prior frozen record intact (reopen keeps history; re-completing\nre-freezes explicitly).",
+        "required": [
+          "input"
+        ],
+        "properties": {
+          "input": {
+            "$ref": "#/components/schemas/SaveMonthCloseInput"
+          }
+        }
+      },
+      "SaveProviderApiKeyRequest": {
+        "type": "object",
+        "required": [
+          "providerId",
+          "key"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "providerId": {
+            "type": "string"
+          }
+        }
+      },
+      "SavePushSubscriptionRequest": {
+        "type": "object",
+        "required": [
+          "endpoint",
+          "p256dh",
+          "auth"
+        ],
+        "properties": {
+          "auth": {
+            "type": "string"
+          },
+          "endpoint": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string",
+            "nullable": true
+          },
+          "p256dh": {
+            "type": "string"
+          }
+        }
+      },
+      "SaveScenarioRequest": {
+        "type": "object",
+        "description": "Save a scenario durably: capture the current baseline, re-project the params\nagainst it, and store params + baseline + result together so the scenario\ncan later be recomputed, compared, and checked for staleness.",
+        "required": [
+          "description",
+          "params",
+          "months"
+        ],
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "months": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "params": {
+            "$ref": "#/components/schemas/ScenarioParamsInput"
+          }
+        }
+      },
+      "SaveSimplefinSetupTokenRequest": {
+        "type": "object",
+        "required": [
+          "token"
+        ],
+        "properties": {
+          "token": {
+            "type": "string"
           }
         }
       },
@@ -13456,6 +15590,409 @@
           "tickerSymbol": {
             "type": "string",
             "nullable": true
+          }
+        }
+      },
+      "SendPushForDbRequest": {
+        "type": "object",
+        "description": "See `vapid_keypair_for_db` — the `Db`-only entry point, for the background\nscheduler.",
+        "required": [
+          "payload"
+        ],
+        "properties": {
+          "payload": {
+            "$ref": "#/components/schemas/PushPayload"
+          }
+        }
+      },
+      "SendPushRequest": {
+        "type": "object",
+        "description": "Deliver `payload` to every device this user registered.\n\nNever returns Err for a per-device failure: one dead subscription must not\nabort delivery to the user's other devices, so failures are counted in the\nreport instead. A 404/410 from the push service means the subscription is\npermanently gone, and the row is deleted — otherwise every future send\nretries a device that will never come back.",
+        "required": [
+          "payload"
+        ],
+        "properties": {
+          "payload": {
+            "$ref": "#/components/schemas/PushPayload"
+          }
+        }
+      },
+      "SetAccountBalanceRequest": {
+        "type": "object",
+        "required": [
+          "id",
+          "balanceCents"
+        ],
+        "properties": {
+          "balanceCents": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "id": {
+            "type": "string"
+          }
+        }
+      },
+      "SetAccountOwnerSharesRequest": {
+        "type": "object",
+        "required": [
+          "accountId",
+          "owners"
+        ],
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "owners": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OwnerShare"
+            }
+          }
+        }
+      },
+      "SetAccountOwnersRequest": {
+        "type": "object",
+        "required": [
+          "accountId",
+          "memberIds"
+        ],
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "memberIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "SetAnomalyDismissedRequest": {
+        "type": "object",
+        "required": [
+          "txnId",
+          "dismissed"
+        ],
+        "properties": {
+          "dismissed": {
+            "type": "boolean"
+          },
+          "txnId": {
+            "type": "string"
+          }
+        }
+      },
+      "SetAssetOwnersRequest": {
+        "type": "object",
+        "required": [
+          "assetId",
+          "owners"
+        ],
+        "properties": {
+          "assetId": {
+            "type": "string"
+          },
+          "owners": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OwnerShare"
+            }
+          }
+        }
+      },
+      "SetAutoCategorizeEnabledRequest": {
+        "type": "object",
+        "required": [
+          "enabled"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          }
+        }
+      },
+      "SetBudgetRequest": {
+        "type": "object",
+        "required": [
+          "categoryId",
+          "amountCents"
+        ],
+        "properties": {
+          "amountCents": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "categoryId": {
+            "type": "string"
+          }
+        }
+      },
+      "SetCategoryGroupRequest": {
+        "type": "object",
+        "required": [
+          "categoryId",
+          "groupId"
+        ],
+        "properties": {
+          "categoryId": {
+            "type": "string"
+          },
+          "groupId": {
+            "type": "string"
+          }
+        }
+      },
+      "SetCategoryGuidanceRequest": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "guidance": {
+            "type": "string",
+            "nullable": true
+          },
+          "id": {
+            "type": "string"
+          }
+        }
+      },
+      "SetCategorySpendingTypeRequest": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "spendingType": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "SetCompletionProviderRequest": {
+        "type": "object",
+        "required": [
+          "config"
+        ],
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/CompletionProviderConfig"
+          }
+        }
+      },
+      "SetCounterpartyVerdictRequest": {
+        "type": "object",
+        "description": "Record the user's 3-way verdict (transfer / settle-up / real spending) on\na transfer-review counterparty transaction. Sticky: survives re-imports\nand categorizer re-runs.",
+        "required": [
+          "id",
+          "verdict"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "verdict": {
+            "$ref": "#/components/schemas/CounterpartyVerdict"
+          }
+        }
+      },
+      "SetCurrencyRequest": {
+        "type": "object",
+        "required": [
+          "currency"
+        ],
+        "properties": {
+          "currency": {
+            "type": "string"
+          }
+        }
+      },
+      "SetFinancialAssumptionsRequest": {
+        "type": "object",
+        "required": [
+          "input"
+        ],
+        "properties": {
+          "input": {
+            "$ref": "#/components/schemas/FinancialAssumptionsInput"
+          }
+        }
+      },
+      "SetFinancialPhilosophyRequest": {
+        "type": "object",
+        "required": [
+          "input"
+        ],
+        "properties": {
+          "input": {
+            "$ref": "#/components/schemas/FinancialPhilosophyDto"
+          }
+        }
+      },
+      "SetNotificationPrefsRequest": {
+        "type": "object",
+        "required": [
+          "prefs"
+        ],
+        "properties": {
+          "prefs": {
+            "$ref": "#/components/schemas/NotificationPrefsDto"
+          }
+        }
+      },
+      "SetNotificationsEnabledRequest": {
+        "type": "object",
+        "required": [
+          "enabled"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          }
+        }
+      },
+      "SetSelfMemberRequest": {
+        "type": "object",
+        "required": [
+          "memberId"
+        ],
+        "properties": {
+          "memberId": {
+            "type": "string"
+          }
+        }
+      },
+      "SetSimplefinSyncSettingsRequest": {
+        "type": "object",
+        "required": [
+          "settings"
+        ],
+        "properties": {
+          "settings": {
+            "$ref": "#/components/schemas/SimpleFinSyncSettings"
+          }
+        }
+      },
+      "SetSpendingAnnotationRequest": {
+        "type": "object",
+        "required": [
+          "merchantKey",
+          "verdict"
+        ],
+        "properties": {
+          "merchantKey": {
+            "type": "string"
+          },
+          "verdict": {
+            "type": "string"
+          }
+        }
+      },
+      "SetSubscriptionTrialRequest": {
+        "type": "object",
+        "description": "Mark a detected subscription as a free TRIAL converting on `trial_ends_at`\n(`YYYY-MM-DD`), or clear it with `trial_ends_at = None`. `label` is the\ndisplay name captured for the reminder. A heads-up fires shortly before the\ndate (#75).",
+        "required": [
+          "merchantKey",
+          "label"
+        ],
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "merchantKey": {
+            "type": "string"
+          },
+          "trialEndsAt": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "SetSubscriptionVerdictRequest": {
+        "type": "object",
+        "description": "Set (or clear, with `verdict = None`) the user's confirm/dismiss verdict on a\ndetected subscription. `verdict` accepts \"confirmed\" | \"dismissed\"; any other\nvalue (or null) clears it, so a bad string can't corrupt state.",
+        "required": [
+          "merchantKey"
+        ],
+        "properties": {
+          "merchantKey": {
+            "type": "string"
+          },
+          "verdict": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "SetTransactionFlagsRequest": {
+        "type": "object",
+        "required": [
+          "id",
+          "isReimbursable",
+          "isSplit"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "isReimbursable": {
+            "type": "boolean"
+          },
+          "isSplit": {
+            "type": "boolean"
+          }
+        }
+      },
+      "SetTransactionOwnerRequest": {
+        "type": "object",
+        "required": [
+          "transactionId"
+        ],
+        "properties": {
+          "memberId": {
+            "type": "string",
+            "nullable": true
+          },
+          "transactionId": {
+            "type": "string"
+          }
+        }
+      },
+      "SetTransactionSplitsRequest": {
+        "type": "object",
+        "required": [
+          "transactionId",
+          "splits"
+        ],
+        "properties": {
+          "splits": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SplitInputDto"
+            }
+          },
+          "transactionId": {
+            "type": "string"
+          }
+        }
+      },
+      "SetTransactionTransferRequest": {
+        "type": "object",
+        "required": [
+          "id",
+          "isTransfer"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "isTransfer": {
+            "type": "boolean"
           }
         }
       },
@@ -13872,6 +16409,17 @@
           }
         }
       },
+      "StageRestoreBackupRequest": {
+        "type": "object",
+        "required": [
+          "path"
+        ],
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        }
+      },
       "StarterCategory": {
         "type": "object",
         "required": [
@@ -13891,6 +16439,37 @@
             "type": "string"
           },
           "label": {
+            "type": "string"
+          }
+        }
+      },
+      "StreamCopilotMessageRequest": {
+        "type": "object",
+        "description": "Send a message to the Copilot within a conversation.\n\n1. Persists the user message.\n2. Runs the reasoning engine (deep-mode agent pipeline).\n3. Streams the answer word-by-word via `copilot-stream-frame` frames pushed\nthrough `sink` (a real Tauri window event on desktop, an SSE broadcast on\nfinsight-server).\n4. Persists the assistant message and emits the `Done` frame.\n5. Auto-generates a title for new conversations after the first message.",
+        "required": [
+          "conversationId",
+          "runId",
+          "text",
+          "history"
+        ],
+        "properties": {
+          "conversationId": {
+            "type": "string"
+          },
+          "history": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChatHistoryEntry"
+            }
+          },
+          "runId": {
+            "type": "string"
+          },
+          "sourceMessageId": {
+            "type": "string",
+            "nullable": true
+          },
+          "text": {
             "type": "string"
           }
         }
@@ -13963,6 +16542,17 @@
           }
         }
       },
+      "SyncSimplefinAccountRequest": {
+        "type": "object",
+        "required": [
+          "accountId"
+        ],
+        "properties": {
+          "accountId": {
+            "type": "string"
+          }
+        }
+      },
       "SyncSummary": {
         "type": "object",
         "required": [
@@ -13987,6 +16577,36 @@
           "updated": {
             "type": "integer",
             "minimum": 0
+          }
+        }
+      },
+      "TestCompletionProviderRequest": {
+        "type": "object",
+        "required": [
+          "config"
+        ],
+        "properties": {
+          "apiKey": {
+            "type": "string",
+            "nullable": true
+          },
+          "config": {
+            "$ref": "#/components/schemas/CompletionProviderConfig"
+          }
+        }
+      },
+      "ToggleRuleRequest": {
+        "type": "object",
+        "required": [
+          "id",
+          "enabled"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
           }
         }
       },
@@ -14291,6 +16911,17 @@
           }
         }
       },
+      "TriggerRecipeRequest": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        }
+      },
       "TxnActivity": {
         "type": "object",
         "description": "Investment/activity metadata parsed from brokerage CSV exports\n(Wealthsimple et al). Stored provider-verbatim in the six V048 columns;\n`categorize::activity_implies_transfer` decides which activity types are\ninternal moves (Trade, MoneyMovement) vs real income/expense.",
@@ -14444,6 +17075,185 @@
           "txnCount": {
             "type": "integer",
             "format": "int64"
+          }
+        }
+      },
+      "UpdateAccountRequest": {
+        "type": "object",
+        "required": [
+          "id",
+          "patch"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "patch": {
+            "$ref": "#/components/schemas/AccountPatch"
+          }
+        }
+      },
+      "UpdateCategoryColorRequest": {
+        "type": "object",
+        "required": [
+          "id",
+          "color"
+        ],
+        "properties": {
+          "color": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          }
+        }
+      },
+      "UpdateGoalBalanceRequest": {
+        "type": "object",
+        "required": [
+          "id",
+          "currentCents"
+        ],
+        "properties": {
+          "currentCents": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "id": {
+            "type": "string"
+          }
+        }
+      },
+      "UpdateGoalMonthlyRequest": {
+        "type": "object",
+        "required": [
+          "id",
+          "monthlyCents"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "monthlyCents": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "UpdateGoalPriorityRequest": {
+        "type": "object",
+        "description": "Set how much a goal matters and what its date commits the user to.\n\nThe two travel together because neither is meaningful to the planner alone:\na hard deadline on a `someday` goal and a `critical` goal with no date are\nboth coherent, and allocation needs to see the pair to order them.\n\nUnrecognised strings fall back to the neutral defaults rather than erroring\n— this is a preference, and refusing to save a goal over a bad enum value\nwould be a worse outcome than storing \"normal\".",
+        "required": [
+          "id",
+          "priority",
+          "deadlineStrictness"
+        ],
+        "properties": {
+          "deadlineStrictness": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "string"
+          }
+        }
+      },
+      "UpdateGoalPurposeRequest": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "purpose": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "UpdateManualAssetRequest": {
+        "type": "object",
+        "required": [
+          "id",
+          "patch"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "patch": {
+            "$ref": "#/components/schemas/ManualAssetPatch"
+          }
+        }
+      },
+      "UpdatePlannedTransactionRequest": {
+        "type": "object",
+        "required": [
+          "id",
+          "patch"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "patch": {
+            "$ref": "#/components/schemas/PlannedTransactionPatch"
+          }
+        }
+      },
+      "UpdateRecipeRequest": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "description",
+          "promptTemplate",
+          "cadence"
+        ],
+        "properties": {
+          "cadence": {
+            "type": "string"
+          },
+          "dayOfMonth": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "dayOfWeek": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "description": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "promptTemplate": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "UpdateTransactionRequest": {
+        "type": "object",
+        "required": [
+          "id",
+          "patch"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "patch": {
+            "$ref": "#/components/schemas/TxnPatch"
           }
         }
       },

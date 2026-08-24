@@ -13,11 +13,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * The user agrees with the proposed category. Writes it as if the user had
-         * @description typed it into the transaction-edit drawer — the write is a `source='user'`
-         *     categorization from this point on, not an unreviewed AI guess.
-         */
         post: operations["accept_category_proposal"];
         delete?: never;
         options?: never;
@@ -82,14 +77,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * Attach an exemplar description to a category, keyed by the category's
-         * @description stable id (so it rides through renames). Idempotent per (category, text).
-         *
-         *     `source_txn_id` is an optional provenance breadcrumb for an "add this
-         *     transaction as an example" affordance; the example survives that
-         *     transaction being deleted.
-         */
         post: operations["add_category_example"];
         delete?: never;
         options?: never;
@@ -106,7 +93,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Attribute money that has gone back into the pot. */
         post: operations["add_restoration_leg"];
         delete?: never;
         options?: never;
@@ -139,12 +125,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * Apply one counterparty verdict to every undecided transaction matching a
-         * @description counterparty pattern (from [`UnresolvedCounterpartyDto::pattern`] or
-         *     `TransferVerdictResult::similar_pattern`). One decision clears a whole
-         *     person's e-transfer history from the review list.
-         */
         post: operations["apply_counterparty_verdict_to_similar"];
         delete?: never;
         options?: never;
@@ -161,12 +141,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * Write next month's budget assignments. The Tauri wrapper additionally fires
-         * @description a best-effort desktop notification after this returns (see
-         *     `crates/finsight-bindings/src/commands/budget.rs`); the server has no native
-         *     notifications in Phase 1, so this body is purely the budget write.
-         */
         post: operations["apply_next_month_plan"];
         delete?: never;
         options?: never;
@@ -183,15 +157,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * Apply the approved, applyable changes of a scenario to the active plan (#72).
-         * @description The ONLY mechanically-applyable change today is a one-time amount, which
-         *     becomes a dated planned transaction (part of the plan, shown on `/recurring`).
-         *     Idempotent: the created transaction is tagged with the scenario id, so a
-         *     re-apply detects it and skips rather than duplicating. Aggregate deltas and
-         *     goal mentions are never written — they remain recommendations. The scenario
-         *     itself is never mutated: applying records a decision, it doesn't consume it.
-         */
         post: operations["apply_scenario"];
         delete?: never;
         options?: never;
@@ -336,7 +301,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Discard a scenario's revision, reverting to the original assumptions only. */
         post: operations["clear_scenario_revision"];
         delete?: never;
         options?: never;
@@ -369,10 +333,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * Reconcile and finish. The design nags toward this rather than letting
-         * @description envelopes accumulate.
-         */
         post: operations["close_restoration_envelope"];
         delete?: never;
         options?: never;
@@ -453,7 +413,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** The user picks a DIFFERENT category than what was proposed. */
         post: operations["correct_category_proposal"];
         delete?: never;
         options?: never;
@@ -1014,14 +973,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * Structured "explain this number" provenance for the decision-driving
-         * @description dashboard metrics, optionally scoped to one household member. Every value is
-         *     pulled from the same `finsight-core::metrics` layer `get_financial_metrics`
-         *     reads, so an explanation can never disagree with the number shown elsewhere.
-         *     The single source of truth is shared verbatim with the Copilot's
-         *     `explain_metric` tool.
-         */
         post: operations["explain_financial_metrics"];
         delete?: never;
         options?: never;
@@ -1065,14 +1016,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * Structured "explain this scenario" — the same recomputed projection the
-         * @description comparison shows, described via `provenance::scenario_explanation` (its
-         *     narrative `considerations` become the tradeoffs, so this can never disagree
-         *     with the scenario card). A pre-V055 legacy row that can't be recomputed gets
-         *     the legacy variant: a withheld value with the reason, never a fabricated
-         *     breakdown.
-         */
         post: operations["explain_scenario"];
         delete?: never;
         options?: never;
@@ -1089,11 +1032,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * Returns the CSV content for one account's transactions (caller downloads
-         * @description it client-side — no server-side file I/O). Real implementation as of
-         *     Phase 4; previously 501'd behind a native-dialog-only Tauri command.
-         */
         post: operations["export_account_csv"];
         delete?: never;
         options?: never;
@@ -1144,13 +1082,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * Re-run the Copilot `search_transactions` query and return the matching
-         * @description rows as CSV content (caller downloads it client-side). Shares
-         *     `transactions::search` with the Copilot tool so the exported rows match
-         *     exactly what the card displayed. Real implementation as of Phase 4;
-         *     previously 501'd behind a native-dialog-only Tauri command.
-         */
         post: operations["export_search_transactions_csv"];
         delete?: never;
         options?: never;
@@ -1167,11 +1098,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * Returns the CSV content for transactions matching a filter (caller
-         * @description downloads it client-side — no server-side file I/O). Real implementation
-         *     as of Phase 4; previously 501'd behind a native-dialog-only Tauri command.
-         */
         post: operations["export_transactions_csv"];
         delete?: never;
         options?: never;
@@ -1204,15 +1130,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * Reconstruct an account's balance curve from its ledger, with the peak and
-         * @description trough over the requested window. `since` is an ISO `YYYY-MM-DD` date; omit
-         *     it for all-time.
-         *
-         *     Unlike [`list_account_balance_history`], which reads the sparse stored
-         *     snapshots, this derives every point — so it can answer "when was this account
-         *     at its highest" rather than "which recorded day was highest".
-         */
         post: operations["get_account_balance_timeline"];
         delete?: never;
         options?: never;
@@ -1293,13 +1210,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * Project the liquid balance forward `horizon_days` (default 30, clamped
-         * @description 7–90), optionally against a safety `buffer_cents` and a hypothetical one-off
-         *     outflow. Returns the daily trajectory, the lowest point, the first day it
-         *     breaches the buffer, the conservative safe-to-spend, upcoming dated events,
-         *     and data-quality warnings.
-         */
         post: operations["get_cashflow_forecast"];
         delete?: never;
         options?: never;
@@ -1490,10 +1400,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * The close for a given month: live figures/flags while unopened or in
-         * @description progress; the frozen record (plus drift) once completed.
-         */
         post: operations["get_month_close"];
         delete?: never;
         options?: never;
@@ -1654,7 +1560,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** The three reliable numbers plus the honest ceiling, for one envelope. */
         post: operations["get_restoration_status"];
         delete?: never;
         options?: never;
@@ -1831,16 +1736,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * Import a CSV file, running the deterministic post-import cascade
-         * @description (categorization, transfer pairing, anomaly refresh, net-worth refresh) and
-         *     enqueuing the AI categorizer. Progress and completion are pushed through the
-         *     `sink` (`"import-progress"` / `"import-complete"`, unchanged event names and
-         *     payload shapes) — the Tauri wrapper feeds a `TauriFrameSink` that emits real
-         *     window events, and ALSO fires the desktop "check_and_fire" notification
-         *     after this returns (that notification is native-only and stays in the
-         *     wrapper, not here — see `crates/finsight-bindings/src/commands/import.rs`).
-         */
         post: operations["import_csv"];
         delete?: never;
         options?: never;
@@ -2081,12 +1976,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * Every exemplar for a category, oldest first.
-         * @description Returns rows for ARCHIVED categories too, mirroring how `list_categories`
-         *     still returns `guidance` on an archived row — archiving hides examples from
-         *     active consumers, it does not delete them.
-         */
         post: operations["list_category_examples"];
         delete?: never;
         options?: never;
@@ -2248,10 +2137,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * Budget-vs-actual for the current month, scoped to one household member's
-         * @description share of the spend. The budgets themselves are the household's.
-         */
         post: operations["list_member_budget_envelopes"];
         delete?: never;
         options?: never;
@@ -2304,11 +2189,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * The notification history. `includeResolved=false` (default view) shows only
-         * @description still-active items; held (quiet-hours) items appear here too so they're never
-         *     lost, just not pushed.
-         */
         post: operations["list_notifications"];
         delete?: never;
         options?: never;
@@ -2669,11 +2549,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * Mark a detected subscription CANCELLED as of `cancelled_at` (`YYYY-MM-DD`).
-         * @description Ongoing price/renewal alerts stop; a charge dated after the cancel date is
-         *     surfaced as a surprise. `label` names the service in that alert (#75).
-         */
         post: operations["mark_subscription_cancelled"];
         delete?: never;
         options?: never;
@@ -2787,11 +2662,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * Promote a scenario into a REVIEWABLE set of proposed plan changes. This
-         * @description writes nothing: it grounds each proposal in the current baseline and hands
-         *     them back for the user to approve and apply themselves.
-         */
         post: operations["promote_scenario"];
         delete?: never;
         options?: never;
@@ -2889,12 +2759,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * The user dismisses the proposal without providing a replacement category.
-         * @description Canonical `transactions.category_id` is left untouched (it already holds
-         *     the LLM's applied guess) — this only removes the item from the review
-         *     queue.
-         */
         post: operations["reject_category_proposal"];
         delete?: never;
         options?: never;
@@ -2927,7 +2791,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Remove one exemplar by its own id. No-op if it's already gone. */
         post: operations["remove_category_example"];
         delete?: never;
         options?: never;
@@ -3008,12 +2871,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * Revise a saved scenario's assumptions (issue #73). Stores a second set of
-         * @description what-if params alongside the immutable original; the returned detail carries
-         *     the recalculated `revised_result` next to the original and current results.
-         *     Never touches the active plan, and never overwrites the original params.
-         */
         post: operations["revise_scenario"];
         delete?: never;
         options?: never;
@@ -3062,12 +2919,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * Advance the close lifecycle. `completed` freezes the snapshot, baseline, and
-         * @description acknowledged flags; `in_progress`/`skipped` only move status + notes and
-         *     leave any prior frozen record intact (reopen keeps history; re-completing
-         *     re-freezes explicitly).
-         */
         post: operations["save_month_close"];
         delete?: never;
         options?: never;
@@ -3116,11 +2967,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * Save a scenario durably: capture the current baseline, re-project the params
-         * @description against it, and store params + baseline + result together so the scenario
-         *     can later be recomputed, compared, and checked for staleness.
-         */
         post: operations["save_scenario"];
         delete?: never;
         options?: never;
@@ -3351,11 +3197,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * Record the user's 3-way verdict (transfer / settle-up / real spending) on
-         * @description a transfer-review counterparty transaction. Sticky: survives re-imports
-         *     and categorizer re-runs.
-         */
         post: operations["set_counterparty_verdict"];
         delete?: never;
         options?: never;
@@ -3500,12 +3341,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * Mark a detected subscription as a free TRIAL converting on `trial_ends_at`
-         * @description (`YYYY-MM-DD`), or clear it with `trial_ends_at = None`. `label` is the
-         *     display name captured for the reminder. A heads-up fires shortly before the
-         *     date (#75).
-         */
         post: operations["set_subscription_trial"];
         delete?: never;
         options?: never;
@@ -3522,11 +3357,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * Set (or clear, with `verdict = None`) the user's confirm/dismiss verdict on a
-         * @description detected subscription. `verdict` accepts "confirmed" | "dismissed"; any other
-         *     value (or null) clears it, so a bad string can't corrupt state.
-         */
         post: operations["set_subscription_verdict"];
         delete?: never;
         options?: never;
@@ -3623,16 +3453,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * Send a message to the Copilot within a conversation.
-         * @description 1. Persists the user message.
-         *     2. Runs the reasoning engine (deep-mode agent pipeline).
-         *     3. Streams the answer word-by-word via `copilot-stream-frame` frames pushed
-         *     through `sink` (a real Tauri window event on desktop, an SSE broadcast on
-         *     finsight-server).
-         *     4. Persists the assistant message and emits the `Done` frame.
-         *     5. Auto-generates a title for new conversations after the first message.
-         */
         post: operations["stream_copilot_message"];
         delete?: never;
         options?: never;
@@ -3825,16 +3645,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * Set how much a goal matters and what its date commits the user to.
-         * @description The two travel together because neither is meaningful to the planner alone:
-         *     a hard deadline on a `someday` goal and a `critical` goal with no date are
-         *     both coherent, and allocation needs to see the pair to order them.
-         *
-         *     Unrecognised strings fall back to the neutral defaults rather than erroring
-         *     — this is a preference, and refusing to save a goal over a bad enum value
-         *     would be a worse outcome than storing "normal".
-         */
         post: operations["update_goal_priority"];
         delete?: never;
         options?: never;
@@ -3926,6 +3736,21 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * @description The user agrees with the proposed category. Writes it as if the user had
+         *     typed it into the transaction-edit drawer — the write is a `source='user'`
+         *     categorization from this point on, not an unreviewed AI guess.
+         */
+        AcceptCategoryProposalRequest: {
+            id: string;
+        };
+        AcceptImportCandidateMatchRequest: {
+            candidateId: string;
+            transactionId: string;
+        };
+        AcceptRuleProposalRequest: {
+            id: string;
+        };
         Account: {
             account_group: string;
             /**
@@ -4153,6 +3978,9 @@ export interface components {
         };
         /** @enum {string} */
         AccountType: "Checking" | "Savings" | "Credit" | "Investment" | "Cash" | "Loan" | "Other";
+        AcknowledgeSimplefinAlertRequest: {
+            alertId: string;
+        };
         /** @description A single prioritized action item in the Financial Inbox. */
         ActionItem: {
             actionLabel: string;
@@ -4176,6 +4004,27 @@ export interface components {
             /** @description "high" | "medium" | "low" */
             priority: string;
             title: string;
+        };
+        /**
+         * @description Attach an exemplar description to a category, keyed by the category's
+         *     stable id (so it rides through renames). Idempotent per (category, text).
+         *
+         *     `source_txn_id` is an optional provenance breadcrumb for an "add this
+         *     transaction as an example" affordance; the example survives that
+         *     transaction being deleted.
+         */
+        AddCategoryExampleRequest: {
+            categoryId: string;
+            exampleText: string;
+            sourceTxnId?: string | null;
+        };
+        /** @description Attribute money that has gone back into the pot. */
+        AddRestorationLegRequest: {
+            /** Format: int64 */
+            amountCents: number;
+            envelopeId: string;
+            notedOn: string;
+            transactionId?: string | null;
         };
         AgentAccountRow: {
             /**
@@ -4705,6 +4554,37 @@ export interface components {
         AppReady: {
             version: string;
         };
+        /**
+         * @description Apply one counterparty verdict to every undecided transaction matching a
+         *     counterparty pattern (from [`UnresolvedCounterpartyDto::pattern`] or
+         *     `TransferVerdictResult::similar_pattern`). One decision clears a whole
+         *     person's e-transfer history from the review list.
+         */
+        ApplyCounterpartyVerdictToSimilarRequest: {
+            pattern: string;
+            verdict: components["schemas"]["CounterpartyVerdict"];
+        };
+        /**
+         * @description Write next month's budget assignments. The server has no native
+         *     notifications, so this body is purely the budget write.
+         */
+        ApplyNextMonthPlanRequest: {
+            assignments: components["schemas"]["PlanAssignment"][];
+        };
+        /**
+         * @description Apply the approved, applyable changes of a scenario to the active plan (#72).
+         *
+         *     The ONLY mechanically-applyable change today is a one-time amount, which
+         *     becomes a dated planned transaction (part of the plan, shown on `/recurring`).
+         *     Idempotent: the created transaction is tagged with the scenario id, so a
+         *     re-apply detects it and skips rather than duplicating. Aggregate deltas and
+         *     goal mentions are never written — they remain recommendations. The scenario
+         *     itself is never mutated: applying records a decision, it doesn't consume it.
+         */
+        ApplyScenarioRequest: {
+            approvedChangeIds: string[];
+            id: string;
+        };
         /** @description The outcome of applying approved scenario changes to the plan (#72). */
         ApplyScenarioResult: {
             /** @description Changes written to the plan (a planned transaction was created). */
@@ -4713,6 +4593,30 @@ export interface components {
             note: string;
             /** @description Approved-but-not-written changes, with why (unsupported, or already applied). */
             skipped: components["schemas"]["SkippedChange"][];
+        };
+        ApplyTransferVerdictToSimilarRequest: {
+            isTransfer: boolean;
+            pattern: string;
+        };
+        ApproveActionItemRequest: {
+            itemId: string;
+        };
+        ArchiveAccountRequest: {
+            id: string;
+        };
+        ArchiveCategoryRequest: {
+            id: string;
+        };
+        ArchiveGoalRequest: {
+            id: string;
+        };
+        ArchiveScenarioRequest: {
+            archived: boolean;
+            id: string;
+        };
+        AskAgentRequest: {
+            mode?: string | null;
+            question: string;
         };
         /**
          * @description One (asset, member) ownership pair — the manual-asset analogue of
@@ -5056,6 +4960,13 @@ export interface components {
             content: string;
             role: string;
         };
+        /** @description Discard a scenario's revision, reverting to the original assumptions only. */
+        ClearScenarioRevisionRequest: {
+            id: string;
+        };
+        CloseAgentSessionRequest: {
+            id: string;
+        };
         /**
          * @description A data-quality or subscription-change item to review at close. Mirrors an
          *     Inbox action item (or #58 subscription changes) and carries a route to the
@@ -5073,8 +4984,18 @@ export interface components {
             priority: string;
             title: string;
         };
+        /**
+         * @description Reconcile and finish. The design nags toward this rather than letting
+         *     envelopes accumulate.
+         */
+        CloseRestorationEnvelopeRequest: {
+            id: string;
+        };
         /** @enum {string} */
         ColumnRole: "Date" | "Amount" | "Merchant" | "Notes" | "Category" | "Skip" | "Debit" | "Credit" | "ActivityType" | "ActivitySubType" | "Symbol" | "SecurityName" | "Quantity" | "UnitPrice";
+        CommitStarterCategoriesRequest: {
+            categories: components["schemas"]["StarterCategory"][];
+        };
         CompletionProviderConfig: {
             /** @enum {string} */
             kind: "unconfigured";
@@ -5093,6 +5014,20 @@ export interface components {
             /** @enum {string} */
             kind: "anthropic";
             model: string;
+        };
+        ComputeDebtPayoffRequest: {
+            /** Format: int64 */
+            extraMonthlyCents: number;
+        };
+        ConfirmSimplefinTransferRequest: {
+            transferId: string;
+        };
+        ContributeToGoalRequest: {
+            /** Format: int64 */
+            amountCents: number;
+            id: string;
+            note?: string | null;
+            source?: string | null;
         };
         /** @description A single message within a conversation thread. */
         ConversationMessage: {
@@ -5276,6 +5211,11 @@ export interface components {
             /** @enum {string} */
             type: "error";
         };
+        /** @description The user picks a DIFFERENT category than what was proposed. */
+        CorrectCategoryProposalRequest: {
+            categoryId: string;
+            id: string;
+        };
         /**
          * @description Serializable mirror of `finsight_core::repos::transactions::Verdict` —
          *     the core enum has no serde/specta derives by design (finsight-core has no
@@ -5283,6 +5223,59 @@ export interface components {
          * @enum {string}
          */
         CounterpartyVerdict: "transfer" | "settleUp" | "real";
+        CreateAccountRequest: {
+            input: components["schemas"]["NewAccount"];
+        };
+        CreateAgentSessionRequest: {
+            taskType: string;
+            title: string;
+        };
+        CreateCategoryGroupRequest: {
+            hint?: string | null;
+            label: string;
+        };
+        CreateCategoryRequest: {
+            color: string;
+            groupId?: string | null;
+            label: string;
+        };
+        CreateGoalRequest: {
+            input: components["schemas"]["NewGoalInput"];
+        };
+        CreateHouseholdMemberRequest: {
+            color?: string | null;
+            name: string;
+        };
+        CreateImportCandidateTransactionRequest: {
+            candidateId: string;
+        };
+        CreateManualAssetRequest: {
+            input: components["schemas"]["NewManualAsset"];
+        };
+        CreatePlannedTransactionRequest: {
+            input: components["schemas"]["NewPlannedTransaction"];
+        };
+        CreateRecipeRequest: {
+            cadence: string;
+            /** Format: int64 */
+            dayOfMonth?: number | null;
+            /** Format: int64 */
+            dayOfWeek?: number | null;
+            description: string;
+            promptTemplate: string;
+            recipeKind: string;
+            title: string;
+        };
+        CreateRestorationEnvelopeRequest: {
+            input: components["schemas"]["RestorationEnvelopeInput"];
+        };
+        CreateRuleRequest: {
+            categoryId: string;
+            pattern: string;
+        };
+        CreateTransactionRequest: {
+            input: components["schemas"]["NewTransaction"];
+        };
         CsvImportMapping: {
             amount_convention: components["schemas"]["AmountConvention"];
             columns: components["schemas"]["ColumnRole"][];
@@ -5358,12 +5351,55 @@ export interface components {
             /** Format: int64 */
             totalInterestCents: number;
         };
+        DeclineRuleProposalRequest: {
+            id: string;
+        };
+        DeleteConversationMessagesAfterRequest: {
+            conversationId: string;
+            messageId: string;
+        };
+        DeleteConversationRequest: {
+            id: string;
+        };
+        DeleteHouseholdMemberRequest: {
+            id: string;
+        };
+        DeleteManualAssetRequest: {
+            id: string;
+        };
+        DeletePlannedTransactionRequest: {
+            id: string;
+        };
+        DeletePushSubscriptionRequest: {
+            endpoint: string;
+        };
+        DeleteRecipeRequest: {
+            id: string;
+        };
+        DeleteRestorationEnvelopeRequest: {
+            id: string;
+        };
+        DeleteScenarioRequest: {
+            id: string;
+        };
+        DeleteSimplefinConnectionRequest: {
+            connectionId: string;
+        };
+        DeleteTransactionRequest: {
+            id: string;
+        };
         /**
          * @description How often to batch routine notifications into one summary instead of pushing
          *     each individually (#69).
          * @enum {string}
          */
         DigestFrequency: "off" | "daily" | "weekly";
+        DiscardUnfinishedImportRequest: {
+            importId: string;
+        };
+        DismissImportCandidateRequest: {
+            candidateId: string;
+        };
         /**
          * @description What happened to an `enqueue`.
          * @enum {string}
@@ -5400,10 +5436,19 @@ export interface components {
              */
             user_verdict?: string | null;
         };
+        DuplicateScenarioRequest: {
+            id: string;
+        };
         EditConversationMessageInput: {
             content: string;
             conversationId: string;
             messageId: string;
+        };
+        EditConversationUserMessageRequest: {
+            input: components["schemas"]["EditConversationMessageInput"];
+        };
+        ExecuteActionBundleRequest: {
+            bundleId: string;
         };
         ExecutionItemResult: {
             actionKind: string;
@@ -5425,6 +5470,54 @@ export interface components {
             results: components["schemas"]["ExecutionItemResult"][];
             /** Format: int32 */
             succeeded: number;
+        };
+        /**
+         * @description Structured "explain this number" provenance for the decision-driving
+         *     dashboard metrics, optionally scoped to one household member. Every value is
+         *     pulled from the same `finsight-core::metrics` layer `get_financial_metrics`
+         *     reads, so an explanation can never disagree with the number shown elsewhere.
+         *     The single source of truth is shared verbatim with the Copilot's
+         *     `explain_metric` tool.
+         */
+        ExplainFinancialMetricsRequest: {
+            memberId?: string | null;
+        };
+        /**
+         * @description Structured "explain this scenario" — the same recomputed projection the
+         *     comparison shows, described via `provenance::scenario_explanation` (its
+         *     narrative `considerations` become the tradeoffs, so this can never disagree
+         *     with the scenario card). A pre-V055 legacy row that can't be recomputed gets
+         *     the legacy variant: a withheld value with the reason, never a fabricated
+         *     breakdown.
+         */
+        ExplainScenarioRequest: {
+            id: string;
+        };
+        /**
+         * @description Returns the CSV content for one account's transactions (caller downloads
+         *     it client-side — no server-side file I/O). Real implementation as of
+         *     Phase 4; previously 501'd behind a native-dialog-only Tauri command.
+         */
+        ExportAccountCsvRequest: {
+            accountId: string;
+        };
+        /**
+         * @description Re-run the Copilot `search_transactions` query and return the matching
+         *     rows as CSV content (caller downloads it client-side). Shares
+         *     `transactions::search` with the Copilot tool so the exported rows match
+         *     exactly what the card displayed. Real implementation as of Phase 4;
+         *     previously 501'd behind a native-dialog-only Tauri command.
+         */
+        ExportSearchTransactionsCsvRequest: {
+            query: components["schemas"]["SearchTxnQueryInput"];
+        };
+        /**
+         * @description Returns the CSV content for transactions matching a filter (caller
+         *     downloads it client-side — no server-side file I/O). Real implementation
+         *     as of Phase 4; previously 501'd behind a native-dialog-only Tauri command.
+         */
+        ExportTransactionsCsvRequest: {
+            filter: components["schemas"]["TxnFilterInput"];
         };
         FinancialAssumptionsInput: {
             /** Format: double */
@@ -5512,6 +5605,82 @@ export interface components {
             highInterestAprPct: number;
             /** @description "cautious" | "balanced" | "aggressive" */
             riskTolerance: string;
+        };
+        ForgetAgentMemoryRequest: {
+            id: string;
+        };
+        /**
+         * @description Reconstruct an account's balance curve from its ledger, with the peak and
+         *     trough over the requested window. `since` is an ISO `YYYY-MM-DD` date; omit
+         *     it for all-time.
+         *
+         *     Unlike [`list_account_balance_history`], which reads the sparse stored
+         *     snapshots, this derives every point — so it can answer "when was this account
+         *     at its highest" rather than "which recorded day was highest".
+         */
+        GetAccountBalanceTimelineRequest: {
+            accountId: string;
+            since?: string | null;
+        };
+        GetActionBundleRequest: {
+            id: string;
+        };
+        /**
+         * @description Project the liquid balance forward `horizon_days` (default 30, clamped
+         *     7–90), optionally against a safety `buffer_cents` and a hypothetical one-off
+         *     outflow. Returns the daily trajectory, the lowest point, the first day it
+         *     breaches the buffer, the conservative safe-to-spend, upcoming dated events,
+         *     and data-quality warnings.
+         */
+        GetCashflowForecastRequest: {
+            /** Format: int64 */
+            bufferCents?: number | null;
+            /** Format: int64 */
+            extraExpenseCents?: number | null;
+            extraExpenseDate?: string | null;
+            /** Format: int64 */
+            horizonDays?: number | null;
+        };
+        GetConversationMessagesRequest: {
+            conversationId: string;
+        };
+        GetFinancialMetricsRequest: {
+            memberId?: string | null;
+        };
+        GetInvestmentSummaryRequest: {
+            accountId: string;
+        };
+        /**
+         * @description The close for a given month: live figures/flags while unopened or in
+         *     progress; the frozen record (plus drift) once completed.
+         */
+        GetMonthCloseRequest: {
+            /** Format: int32 */
+            month: number;
+            /** Format: int32 */
+            year: number;
+        };
+        GetPlannedTransactionRequest: {
+            id: string;
+        };
+        GetReportDataRequest: {
+            memberId?: string | null;
+            scope: string;
+        };
+        /** @description The three reliable numbers plus the honest ceiling, for one envelope. */
+        GetRestorationStatusRequest: {
+            id: string;
+        };
+        GetSavedCsvMappingRequest: {
+            accountId: string;
+        };
+        GetSpendingPathBackRequest: {
+            period?: string | null;
+            /** Format: int64 */
+            targetMonthlyCents?: number | null;
+        };
+        GetTransactionSplitsRequest: {
+            transactionId: string;
         };
         GoalContributionDto: {
             /** Format: int64 */
@@ -5665,6 +5834,21 @@ export interface components {
             matches: components["schemas"]["ImportCandidateMatch"][];
         };
         /**
+         * @description Import a CSV file, running the deterministic post-import cascade
+         *     (categorization, transfer pairing, anomaly refresh, net-worth refresh) and
+         *     enqueuing the AI categorizer. Progress and completion are pushed through the
+         *     `sink` (`"import-progress"` / `"import-complete"`, unchanged event names and
+         *     payload shapes) — the Tauri wrapper feeds a `TauriFrameSink` that emits real
+         *     window events, and ALSO fires the desktop "check_and_fire" notification
+         *     after this returns (that notification is native-only and stays in the
+         *     wrapper, not here — see `crates/finsight-bindings/src/commands/import.rs`).
+         */
+        ImportCsvRequest: {
+            accountId: string;
+            mapping: components["schemas"]["CsvImportMapping"];
+            path: string;
+        };
+        /**
          * @description The import outcome plus what still needs a category. Surfacing the
          *     uncategorized count (and whether the AI pass was auto-started) makes the
          *     cloud LLM categorization a visible, informed choice rather than a silent
@@ -5695,6 +5879,9 @@ export interface components {
              *     pass — exactly what an AI categorization run would work on.
              */
             uncategorizedAfter: number;
+        };
+        ImportSimplefinAccountsRequest: {
+            accounts: components["schemas"]["SimpleFinAccountImportRequest"][];
         };
         /** @enum {string} */
         ImportSource: "csv" | "manual" | "sample" | "simple_fin";
@@ -5794,6 +5981,84 @@ export interface components {
             currentStage: number;
             milestones: components["schemas"]["JourneyMilestone"][];
         };
+        ListAccountBalanceHistoryRequest: {
+            accountId: string;
+            /** Format: int32 */
+            days: number;
+        };
+        ListAccountBalanceSparklinesRequest: {
+            /** Format: int32 */
+            days: number;
+        };
+        ListAccountPositionsRequest: {
+            accountId: string;
+        };
+        ListActionBundlesRequest: {
+            /** Format: int32 */
+            limit?: number | null;
+            sessionId?: string | null;
+            statusFilter?: string | null;
+        };
+        ListBudgetHistoryRequest: {
+            /** Format: int32 */
+            months: number;
+        };
+        /**
+         * @description Every exemplar for a category, oldest first.
+         *
+         *     Returns rows for ARCHIVED categories too, mirroring how `list_categories`
+         *     still returns `guidance` on an archived row — archiving hides examples from
+         *     active consumers, it does not delete them.
+         */
+        ListCategoryExamplesRequest: {
+            categoryId: string;
+        };
+        ListExecutionLogRequest: {
+            bundleId: string;
+        };
+        ListGoalContributionsRequest: {
+            goalId: string;
+        };
+        /**
+         * @description Budget-vs-actual for the current month, scoped to one household member's
+         *     share of the spend. The budgets themselves are the household's.
+         */
+        ListMemberBudgetEnvelopesRequest: {
+            memberId: string;
+        };
+        ListNetWorthHistoryRequest: {
+            /** Format: int32 */
+            days: number;
+        };
+        /**
+         * @description The notification history. `includeResolved=false` (default view) shows only
+         *     still-active items; held (quiet-hours) items appear here too so they're never
+         *     lost, just not pushed.
+         */
+        ListNotificationsRequest: {
+            includeResolved?: boolean | null;
+        };
+        ListPlannedTransactionsRequest: {
+            filter: components["schemas"]["PlannedTxnFilter"];
+        };
+        ListProviderModelsRequest: {
+            config: components["schemas"]["CompletionProviderConfig"];
+        };
+        ListRecentAgentActivityRequest: {
+            /** Format: int32 */
+            limit: number;
+        };
+        ListRecipeRunsRequest: {
+            /** Format: int32 */
+            limit?: number | null;
+            recipeId: string;
+        };
+        ListRecipesRequest: {
+            includePaused: boolean;
+        };
+        ListTransactionsRequest: {
+            filter: components["schemas"]["TxnFilterInput"];
+        };
         LlmProviderConfig: {
             base_url: string;
             completion_model: string;
@@ -5845,6 +6110,19 @@ export interface components {
             notes?: string | null;
             /** Format: int64 */
             valueCents?: number | null;
+        };
+        MarkNotificationReadRequest: {
+            id: string;
+        };
+        /**
+         * @description Mark a detected subscription CANCELLED as of `cancelled_at` (`YYYY-MM-DD`).
+         *     Ongoing price/renewal alerts stop; a charge dated after the cancel date is
+         *     surfaced as a surprise. `label` names the service in that alert (#75).
+         */
+        MarkSubscriptionCancelledRequest: {
+            cancelledAt: string;
+            label: string;
+            merchantKey: string;
         };
         /** @enum {string} */
         Mechanism: "new" | "stopped" | "price_up" | "price_down" | "frequency_up" | "frequency_down" | "mixed" | "flat";
@@ -6304,6 +6582,9 @@ export interface components {
             period: string;
             plan: components["schemas"]["SpendingPlan"];
         };
+        PauseRecipeRequest: {
+            id: string;
+        };
         PeriodAssessment: {
             /** Format: int64 */
             baseline_monthly_cents: number;
@@ -6426,6 +6707,11 @@ export interface components {
             quantity: number;
             symbol: string;
         };
+        PrepareCsvImportRequest: {
+            accountId: string;
+            mapping: components["schemas"]["CsvImportMapping"];
+            path: string;
+        };
         /**
          * @description A lightweight, bounded preview of what an import WOULD do — counts + a
          *     capped error list + a staleness signature — so the UI can show
@@ -6444,6 +6730,11 @@ export interface components {
             /** Format: int32 */
             rowsTotal: number;
             signature: string;
+        };
+        PreviewCsvColumnsRequest: {
+            path: string;
+            /** Format: int32 */
+            skipHeaderRows: number;
         };
         /** @description A detected material change in a fixed-price recurring charge's amount (#58). */
         PriceChangeDto: {
@@ -6467,12 +6758,20 @@ export interface components {
          * @enum {string}
          */
         PrivacyLevel: "full" | "hide_amounts";
+        ProbeOllamaRequest: {
+            baseUrl: string;
+        };
         ProgressPayload: {
             import_id: string;
             /** Format: int32 */
             rows_done: number;
             /** Format: int32 */
             rows_total: number;
+        };
+        ProjectGoalGrowthRequest: {
+            goalId: string;
+            /** Format: int32 */
+            years: number;
         };
         ProjectedValue: {
             /** Format: double */
@@ -6481,6 +6780,14 @@ export interface components {
             valueCents: number;
             /** Format: int32 */
             years: number;
+        };
+        /**
+         * @description Promote a scenario into a REVIEWABLE set of proposed plan changes. This
+         *     writes nothing: it grounds each proposal in the current baseline and hands
+         *     them back for the user to approve and apply themselves.
+         */
+        PromoteScenarioRequest: {
+            id: string;
         };
         ProposedRule: {
             category_id: string;
@@ -6638,6 +6945,32 @@ export interface components {
              */
             verdict?: string | null;
         };
+        RejectActionItemRequest: {
+            itemId: string;
+        };
+        /**
+         * @description The user dismisses the proposal without providing a replacement category.
+         *     Canonical `transactions.category_id` is left untouched (it already holds
+         *     the LLM's applied guess) — this only removes the item from the review
+         *     queue.
+         */
+        RejectCategoryProposalRequest: {
+            id: string;
+        };
+        RejectSimplefinTransferRequest: {
+            transferId: string;
+        };
+        /** @description Remove one exemplar by its own id. No-op if it's already gone. */
+        RemoveCategoryExampleRequest: {
+            id: string;
+        };
+        RemoveRestorationLegRequest: {
+            legId: string;
+        };
+        RenameCategoryRequest: {
+            id: string;
+            label: string;
+        };
         ReportData: {
             monthly: components["schemas"]["MonthSummary"][];
             monthlyLastYear: components["schemas"]["MonthSummary"][];
@@ -6734,6 +7067,19 @@ export interface components {
              */
             stillHeldCeilingCents?: number | null;
         };
+        ResumeRecipeRequest: {
+            id: string;
+        };
+        /**
+         * @description Revise a saved scenario's assumptions (issue #73). Stores a second set of
+         *     what-if params alongside the immutable original; the returned detail carries
+         *     the recalculated `revised_result` next to the original and current results.
+         *     Never touches the active plan, and never overwrites the original params.
+         */
+        ReviseScenarioRequest: {
+            id: string;
+            params: components["schemas"]["ScenarioParamsInput"];
+        };
         RowError: {
             reason: string;
             /** Format: int32 */
@@ -6769,6 +7115,15 @@ export interface components {
             pattern: string;
             source: string;
         };
+        RunScenarioRequest: {
+            description: string;
+            /** Format: int32 */
+            months: number;
+            params?: components["schemas"]["ScenarioParamsInput"] | null;
+        };
+        SaveLlmProviderRequest: {
+            config: components["schemas"]["LlmProviderConfig"];
+        };
         SaveMonthCloseInput: {
             /** @description Flag ids the user ticked as acknowledged — recorded when completing. */
             acknowledgedFlagIds?: string[];
@@ -6779,6 +7134,39 @@ export interface components {
             status: string;
             /** Format: int32 */
             year: number;
+        };
+        /**
+         * @description Advance the close lifecycle. `completed` freezes the snapshot, baseline, and
+         *     acknowledged flags; `in_progress`/`skipped` only move status + notes and
+         *     leave any prior frozen record intact (reopen keeps history; re-completing
+         *     re-freezes explicitly).
+         */
+        SaveMonthCloseRequest: {
+            input: components["schemas"]["SaveMonthCloseInput"];
+        };
+        SaveProviderApiKeyRequest: {
+            key: string;
+            providerId: string;
+        };
+        SavePushSubscriptionRequest: {
+            auth: string;
+            endpoint: string;
+            label?: string | null;
+            p256dh: string;
+        };
+        /**
+         * @description Save a scenario durably: capture the current baseline, re-project the params
+         *     against it, and store params + baseline + result together so the scenario
+         *     can later be recomputed, compared, and checked for staleness.
+         */
+        SaveScenarioRequest: {
+            description: string;
+            /** Format: int32 */
+            months: number;
+            params: components["schemas"]["ScenarioParamsInput"];
+        };
+        SaveSimplefinSetupTokenRequest: {
+            token: string;
         };
         /**
          * @description A saved scenario with everything needed to compare and act on it. The
@@ -6866,6 +7254,140 @@ export interface components {
             id: string;
             name?: string | null;
             tickerSymbol?: string | null;
+        };
+        /**
+         * @description See `vapid_keypair_for_db` — the `Db`-only entry point, for the background
+         *     scheduler.
+         */
+        SendPushForDbRequest: {
+            payload: components["schemas"]["PushPayload"];
+        };
+        /**
+         * @description Deliver `payload` to every device this user registered.
+         *
+         *     Never returns Err for a per-device failure: one dead subscription must not
+         *     abort delivery to the user's other devices, so failures are counted in the
+         *     report instead. A 404/410 from the push service means the subscription is
+         *     permanently gone, and the row is deleted — otherwise every future send
+         *     retries a device that will never come back.
+         */
+        SendPushRequest: {
+            payload: components["schemas"]["PushPayload"];
+        };
+        SetAccountBalanceRequest: {
+            /** Format: int64 */
+            balanceCents: number;
+            id: string;
+        };
+        SetAccountOwnerSharesRequest: {
+            accountId: string;
+            owners: components["schemas"]["OwnerShare"][];
+        };
+        SetAccountOwnersRequest: {
+            accountId: string;
+            memberIds: string[];
+        };
+        SetAnomalyDismissedRequest: {
+            dismissed: boolean;
+            txnId: string;
+        };
+        SetAssetOwnersRequest: {
+            assetId: string;
+            owners: components["schemas"]["OwnerShare"][];
+        };
+        SetAutoCategorizeEnabledRequest: {
+            enabled: boolean;
+        };
+        SetBudgetRequest: {
+            /** Format: int64 */
+            amountCents: number;
+            categoryId: string;
+        };
+        SetCategoryGroupRequest: {
+            categoryId: string;
+            groupId: string;
+        };
+        SetCategoryGuidanceRequest: {
+            guidance?: string | null;
+            id: string;
+        };
+        SetCategorySpendingTypeRequest: {
+            id: string;
+            spendingType?: string | null;
+        };
+        SetCompletionProviderRequest: {
+            config: components["schemas"]["CompletionProviderConfig"];
+        };
+        /**
+         * @description Record the user's 3-way verdict (transfer / settle-up / real spending) on
+         *     a transfer-review counterparty transaction. Sticky: survives re-imports
+         *     and categorizer re-runs.
+         */
+        SetCounterpartyVerdictRequest: {
+            id: string;
+            verdict: components["schemas"]["CounterpartyVerdict"];
+        };
+        SetCurrencyRequest: {
+            currency: string;
+        };
+        SetFinancialAssumptionsRequest: {
+            input: components["schemas"]["FinancialAssumptionsInput"];
+        };
+        SetFinancialPhilosophyRequest: {
+            input: components["schemas"]["FinancialPhilosophyDto"];
+        };
+        SetNotificationPrefsRequest: {
+            prefs: components["schemas"]["NotificationPrefsDto"];
+        };
+        SetNotificationsEnabledRequest: {
+            enabled: boolean;
+        };
+        SetSelfMemberRequest: {
+            memberId: string;
+        };
+        SetSimplefinSyncSettingsRequest: {
+            settings: components["schemas"]["SimpleFinSyncSettings"];
+        };
+        SetSpendingAnnotationRequest: {
+            merchantKey: string;
+            verdict: string;
+        };
+        /**
+         * @description Mark a detected subscription as a free TRIAL converting on `trial_ends_at`
+         *     (`YYYY-MM-DD`), or clear it with `trial_ends_at = None`. `label` is the
+         *     display name captured for the reminder. A heads-up fires shortly before the
+         *     date (#75).
+         */
+        SetSubscriptionTrialRequest: {
+            label: string;
+            merchantKey: string;
+            trialEndsAt?: string | null;
+        };
+        /**
+         * @description Set (or clear, with `verdict = None`) the user's confirm/dismiss verdict on a
+         *     detected subscription. `verdict` accepts "confirmed" | "dismissed"; any other
+         *     value (or null) clears it, so a bad string can't corrupt state.
+         */
+        SetSubscriptionVerdictRequest: {
+            merchantKey: string;
+            verdict?: string | null;
+        };
+        SetTransactionFlagsRequest: {
+            id: string;
+            isReimbursable: boolean;
+            isSplit: boolean;
+        };
+        SetTransactionOwnerRequest: {
+            memberId?: string | null;
+            transactionId: string;
+        };
+        SetTransactionSplitsRequest: {
+            splits: components["schemas"]["SplitInputDto"][];
+            transactionId: string;
+        };
+        SetTransactionTransferRequest: {
+            id: string;
+            isTransfer: boolean;
         };
         SimpleFinAccountImportRequest: {
             connectionId: string;
@@ -7013,11 +7535,32 @@ export interface components {
             amountCents: number;
             categoryId?: string | null;
         };
+        StageRestoreBackupRequest: {
+            path: string;
+        };
         StarterCategory: {
             color: string;
             group_id: string;
             id: string;
             label: string;
+        };
+        /**
+         * @description Send a message to the Copilot within a conversation.
+         *
+         *     1. Persists the user message.
+         *     2. Runs the reasoning engine (deep-mode agent pipeline).
+         *     3. Streams the answer word-by-word via `copilot-stream-frame` frames pushed
+         *     through `sink` (a real Tauri window event on desktop, an SSE broadcast on
+         *     finsight-server).
+         *     4. Persists the assistant message and emits the `Done` frame.
+         *     5. Auto-generates a title for new conversations after the first message.
+         */
+        StreamCopilotMessageRequest: {
+            conversationId: string;
+            history: components["schemas"]["ChatHistoryEntry"][];
+            runId: string;
+            sourceMessageId?: string | null;
+            text: string;
         };
         SyncRun: {
             /** Format: int64 */
@@ -7043,11 +7586,22 @@ export interface components {
             /** Format: int64 */
             updated: number;
         };
+        SyncSimplefinAccountRequest: {
+            accountId: string;
+        };
         SyncSummary: {
             added: number;
             queuedForReview: number;
             skipped: number;
             updated: number;
+        };
+        TestCompletionProviderRequest: {
+            apiKey?: string | null;
+            config: components["schemas"]["CompletionProviderConfig"];
+        };
+        ToggleRuleRequest: {
+            enabled: boolean;
+            id: string;
         };
         Transaction: {
             account_id: string;
@@ -7152,6 +7706,9 @@ export interface components {
             similarPattern?: string | null;
             transaction: components["schemas"]["Transaction"];
         };
+        TriggerRecipeRequest: {
+            id: string;
+        };
         /**
          * @description Investment/activity metadata parsed from brokerage CSV exports
          *     (Wealthsimple et al). Stored provider-verbatim in the six V048 columns;
@@ -7222,6 +7779,67 @@ export interface components {
             /** Format: int64 */
             txnCount: number;
         };
+        UpdateAccountRequest: {
+            id: string;
+            patch: components["schemas"]["AccountPatch"];
+        };
+        UpdateCategoryColorRequest: {
+            color: string;
+            id: string;
+        };
+        UpdateGoalBalanceRequest: {
+            /** Format: int64 */
+            currentCents: number;
+            id: string;
+        };
+        UpdateGoalMonthlyRequest: {
+            id: string;
+            /** Format: int64 */
+            monthlyCents: number;
+        };
+        /**
+         * @description Set how much a goal matters and what its date commits the user to.
+         *
+         *     The two travel together because neither is meaningful to the planner alone:
+         *     a hard deadline on a `someday` goal and a `critical` goal with no date are
+         *     both coherent, and allocation needs to see the pair to order them.
+         *
+         *     Unrecognised strings fall back to the neutral defaults rather than erroring
+         *     — this is a preference, and refusing to save a goal over a bad enum value
+         *     would be a worse outcome than storing "normal".
+         */
+        UpdateGoalPriorityRequest: {
+            deadlineStrictness: string;
+            id: string;
+            priority: string;
+        };
+        UpdateGoalPurposeRequest: {
+            id: string;
+            purpose?: string | null;
+        };
+        UpdateManualAssetRequest: {
+            id: string;
+            patch: components["schemas"]["ManualAssetPatch"];
+        };
+        UpdatePlannedTransactionRequest: {
+            id: string;
+            patch: components["schemas"]["PlannedTransactionPatch"];
+        };
+        UpdateRecipeRequest: {
+            cadence: string;
+            /** Format: int64 */
+            dayOfMonth?: number | null;
+            /** Format: int64 */
+            dayOfWeek?: number | null;
+            description: string;
+            id: string;
+            promptTemplate: string;
+            title: string;
+        };
+        UpdateTransactionRequest: {
+            id: string;
+            patch: components["schemas"]["TxnPatch"];
+        };
         UpdateTxnResult: {
             proposed_rule?: components["schemas"]["ProposedRuleDto"] | null;
             transaction: components["schemas"]["Transaction"];
@@ -7248,7 +7866,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": string;
+                "application/json": components["schemas"]["AcceptCategoryProposalRequest"];
             };
         };
         responses: {
@@ -7269,7 +7887,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AcceptImportCandidateMatchRequest"];
+            };
+        };
         responses: {
             /** @description Success */
             200: {
@@ -7289,7 +7911,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": string;
+                "application/json": components["schemas"]["AcceptRuleProposalRequest"];
             };
         };
         responses: {
@@ -7311,7 +7933,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": string;
+                "application/json": components["schemas"]["AcknowledgeSimplefinAlertRequest"];
             };
         };
         responses: {
@@ -7331,7 +7953,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AddCategoryExampleRequest"];
+            };
+        };
         responses: {
             200: {
                 headers: {
@@ -7350,7 +7976,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AddRestorationLegRequest"];
+            };
+        };
         responses: {
             200: {
                 headers: {
@@ -7388,14 +8018,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApplyCounterpartyVerdictToSimilarRequest"];
+            };
+        };
         responses: {
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "text/plain": number;
+                    "application/json": number;
                 };
             };
         };
@@ -7409,7 +8043,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["PlanAssignment"][];
+                "application/json": components["schemas"]["ApplyNextMonthPlanRequest"];
             };
         };
         responses: {
@@ -7429,7 +8063,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApplyScenarioRequest"];
+            };
+        };
         responses: {
             200: {
                 headers: {
@@ -7448,14 +8086,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApplyTransferVerdictToSimilarRequest"];
+            };
+        };
         responses: {
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "text/plain": number;
+                    "application/json": number;
                 };
             };
         };
@@ -7469,7 +8111,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": string;
+                "application/json": components["schemas"]["ApproveActionItemRequest"];
             };
         };
         responses: {
@@ -7491,7 +8133,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": string;
+                "application/json": components["schemas"]["ArchiveAccountRequest"];
             };
         };
         responses: {
@@ -7513,7 +8155,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": string;
+                "application/json": components["schemas"]["ArchiveCategoryRequest"];
             };
         };
         responses: {
@@ -7535,7 +8177,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": string;
+                "application/json": components["schemas"]["ArchiveGoalRequest"];
             };
         };
         responses: {
@@ -7555,7 +8197,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ArchiveScenarioRequest"];
+            };
+        };
         responses: {
             /** @description Success */
             200: {
@@ -7573,7 +8219,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AskAgentRequest"];
+            };
+        };
         responses: {
             200: {
                 headers: {
@@ -7612,7 +8262,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": string;
+                "application/json": components["schemas"]["ClearScenarioRevisionRequest"];
             };
         };
         responses: {
@@ -7635,7 +8285,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": string;
+                "application/json": components["schemas"]["CloseAgentSessionRequest"];
             };
         };
         responses: {
@@ -7657,7 +8307,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": string;
+                "application/json": components["schemas"]["CloseRestorationEnvelopeRequest"];
             };
         };
         responses: {
@@ -7679,7 +8329,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["StarterCategory"][];
+                "application/json": components["schemas"]["CommitStarterCategoriesRequest"];
             };
         };
         responses: {
@@ -7701,7 +8351,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": number;
+                "application/json": components["schemas"]["ComputeDebtPayoffRequest"];
             };
         };
         responses: {
@@ -7724,7 +8374,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": string;
+                "application/json": components["schemas"]["ConfirmSimplefinTransferRequest"];
             };
         };
         responses: {
@@ -7744,7 +8394,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ContributeToGoalRequest"];
+            };
+        };
         responses: {
             200: {
                 headers: {
@@ -7763,7 +8417,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CorrectCategoryProposalRequest"];
+            };
+        };
         responses: {
             200: {
                 headers: {
@@ -7784,7 +8442,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["NewAccount"];
+                "application/json": components["schemas"]["CreateAccountRequest"];
             };
         };
         responses: {
@@ -7805,7 +8463,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateAgentSessionRequest"];
+            };
+        };
         responses: {
             200: {
                 headers: {
@@ -7824,7 +8486,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateCategoryRequest"];
+            };
+        };
         responses: {
             200: {
                 headers: {
@@ -7843,7 +8509,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateCategoryGroupRequest"];
+            };
+        };
         responses: {
             200: {
                 headers: {
@@ -7869,7 +8539,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "text/plain": string;
+                    "application/json": string;
                 };
             };
         };
@@ -7883,7 +8553,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["NewGoalInput"];
+                "application/json": components["schemas"]["CreateGoalRequest"];
             };
         };
         responses: {
@@ -7904,7 +8574,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateHouseholdMemberRequest"];
+            };
+        };
         responses: {
             200: {
                 headers: {
@@ -7925,7 +8599,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": string;
+                "application/json": components["schemas"]["CreateImportCandidateTransactionRequest"];
             };
         };
         responses: {
@@ -7934,7 +8608,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "text/plain": string;
+                    "application/json": string;
                 };
             };
         };
@@ -7948,7 +8622,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["NewManualAsset"];
+                "application/json": components["schemas"]["CreateManualAssetRequest"];
             };
         };
         responses: {
@@ -7990,7 +8664,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["NewPlannedTransaction"];
+                "application/json": components["schemas"]["CreatePlannedTransactionRequest"];
             };
         };
         responses: {
@@ -8011,7 +8685,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateRecipeRequest"];
+            };
+        };
         responses: {
             200: {
                 headers: {
@@ -8032,7 +8710,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["RestorationEnvelopeInput"];
+                "application/json": components["schemas"]["CreateRestorationEnvelopeRequest"];
             };
         };
         responses: {
@@ -8053,7 +8731,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateRuleRequest"];
+            };
+        };
         responses: {
             200: {
                 headers: {
@@ -8074,7 +8756,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["NewTransaction"];
+                "application/json": components["schemas"]["CreateTransactionRequest"];
             };
         };
         responses: {
@@ -8097,7 +8779,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": string;
+                "application/json": components["schemas"]["DeclineRuleProposalRequest"];
             };
         };
         responses: {
@@ -8137,7 +8819,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": string;
+                "application/json": components["schemas"]["DeleteConversationRequest"];
             };
         };
         responses: {
@@ -8157,14 +8839,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeleteConversationMessagesAfterRequest"];
+            };
+        };
         responses: {
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "text/plain": number;
+                    "application/json": number;
                 };
             };
         };
@@ -8178,7 +8864,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": string;
+                "application/json": components["schemas"]["DeleteHouseholdMemberRequest"];
             };
         };
         responses: {
@@ -8200,7 +8886,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": string;
+                "application/json": components["schemas"]["DeleteManualAssetRequest"];
             };
         };
         responses: {
@@ -8222,7 +8908,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": string;
+                "application/json": components["schemas"]["DeletePlannedTransactionRequest"];
             };
         };
         responses: {
@@ -8244,7 +8930,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": string;
+                "application/json": components["schemas"]["DeletePushSubscriptionRequest"];
             };
         };
         responses: {
@@ -8253,7 +8939,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "text/plain": boolean;
+                    "application/json": boolean;
                 };
             };
         };
@@ -8267,7 +8953,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": string;
+                "application/json": components["schemas"]["DeleteRecipeRequest"];
             };
         };
         responses: {
@@ -8289,7 +8975,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": string;
+                "application/json": components["schemas"]["DeleteRestorationEnvelopeRequest"];
             };
         };
         responses: {
@@ -8311,7 +8997,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": string;
+                "application/json": components["schemas"]["DeleteScenarioRequest"];
             };
         };
         responses: {
@@ -8333,7 +9019,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": string;
+                "application/json": components["schemas"]["DeleteSimplefinConnectionRequest"];
             };
         };
         responses: {
@@ -8355,7 +9041,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": string;
+                "application/json": components["schemas"]["DeleteTransactionRequest"];
             };
         };
         responses: {
@@ -8377,7 +9063,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": string;
+                "application/json": components["schemas"]["DiscardUnfinishedImportRequest"];
             };
         };
         responses: {
@@ -8417,7 +9103,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": string;
+                "application/json": components["schemas"]["DismissImportCandidateRequest"];
             };
         };
         responses: {
@@ -8439,7 +9125,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": string;
+                "application/json": components["schemas"]["DuplicateScenarioRequest"];
             };
         };
         responses: {
@@ -8462,7 +9148,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["EditConversationMessageInput"];
+                "application/json": components["schemas"]["EditConversationUserMessageRequest"];
             };
         };
         responses: {
@@ -8484,7 +9170,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": string;
+                "application/json": components["schemas"]["ExecuteActionBundleRequest"];
             };
         };
         responses: {
@@ -8505,9 +9191,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": string | null;
+                "application/json": components["schemas"]["ExplainFinancialMetricsRequest"];
             };
         };
         responses: {
@@ -8549,7 +9235,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": string;
+                "application/json": components["schemas"]["ExplainScenarioRequest"];
             };
         };
         responses: {
@@ -8572,7 +9258,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": string;
+                "application/json": components["schemas"]["ExportAccountCsvRequest"];
             };
         };
         responses: {
@@ -8581,7 +9267,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "text/plain": string;
+                    "application/json": string;
                 };
             };
         };
@@ -8600,7 +9286,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "text/plain": string;
+                    "application/json": string;
                 };
             };
         };
@@ -8619,7 +9305,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "text/plain": string;
+                    "application/json": string;
                 };
             };
         };
@@ -8633,7 +9319,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["SearchTxnQueryInput"];
+                "application/json": components["schemas"]["ExportSearchTransactionsCsvRequest"];
             };
         };
         responses: {
@@ -8642,7 +9328,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "text/plain": string;
+                    "application/json": string;
                 };
             };
         };
@@ -8656,7 +9342,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["TxnFilterInput"];
+                "application/json": components["schemas"]["ExportTransactionsCsvRequest"];
             };
         };
         responses: {
@@ -8665,7 +9351,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "text/plain": string;
+                    "application/json": string;
                 };
             };
         };
@@ -8679,7 +9365,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": string;
+                "application/json": components["schemas"]["ForgetAgentMemoryRequest"];
             };
         };
         responses: {
@@ -8699,7 +9385,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GetAccountBalanceTimelineRequest"];
+            };
+        };
         responses: {
             200: {
                 headers: {
@@ -8720,7 +9410,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": string;
+                "application/json": components["schemas"]["GetActionBundleRequest"];
             };
         };
         responses: {
@@ -8786,7 +9476,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "text/plain": boolean;
+                    "application/json": boolean;
                 };
             };
         };
@@ -8798,7 +9488,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GetCashflowForecastRequest"];
+            };
+        };
         responses: {
             200: {
                 headers: {
@@ -8838,7 +9532,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": string;
+                "application/json": components["schemas"]["GetConversationMessagesRequest"];
             };
         };
         responses: {
@@ -8866,7 +9560,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "text/plain": string;
+                    "application/json": string;
                 };
             };
         };
@@ -8916,9 +9610,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": string | null;
+                "application/json": components["schemas"]["GetFinancialMetricsRequest"];
             };
         };
         responses: {
@@ -8979,7 +9673,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": string;
+                "application/json": components["schemas"]["GetInvestmentSummaryRequest"];
             };
         };
         responses: {
@@ -9019,7 +9713,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GetMonthCloseRequest"];
+            };
+        };
         responses: {
             200: {
                 headers: {
@@ -9064,7 +9762,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "text/plain": number;
+                    "application/json": number;
                 };
             };
         };
@@ -9102,7 +9800,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "text/plain": boolean;
+                    "application/json": boolean;
                 };
             };
         };
@@ -9154,7 +9852,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": string;
+                "application/json": components["schemas"]["GetPlannedTransactionRequest"];
             };
         };
         responses: {
@@ -9194,7 +9892,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GetReportDataRequest"];
+            };
+        };
         responses: {
             200: {
                 headers: {
@@ -9215,7 +9917,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": string;
+                "application/json": components["schemas"]["GetRestorationStatusRequest"];
             };
         };
         responses: {
@@ -9238,7 +9940,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": string;
+                "application/json": components["schemas"]["GetSavedCsvMappingRequest"];
             };
         };
         responses: {
@@ -9335,7 +10037,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GetSpendingPathBackRequest"];
+            };
+        };
         responses: {
             200: {
                 headers: {
@@ -9361,7 +10067,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "text/plain": number;
+                    "application/json": number;
                 };
             };
         };
@@ -9375,7 +10081,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": string;
+                "application/json": components["schemas"]["GetTransactionSplitsRequest"];
             };
         };
         responses: {
@@ -9434,7 +10140,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ImportCsvRequest"];
+            };
+        };
         responses: {
             200: {
                 headers: {
@@ -9455,7 +10165,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["SimpleFinAccountImportRequest"][];
+                "application/json": components["schemas"]["ImportSimplefinAccountsRequest"];
             };
         };
         responses: {
@@ -9476,7 +10186,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListAccountBalanceHistoryRequest"];
+            };
+        };
         responses: {
             200: {
                 headers: {
@@ -9497,7 +10211,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": number;
+                "application/json": components["schemas"]["ListAccountBalanceSparklinesRequest"];
             };
         };
         responses: {
@@ -9539,7 +10253,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": string;
+                "application/json": components["schemas"]["ListAccountPositionsRequest"];
             };
         };
         responses: {
@@ -9579,7 +10293,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListActionBundlesRequest"];
+            };
+        };
         responses: {
             200: {
                 headers: {
@@ -9676,7 +10394,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": number;
+                "application/json": components["schemas"]["ListBudgetHistoryRequest"];
             };
         };
         responses: {
@@ -9737,7 +10455,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": string;
+                "application/json": components["schemas"]["ListCategoryExamplesRequest"];
             };
         };
         responses: {
@@ -9817,7 +10535,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": string;
+                "application/json": components["schemas"]["ListExecutionLogRequest"];
             };
         };
         responses: {
@@ -9840,7 +10558,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": string;
+                "application/json": components["schemas"]["ListGoalContributionsRequest"];
             };
         };
         responses: {
@@ -9939,7 +10657,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": string;
+                "application/json": components["schemas"]["ListMemberBudgetEnvelopesRequest"];
             };
         };
         responses: {
@@ -9981,7 +10699,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": number;
+                "application/json": components["schemas"]["ListNetWorthHistoryRequest"];
             };
         };
         responses: {
@@ -10002,9 +10720,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": boolean | null;
+                "application/json": components["schemas"]["ListNotificationsRequest"];
             };
         };
         responses: {
@@ -10027,7 +10745,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["PlannedTxnFilter"];
+                "application/json": components["schemas"]["ListPlannedTransactionsRequest"];
             };
         };
         responses: {
@@ -10050,7 +10768,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["CompletionProviderConfig"];
+                "application/json": components["schemas"]["ListProviderModelsRequest"];
             };
         };
         responses: {
@@ -10092,7 +10810,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": number;
+                "application/json": components["schemas"]["ListRecentAgentActivityRequest"];
             };
         };
         responses: {
@@ -10113,7 +10831,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListRecipeRunsRequest"];
+            };
+        };
         responses: {
             200: {
                 headers: {
@@ -10134,7 +10856,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": boolean;
+                "application/json": components["schemas"]["ListRecipesRequest"];
             };
         };
         responses: {
@@ -10328,7 +11050,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["TxnFilterInput"];
+                "application/json": components["schemas"]["ListTransactionsRequest"];
             };
         };
         responses: {
@@ -10394,7 +11116,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "text/plain": number;
+                    "application/json": number;
                 };
             };
         };
@@ -10408,7 +11130,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": string;
+                "application/json": components["schemas"]["MarkNotificationReadRequest"];
             };
         };
         responses: {
@@ -10446,7 +11168,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MarkSubscriptionCancelledRequest"];
+            };
+        };
         responses: {
             /** @description Success */
             200: {
@@ -10471,7 +11197,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "text/plain": number;
+                    "application/json": number;
                 };
             };
         };
@@ -10485,7 +11211,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": string;
+                "application/json": components["schemas"]["PauseRecipeRequest"];
             };
         };
         responses: {
@@ -10505,7 +11231,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PrepareCsvImportRequest"];
+            };
+        };
         responses: {
             200: {
                 headers: {
@@ -10524,7 +11254,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PreviewCsvColumnsRequest"];
+            };
+        };
         responses: {
             200: {
                 headers: {
@@ -10545,7 +11279,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": string;
+                "application/json": components["schemas"]["ProbeOllamaRequest"];
             };
         };
         responses: {
@@ -10566,7 +11300,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectGoalGrowthRequest"];
+            };
+        };
         responses: {
             200: {
                 headers: {
@@ -10587,7 +11325,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": string;
+                "application/json": components["schemas"]["PromoteScenarioRequest"];
             };
         };
         responses: {
@@ -10634,7 +11372,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "text/plain": number;
+                    "application/json": number;
                 };
             };
         };
@@ -10690,7 +11428,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": string;
+                "application/json": components["schemas"]["RejectActionItemRequest"];
             };
         };
         responses: {
@@ -10712,7 +11450,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": string;
+                "application/json": components["schemas"]["RejectCategoryProposalRequest"];
             };
         };
         responses: {
@@ -10734,7 +11472,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": string;
+                "application/json": components["schemas"]["RejectSimplefinTransferRequest"];
             };
         };
         responses: {
@@ -10756,7 +11494,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": string;
+                "application/json": components["schemas"]["RemoveCategoryExampleRequest"];
             };
         };
         responses: {
@@ -10778,7 +11516,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": string;
+                "application/json": components["schemas"]["RemoveRestorationLegRequest"];
             };
         };
         responses: {
@@ -10798,7 +11536,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RenameCategoryRequest"];
+            };
+        };
         responses: {
             /** @description Success */
             200: {
@@ -10836,7 +11578,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": string;
+                "application/json": components["schemas"]["ResumeRecipeRequest"];
             };
         };
         responses: {
@@ -10856,7 +11598,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReviseScenarioRequest"];
+            };
+        };
         responses: {
             200: {
                 headers: {
@@ -10875,7 +11621,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RunScenarioRequest"];
+            };
+        };
         responses: {
             200: {
                 headers: {
@@ -10896,7 +11646,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["LlmProviderConfig"];
+                "application/json": components["schemas"]["SaveLlmProviderRequest"];
             };
         };
         responses: {
@@ -10918,7 +11668,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["SaveMonthCloseInput"];
+                "application/json": components["schemas"]["SaveMonthCloseRequest"];
             };
         };
         responses: {
@@ -10939,7 +11689,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveProviderApiKeyRequest"];
+            };
+        };
         responses: {
             /** @description Success */
             200: {
@@ -10957,7 +11711,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SavePushSubscriptionRequest"];
+            };
+        };
         responses: {
             /** @description Success */
             200: {
@@ -10975,7 +11733,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveScenarioRequest"];
+            };
+        };
         responses: {
             200: {
                 headers: {
@@ -10996,7 +11758,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": string;
+                "application/json": components["schemas"]["SaveSimplefinSetupTokenRequest"];
             };
         };
         responses: {
@@ -11036,7 +11798,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetAccountBalanceRequest"];
+            };
+        };
         responses: {
             /** @description Success */
             200: {
@@ -11054,7 +11820,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetAccountOwnerSharesRequest"];
+            };
+        };
         responses: {
             /** @description Success */
             200: {
@@ -11072,7 +11842,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetAccountOwnersRequest"];
+            };
+        };
         responses: {
             /** @description Success */
             200: {
@@ -11090,7 +11864,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetAnomalyDismissedRequest"];
+            };
+        };
         responses: {
             /** @description Success */
             200: {
@@ -11108,7 +11886,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetAssetOwnersRequest"];
+            };
+        };
         responses: {
             /** @description Success */
             200: {
@@ -11128,7 +11910,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": boolean;
+                "application/json": components["schemas"]["SetAutoCategorizeEnabledRequest"];
             };
         };
         responses: {
@@ -11148,7 +11930,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetBudgetRequest"];
+            };
+        };
         responses: {
             /** @description Success */
             200: {
@@ -11166,7 +11952,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetCategoryGroupRequest"];
+            };
+        };
         responses: {
             /** @description Success */
             200: {
@@ -11184,7 +11974,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetCategoryGuidanceRequest"];
+            };
+        };
         responses: {
             /** @description Success */
             200: {
@@ -11202,7 +11996,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetCategorySpendingTypeRequest"];
+            };
+        };
         responses: {
             /** @description Success */
             200: {
@@ -11222,7 +12020,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["CompletionProviderConfig"];
+                "application/json": components["schemas"]["SetCompletionProviderRequest"];
             };
         };
         responses: {
@@ -11242,7 +12040,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetCounterpartyVerdictRequest"];
+            };
+        };
         responses: {
             200: {
                 headers: {
@@ -11263,7 +12065,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": string;
+                "application/json": components["schemas"]["SetCurrencyRequest"];
             };
         };
         responses: {
@@ -11285,7 +12087,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["FinancialAssumptionsInput"];
+                "application/json": components["schemas"]["SetFinancialAssumptionsRequest"];
             };
         };
         responses: {
@@ -11307,7 +12109,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["FinancialPhilosophyDto"];
+                "application/json": components["schemas"]["SetFinancialPhilosophyRequest"];
             };
         };
         responses: {
@@ -11329,7 +12131,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["NotificationPrefsDto"];
+                "application/json": components["schemas"]["SetNotificationPrefsRequest"];
             };
         };
         responses: {
@@ -11351,7 +12153,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": boolean;
+                "application/json": components["schemas"]["SetNotificationsEnabledRequest"];
             };
         };
         responses: {
@@ -11373,7 +12175,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": string;
+                "application/json": components["schemas"]["SetSelfMemberRequest"];
             };
         };
         responses: {
@@ -11395,7 +12197,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["SimpleFinSyncSettings"];
+                "application/json": components["schemas"]["SetSimplefinSyncSettingsRequest"];
             };
         };
         responses: {
@@ -11415,7 +12217,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetSpendingAnnotationRequest"];
+            };
+        };
         responses: {
             /** @description Success */
             200: {
@@ -11433,7 +12239,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetSubscriptionTrialRequest"];
+            };
+        };
         responses: {
             /** @description Success */
             200: {
@@ -11451,7 +12261,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetSubscriptionVerdictRequest"];
+            };
+        };
         responses: {
             /** @description Success */
             200: {
@@ -11469,7 +12283,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetTransactionFlagsRequest"];
+            };
+        };
         responses: {
             200: {
                 headers: {
@@ -11488,7 +12306,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetTransactionOwnerRequest"];
+            };
+        };
         responses: {
             /** @description Success */
             200: {
@@ -11506,7 +12328,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetTransactionSplitsRequest"];
+            };
+        };
         responses: {
             /** @description Success */
             200: {
@@ -11524,7 +12350,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetTransactionTransferRequest"];
+            };
+        };
         responses: {
             200: {
                 headers: {
@@ -11545,7 +12375,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": string;
+                "application/json": components["schemas"]["StageRestoreBackupRequest"];
             };
         };
         responses: {
@@ -11565,14 +12395,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StreamCopilotMessageRequest"];
+            };
+        };
         responses: {
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "text/plain": string;
+                    "application/json": string;
                 };
             };
         };
@@ -11605,7 +12439,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": string;
+                "application/json": components["schemas"]["SyncSimplefinAccountRequest"];
             };
         };
         responses: {
@@ -11626,7 +12460,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TestCompletionProviderRequest"];
+            };
+        };
         responses: {
             200: {
                 headers: {
@@ -11645,7 +12483,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ToggleRuleRequest"];
+            };
+        };
         responses: {
             /** @description Success */
             200: {
@@ -11701,7 +12543,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "text/plain": string;
+                "application/json": components["schemas"]["TriggerRecipeRequest"];
             };
         };
         responses: {
@@ -11710,7 +12552,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "text/plain": string;
+                    "application/json": string;
                 };
             };
         };
@@ -11722,7 +12564,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateAccountRequest"];
+            };
+        };
         responses: {
             200: {
                 headers: {
@@ -11741,7 +12587,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateCategoryColorRequest"];
+            };
+        };
         responses: {
             /** @description Success */
             200: {
@@ -11759,7 +12609,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateGoalBalanceRequest"];
+            };
+        };
         responses: {
             /** @description Success */
             200: {
@@ -11777,7 +12631,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateGoalMonthlyRequest"];
+            };
+        };
         responses: {
             /** @description Success */
             200: {
@@ -11795,7 +12653,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateGoalPriorityRequest"];
+            };
+        };
         responses: {
             /** @description Success */
             200: {
@@ -11813,7 +12675,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateGoalPurposeRequest"];
+            };
+        };
         responses: {
             /** @description Success */
             200: {
@@ -11831,7 +12697,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateManualAssetRequest"];
+            };
+        };
         responses: {
             200: {
                 headers: {
@@ -11850,7 +12720,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdatePlannedTransactionRequest"];
+            };
+        };
         responses: {
             200: {
                 headers: {
@@ -11869,7 +12743,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateRecipeRequest"];
+            };
+        };
         responses: {
             200: {
                 headers: {
@@ -11888,7 +12766,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateTransactionRequest"];
+            };
+        };
         responses: {
             200: {
                 headers: {

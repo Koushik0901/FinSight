@@ -179,7 +179,15 @@ fn category_totals_for_window(
     Ok(rows.collect::<Result<Vec<_>, rusqlite::Error>>()?)
 }
 
-#[utoipa::path(post, path = "/api/rpc/get_report_data", responses((status = 200, body = ReportData)))]
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct GetReportDataRequest {
+    pub scope: String,
+    pub member_id: Option<String>,
+}
+
+#[utoipa::path(post, path = "/api/rpc/get_report_data", request_body(content = GetReportDataRequest), responses((status = 200, body = ReportData)))]
 pub async fn get_report_data(
     state: &ApiState,
     scope: String,

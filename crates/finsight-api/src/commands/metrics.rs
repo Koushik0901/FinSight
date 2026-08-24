@@ -69,8 +69,15 @@ pub struct FinancialMetrics {
     pub unconverted_holdings: Vec<UnconvertedHolding>,
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct GetFinancialMetricsRequest {
+    pub member_id: Option<String>,
+}
+
 #[utoipa::path(post, path = "/api/rpc/get_financial_metrics",
-    request_body(content = Option<String>), responses((status = 200, body = FinancialMetrics)))]
+    request_body(content = GetFinancialMetricsRequest), responses((status = 200, body = FinancialMetrics)))]
 pub async fn get_financial_metrics(
     state: &ApiState,
     member_id: Option<String>,
@@ -152,8 +159,15 @@ pub async fn get_financial_metrics(
 /// reads, so an explanation can never disagree with the number shown elsewhere.
 /// The single source of truth is shared verbatim with the Copilot's
 /// `explain_metric` tool.
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct ExplainFinancialMetricsRequest {
+    pub member_id: Option<String>,
+}
+
 #[utoipa::path(post, path = "/api/rpc/explain_financial_metrics",
-    request_body(content = Option<String>), responses((status = 200, body = Vec<MetricExplanation>)))]
+    request_body(content = ExplainFinancialMetricsRequest), responses((status = 200, body = Vec<MetricExplanation>)))]
 pub async fn explain_financial_metrics(
     state: &ApiState,
     member_id: Option<String>,
@@ -258,8 +272,15 @@ pub struct FinancialAssumptionsInput {
     pub expected_annual_return_pct: f64,
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct SetFinancialAssumptionsRequest {
+    pub input: FinancialAssumptionsInput,
+}
+
 #[utoipa::path(post, path = "/api/rpc/set_financial_assumptions",
-    request_body(content = FinancialAssumptionsInput), responses((status = 200, description = "Success")))]
+    request_body(content = SetFinancialAssumptionsRequest), responses((status = 200, description = "Success")))]
 pub async fn set_financial_assumptions(
     state: &ApiState,
     input: FinancialAssumptionsInput,
@@ -335,8 +356,15 @@ pub async fn get_financial_philosophy(state: &ApiState) -> AppResult<FinancialPh
     .map_err(AppError::from)
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct SetFinancialPhilosophyRequest {
+    pub input: FinancialPhilosophyDto,
+}
+
 #[utoipa::path(post, path = "/api/rpc/set_financial_philosophy",
-    request_body(content = FinancialPhilosophyDto), responses((status = 200, description = "Success")))]
+    request_body(content = SetFinancialPhilosophyRequest), responses((status = 200, description = "Success")))]
 pub async fn set_financial_philosophy(
     state: &ApiState,
     input: FinancialPhilosophyDto,

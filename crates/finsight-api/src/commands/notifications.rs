@@ -111,8 +111,15 @@ pub async fn get_notification_prefs(state: &ApiState) -> AppResult<NotificationP
         .map_err(AppError::from)
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct SetNotificationPrefsRequest {
+    pub prefs: NotificationPrefsDto,
+}
+
 #[utoipa::path(post, path = "/api/rpc/set_notification_prefs",
-    request_body(content = NotificationPrefsDto), responses((status = 200, description = "Success")))]
+    request_body(content = SetNotificationPrefsRequest), responses((status = 200, description = "Success")))]
 pub async fn set_notification_prefs(
     state: &ApiState,
     prefs: NotificationPrefsDto,
@@ -127,8 +134,15 @@ pub async fn set_notification_prefs(
 /// The notification history. `includeResolved=false` (default view) shows only
 /// still-active items; held (quiet-hours) items appear here too so they're never
 /// lost, just not pushed.
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct ListNotificationsRequest {
+    pub include_resolved: Option<bool>,
+}
+
 #[utoipa::path(post, path = "/api/rpc/list_notifications",
-    request_body(content = Option<bool>), responses((status = 200, body = Vec<Notification>)))]
+    request_body(content = ListNotificationsRequest), responses((status = 200, body = Vec<Notification>)))]
 pub async fn list_notifications(
     state: &ApiState,
     include_resolved: Option<bool>,
@@ -140,8 +154,15 @@ pub async fn list_notifications(
         .map_err(AppError::from)
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct MarkNotificationReadRequest {
+    pub id: String,
+}
+
 #[utoipa::path(post, path = "/api/rpc/mark_notification_read",
-    request_body(content = String), responses((status = 200, description = "Success")))]
+    request_body(content = MarkNotificationReadRequest), responses((status = 200, description = "Success")))]
 pub async fn mark_notification_read(state: &ApiState, id: String) -> AppResult<()> {
     let db = (*state.db).clone();
     run(&db, move |conn| notify::mark_read(conn, &id))
@@ -149,7 +170,7 @@ pub async fn mark_notification_read(state: &ApiState, id: String) -> AppResult<(
         .map_err(AppError::from)
 }
 
-#[utoipa::path(post, path = "/api/rpc/mark_all_notifications_read", responses((status = 200, body = u32)))]
+#[utoipa::path(post, path = "/api/rpc/mark_all_notifications_read", responses((status = 200, content_type = "application/json", body = u32)))]
 pub async fn mark_all_notifications_read(state: &ApiState) -> AppResult<u32> {
     let db = (*state.db).clone();
     run(&db, |conn| notify::mark_all_read(conn).map(|n| n as u32))
@@ -158,7 +179,7 @@ pub async fn mark_all_notifications_read(state: &ApiState) -> AppResult<u32> {
 }
 
 /// Unread, unresolved count — what the installed-app icon badge reflects.
-#[utoipa::path(post, path = "/api/rpc/notification_unread_count", responses((status = 200, body = i64)))]
+#[utoipa::path(post, path = "/api/rpc/notification_unread_count", responses((status = 200, content_type = "application/json", body = i64)))]
 pub async fn notification_unread_count(state: &ApiState) -> AppResult<i64> {
     let db = (*state.db).clone();
     run(&db, notify::unread_count).await.map_err(AppError::from)

@@ -63,8 +63,15 @@ pub struct OllamaProbeResult {
     pub has_nomic_embed: bool,
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct ProbeOllamaRequest {
+    pub base_url: String,
+}
+
 #[utoipa::path(post, path = "/api/rpc/probe_ollama",
-    request_body(content = String), responses((status = 200, body = OllamaProbeResult)))]
+    request_body(content = ProbeOllamaRequest), responses((status = 200, body = OllamaProbeResult)))]
 pub async fn probe_ollama(base_url: String) -> AppResult<OllamaProbeResult> {
     let url = format!("{}/api/tags", base_url.trim_end_matches('/'));
     let client = reqwest::Client::builder()
@@ -129,8 +136,15 @@ pub enum LlmProviderConfig {
     Unconfigured,
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct SaveLlmProviderRequest {
+    pub config: LlmProviderConfig,
+}
+
 #[utoipa::path(post, path = "/api/rpc/save_llm_provider",
-    request_body(content = LlmProviderConfig), responses((status = 200, description = "Success")))]
+    request_body(content = SaveLlmProviderRequest), responses((status = 200, description = "Success")))]
 pub async fn save_llm_provider(state: &ApiState, config: LlmProviderConfig) -> AppResult<()> {
     let db = (*state.db).clone();
     run(&db, move |conn| {
@@ -148,8 +162,15 @@ pub struct StarterCategory {
     pub color: String,
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct CommitStarterCategoriesRequest {
+    pub categories: Vec<StarterCategory>,
+}
+
 #[utoipa::path(post, path = "/api/rpc/commit_starter_categories",
-    request_body(content = Vec<StarterCategory>), responses((status = 200, description = "Success")))]
+    request_body(content = CommitStarterCategoriesRequest), responses((status = 200, description = "Success")))]
 pub async fn commit_starter_categories(
     state: &ApiState,
     categories: Vec<StarterCategory>,

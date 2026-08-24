@@ -139,8 +139,15 @@ impl From<finsight_core::repos::transfers::TransferSuggestion> for TransferSugge
     }
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct SaveSimplefinSetupTokenRequest {
+    pub token: String,
+}
+
 #[utoipa::path(post, path = "/api/rpc/save_simplefin_setup_token",
-    request_body(content = String), responses((status = 200, body = Vec<SimpleFinConnectionInfo>)))]
+    request_body(content = SaveSimplefinSetupTokenRequest), responses((status = 200, body = Vec<SimpleFinConnectionInfo>)))]
 pub async fn save_simplefin_setup_token(
     state: &ApiState,
     token: String,
@@ -453,8 +460,15 @@ pub async fn list_simplefin_accounts(state: &ApiState) -> AppResult<Vec<SimpleFi
     Ok(out)
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct ImportSimplefinAccountsRequest {
+    pub accounts: Vec<SimpleFinAccountImportRequest>,
+}
+
 #[utoipa::path(post, path = "/api/rpc/import_simplefin_accounts",
-    request_body(content = Vec<SimpleFinAccountImportRequest>), responses((status = 200, body = Vec<String>)))]
+    request_body(content = ImportSimplefinAccountsRequest), responses((status = 200, body = Vec<String>)))]
 pub async fn import_simplefin_accounts(
     state: &ApiState,
     accounts: Vec<SimpleFinAccountImportRequest>,
@@ -566,8 +580,15 @@ pub async fn import_simplefin_accounts(
     Ok(created_ids)
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct SyncSimplefinAccountRequest {
+    pub account_id: String,
+}
+
 #[utoipa::path(post, path = "/api/rpc/sync_simplefin_account",
-    request_body(content = String), responses((status = 200, body = SyncSummary)))]
+    request_body(content = SyncSimplefinAccountRequest), responses((status = 200, body = SyncSummary)))]
 pub async fn sync_simplefin_account(
     state: &ApiState,
     account_id: String,
@@ -879,8 +900,15 @@ pub async fn purge_simplefin_data(state: &ApiState) -> AppResult<SimpleFinPurgeS
     .map_err(AppError::from)
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct DeleteSimplefinConnectionRequest {
+    pub connection_id: String,
+}
+
 #[utoipa::path(post, path = "/api/rpc/delete_simplefin_connection",
-    request_body(content = String), responses((status = 200, description = "Success")))]
+    request_body(content = DeleteSimplefinConnectionRequest), responses((status = 200, description = "Success")))]
 pub async fn delete_simplefin_connection(state: &ApiState, connection_id: String) -> AppResult<()> {
     let db = state.db.clone();
     let bridge_id = run(&db, {
@@ -955,8 +983,15 @@ pub async fn get_simplefin_sync_settings(
     })
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct SetSimplefinSyncSettingsRequest {
+    pub settings: SimpleFinSyncSettings,
+}
+
 #[utoipa::path(post, path = "/api/rpc/set_simplefin_sync_settings",
-    request_body(content = SimpleFinSyncSettings), responses((status = 200, description = "Success")))]
+    request_body(content = SetSimplefinSyncSettingsRequest), responses((status = 200, description = "Success")))]
 pub async fn set_simplefin_sync_settings(
     state: &ApiState,
     settings: SimpleFinSyncSettings,
@@ -995,8 +1030,15 @@ pub async fn list_simplefin_alerts(state: &ApiState) -> AppResult<Vec<SimpleFinA
     Ok(rows)
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct AcknowledgeSimplefinAlertRequest {
+    pub alert_id: String,
+}
+
 #[utoipa::path(post, path = "/api/rpc/acknowledge_simplefin_alert",
-    request_body(content = String), responses((status = 200, description = "Success")))]
+    request_body(content = AcknowledgeSimplefinAlertRequest), responses((status = 200, description = "Success")))]
 pub async fn acknowledge_simplefin_alert(state: &ApiState, alert_id: String) -> AppResult<()> {
     let db = state.db.clone();
     run(&db, {
@@ -1019,8 +1061,15 @@ pub async fn list_simplefin_transfer_suggestions(
     Ok(rows.into_iter().map(Into::into).collect())
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct ConfirmSimplefinTransferRequest {
+    pub transfer_id: String,
+}
+
 #[utoipa::path(post, path = "/api/rpc/confirm_simplefin_transfer",
-    request_body(content = String), responses((status = 200, description = "Success")))]
+    request_body(content = ConfirmSimplefinTransferRequest), responses((status = 200, description = "Success")))]
 pub async fn confirm_simplefin_transfer(state: &ApiState, transfer_id: String) -> AppResult<()> {
     let db = state.db.clone();
     run(&db, {
@@ -1032,8 +1081,15 @@ pub async fn confirm_simplefin_transfer(state: &ApiState, transfer_id: String) -
     Ok(())
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct RejectSimplefinTransferRequest {
+    pub transfer_id: String,
+}
+
 #[utoipa::path(post, path = "/api/rpc/reject_simplefin_transfer",
-    request_body(content = String), responses((status = 200, description = "Success")))]
+    request_body(content = RejectSimplefinTransferRequest), responses((status = 200, description = "Success")))]
 pub async fn reject_simplefin_transfer(state: &ApiState, transfer_id: String) -> AppResult<()> {
     let db = state.db.clone();
     run(&db, {
@@ -1055,7 +1111,15 @@ pub async fn list_import_review_candidates(
         .map_err(AppError::from)
 }
 
-#[utoipa::path(post, path = "/api/rpc/accept_import_candidate_match", responses((status = 200, description = "Success")))]
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct AcceptImportCandidateMatchRequest {
+    pub candidate_id: String,
+    pub transaction_id: String,
+}
+
+#[utoipa::path(post, path = "/api/rpc/accept_import_candidate_match", request_body(content = AcceptImportCandidateMatchRequest), responses((status = 200, description = "Success")))]
 pub async fn accept_import_candidate_match(
     state: &ApiState,
     candidate_id: String,
@@ -1070,8 +1134,15 @@ pub async fn accept_import_candidate_match(
     Ok(())
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct CreateImportCandidateTransactionRequest {
+    pub candidate_id: String,
+}
+
 #[utoipa::path(post, path = "/api/rpc/create_import_candidate_transaction",
-    request_body(content = String), responses((status = 200, body = String)))]
+    request_body(content = CreateImportCandidateTransactionRequest), responses((status = 200, content_type = "application/json", body = String)))]
 pub async fn create_import_candidate_transaction(
     state: &ApiState,
     candidate_id: String,
@@ -1084,8 +1155,15 @@ pub async fn create_import_candidate_transaction(
     .map_err(AppError::from)
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct DismissImportCandidateRequest {
+    pub candidate_id: String,
+}
+
 #[utoipa::path(post, path = "/api/rpc/dismiss_import_candidate",
-    request_body(content = String), responses((status = 200, description = "Success")))]
+    request_body(content = DismissImportCandidateRequest), responses((status = 200, description = "Success")))]
 pub async fn dismiss_import_candidate(state: &ApiState, candidate_id: String) -> AppResult<()> {
     let db = state.db.clone();
     run(&db, move |conn| {

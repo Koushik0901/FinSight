@@ -63,7 +63,16 @@ pub fn build_preview(
     })
 }
 
-#[utoipa::path(post, path = "/api/rpc/prepare_csv_import", responses((status = 200, body = PreparedImportPreview)))]
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct PrepareCsvImportRequest {
+    pub path: String,
+    pub account_id: String,
+    pub mapping: CsvImportMapping,
+}
+
+#[utoipa::path(post, path = "/api/rpc/prepare_csv_import", request_body(content = PrepareCsvImportRequest), responses((status = 200, body = PreparedImportPreview)))]
 pub async fn prepare_csv_import(
     state: &ApiState,
     path: String,
@@ -77,7 +86,15 @@ pub async fn prepare_csv_import(
         .map_err(|e| AppError::new("internal", format!("join: {e}")))?
 }
 
-#[utoipa::path(post, path = "/api/rpc/preview_csv_columns", responses((status = 200, body = CsvPreview)))]
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct PreviewCsvColumnsRequest {
+    pub path: String,
+    pub skip_header_rows: u32,
+}
+
+#[utoipa::path(post, path = "/api/rpc/preview_csv_columns", request_body(content = PreviewCsvColumnsRequest), responses((status = 200, body = CsvPreview)))]
 pub async fn preview_csv_columns(path: String, skip_header_rows: u32) -> AppResult<CsvPreview> {
     let path_buf = PathBuf::from(path);
     tokio::task::spawn_blocking(move || CsvProvider::preview(&path_buf, skip_header_rows))
@@ -112,12 +129,17 @@ pub struct ImportResult {
 /// Import a CSV file, running the deterministic post-import cascade
 /// (categorization, transfer pairing, anomaly refresh, net-worth refresh) and
 /// enqueuing the AI categorizer. Progress and completion are pushed through the
-/// `sink` (`"import-progress"` / `"import-complete"`, unchanged event names and
-/// payload shapes) — the Tauri wrapper feeds a `TauriFrameSink` that emits real
-/// window events, and ALSO fires the desktop "check_and_fire" notification
-/// after this returns (that notification is native-only and stays in the
-/// wrapper, not here — see `crates/finsight-bindings/src/commands/import.rs`).
-#[utoipa::path(post, path = "/api/rpc/import_csv", responses((status = 200, body = ImportResult)))]
+/// `sink` (`"import-progress"` / `"import-complete"`).
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct ImportCsvRequest {
+    pub path: String,
+    pub account_id: String,
+    pub mapping: CsvImportMapping,
+}
+
+#[utoipa::path(post, path = "/api/rpc/import_csv", request_body(content = ImportCsvRequest), responses((status = 200, body = ImportResult)))]
 pub async fn import_csv(
     state: &ApiState,
     sink: Arc<dyn FrameSink>,
@@ -322,8 +344,15 @@ pub async fn import_csv(
     Ok(result)
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct GetSavedCsvMappingRequest {
+    pub account_id: String,
+}
+
 #[utoipa::path(post, path = "/api/rpc/get_saved_csv_mapping",
-    request_body(content = String), responses((status = 200, body = Option<CsvImportMapping>)))]
+    request_body(content = GetSavedCsvMappingRequest), responses((status = 200, body = Option<CsvImportMapping>)))]
 pub async fn get_saved_csv_mapping(
     state: &ApiState,
     account_id: String,
@@ -345,8 +374,15 @@ pub async fn list_unfinished_imports(state: &ApiState) -> AppResult<Vec<Import>>
         .map_err(AppError::from)
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct DiscardUnfinishedImportRequest {
+    pub import_id: String,
+}
+
 #[utoipa::path(post, path = "/api/rpc/discard_unfinished_import",
-    request_body(content = String), responses((status = 200, description = "Success")))]
+    request_body(content = DiscardUnfinishedImportRequest), responses((status = 200, description = "Success")))]
 pub async fn discard_unfinished_import(state: &ApiState, import_id: String) -> AppResult<()> {
     let db = (*state.db).clone();
     run(&db, move |conn| {

@@ -9,8 +9,15 @@ use finsight_core::investments::{self, InvestmentSummary, Position};
 use finsight_core::repos::run;
 use utoipa::ToSchema;
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct ListAccountPositionsRequest {
+    pub account_id: String,
+}
+
 #[utoipa::path(post, path = "/api/rpc/list_account_positions",
-    request_body(content = String), responses((status = 200, body = Vec<Position>)))]
+    request_body(content = ListAccountPositionsRequest), responses((status = 200, body = Vec<Position>)))]
 pub async fn list_account_positions(
     state: &ApiState,
     account_id: String,
@@ -23,8 +30,15 @@ pub async fn list_account_positions(
     .map_err(AppError::from)
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct GetInvestmentSummaryRequest {
+    pub account_id: String,
+}
+
 #[utoipa::path(post, path = "/api/rpc/get_investment_summary",
-    request_body(content = String), responses((status = 200, body = InvestmentSummary)))]
+    request_body(content = GetInvestmentSummaryRequest), responses((status = 200, body = InvestmentSummary)))]
 pub async fn get_investment_summary(
     state: &ApiState,
     account_id: String,

@@ -12,7 +12,15 @@ pub async fn list_household_members(state: &ApiState) -> AppResult<Vec<Household
         .map_err(AppError::from)
 }
 
-#[utoipa::path(post, path = "/api/rpc/create_household_member", responses((status = 200, body = HouseholdMember)))]
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct CreateHouseholdMemberRequest {
+    pub name: String,
+    pub color: Option<String>,
+}
+
+#[utoipa::path(post, path = "/api/rpc/create_household_member", request_body(content = CreateHouseholdMemberRequest), responses((status = 200, body = HouseholdMember)))]
 pub async fn create_household_member(
     state: &ApiState,
     name: String,
@@ -26,8 +34,15 @@ pub async fn create_household_member(
     .map_err(AppError::from)
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct SetSelfMemberRequest {
+    pub member_id: String,
+}
+
 #[utoipa::path(post, path = "/api/rpc/set_self_member",
-    request_body(content = String), responses((status = 200, description = "Success")))]
+    request_body(content = SetSelfMemberRequest), responses((status = 200, description = "Success")))]
 pub async fn set_self_member(state: &ApiState, member_id: String) -> AppResult<()> {
     let db = (*state.db).clone();
     run(&db, move |conn| {
@@ -41,8 +56,15 @@ pub async fn set_self_member(state: &ApiState, member_id: String) -> AppResult<(
     .map_err(AppError::from)
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct DeleteHouseholdMemberRequest {
+    pub id: String,
+}
+
 #[utoipa::path(post, path = "/api/rpc/delete_household_member",
-    request_body(content = String), responses((status = 200, description = "Success")))]
+    request_body(content = DeleteHouseholdMemberRequest), responses((status = 200, description = "Success")))]
 pub async fn delete_household_member(state: &ApiState, id: String) -> AppResult<()> {
     let db = (*state.db).clone();
     run(&db, move |conn| household::delete_member(conn, &id))
@@ -58,7 +80,15 @@ pub async fn list_account_owners(state: &ApiState) -> AppResult<Vec<AccountOwner
         .map_err(AppError::from)
 }
 
-#[utoipa::path(post, path = "/api/rpc/set_account_owners", responses((status = 200, description = "Success")))]
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct SetAccountOwnersRequest {
+    pub account_id: String,
+    pub member_ids: Vec<String>,
+}
+
+#[utoipa::path(post, path = "/api/rpc/set_account_owners", request_body(content = SetAccountOwnersRequest), responses((status = 200, description = "Success")))]
 pub async fn set_account_owners(
     state: &ApiState,
     account_id: String,
@@ -72,7 +102,15 @@ pub async fn set_account_owners(
     .map_err(AppError::from)
 }
 
-#[utoipa::path(post, path = "/api/rpc/set_account_owner_shares", responses((status = 200, description = "Success")))]
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct SetAccountOwnerSharesRequest {
+    pub account_id: String,
+    pub owners: Vec<OwnerShare>,
+}
+
+#[utoipa::path(post, path = "/api/rpc/set_account_owner_shares", request_body(content = SetAccountOwnerSharesRequest), responses((status = 200, description = "Success")))]
 pub async fn set_account_owner_shares(
     state: &ApiState,
     account_id: String,
@@ -94,7 +132,15 @@ pub async fn list_asset_owners(state: &ApiState) -> AppResult<Vec<AssetOwner>> {
         .map_err(AppError::from)
 }
 
-#[utoipa::path(post, path = "/api/rpc/set_asset_owners", responses((status = 200, description = "Success")))]
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct SetAssetOwnersRequest {
+    pub asset_id: String,
+    pub owners: Vec<OwnerShare>,
+}
+
+#[utoipa::path(post, path = "/api/rpc/set_asset_owners", request_body(content = SetAssetOwnersRequest), responses((status = 200, description = "Success")))]
 pub async fn set_asset_owners(
     state: &ApiState,
     asset_id: String,

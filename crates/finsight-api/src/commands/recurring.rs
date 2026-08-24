@@ -146,7 +146,15 @@ pub async fn list_recurring(state: &ApiState) -> AppResult<Vec<RecurringItem>> {
 /// Set (or clear, with `verdict = None`) the user's confirm/dismiss verdict on a
 /// detected subscription. `verdict` accepts "confirmed" | "dismissed"; any other
 /// value (or null) clears it, so a bad string can't corrupt state.
-#[utoipa::path(post, path = "/api/rpc/set_subscription_verdict", responses((status = 200, description = "Success")))]
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct SetSubscriptionVerdictRequest {
+    pub merchant_key: String,
+    pub verdict: Option<String>,
+}
+
+#[utoipa::path(post, path = "/api/rpc/set_subscription_verdict", request_body(content = SetSubscriptionVerdictRequest), responses((status = 200, description = "Success")))]
 pub async fn set_subscription_verdict(
     state: &ApiState,
     merchant_key: String,
@@ -165,7 +173,16 @@ pub async fn set_subscription_verdict(
 /// (`YYYY-MM-DD`), or clear it with `trial_ends_at = None`. `label` is the
 /// display name captured for the reminder. A heads-up fires shortly before the
 /// date (#75).
-#[utoipa::path(post, path = "/api/rpc/set_subscription_trial", responses((status = 200, description = "Success")))]
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct SetSubscriptionTrialRequest {
+    pub merchant_key: String,
+    pub label: String,
+    pub trial_ends_at: Option<String>,
+}
+
+#[utoipa::path(post, path = "/api/rpc/set_subscription_trial", request_body(content = SetSubscriptionTrialRequest), responses((status = 200, description = "Success")))]
 pub async fn set_subscription_trial(
     state: &ApiState,
     merchant_key: String,
@@ -183,7 +200,16 @@ pub async fn set_subscription_trial(
 /// Mark a detected subscription CANCELLED as of `cancelled_at` (`YYYY-MM-DD`).
 /// Ongoing price/renewal alerts stop; a charge dated after the cancel date is
 /// surfaced as a surprise. `label` names the service in that alert (#75).
-#[utoipa::path(post, path = "/api/rpc/mark_subscription_cancelled", responses((status = 200, description = "Success")))]
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct MarkSubscriptionCancelledRequest {
+    pub merchant_key: String,
+    pub label: String,
+    pub cancelled_at: String,
+}
+
+#[utoipa::path(post, path = "/api/rpc/mark_subscription_cancelled", request_body(content = MarkSubscriptionCancelledRequest), responses((status = 200, description = "Success")))]
 pub async fn mark_subscription_cancelled(
     state: &ApiState,
     merchant_key: String,

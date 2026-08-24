@@ -16,7 +16,16 @@ use utoipa::ToSchema;
 /// `source_txn_id` is an optional provenance breadcrumb for an "add this
 /// transaction as an example" affordance; the example survives that
 /// transaction being deleted.
-#[utoipa::path(post, path = "/api/rpc/add_category_example", responses((status = 200, body = CategoryExample)))]
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct AddCategoryExampleRequest {
+    pub category_id: String,
+    pub example_text: String,
+    pub source_txn_id: Option<String>,
+}
+
+#[utoipa::path(post, path = "/api/rpc/add_category_example", request_body(content = AddCategoryExampleRequest), responses((status = 200, body = CategoryExample)))]
 pub async fn add_category_example(
     state: &ApiState,
     category_id: String,
@@ -32,8 +41,15 @@ pub async fn add_category_example(
 }
 
 /// Remove one exemplar by its own id. No-op if it's already gone.
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct RemoveCategoryExampleRequest {
+    pub id: String,
+}
+
 #[utoipa::path(post, path = "/api/rpc/remove_category_example",
-    request_body(content = String), responses((status = 200, description = "Success")))]
+    request_body(content = RemoveCategoryExampleRequest), responses((status = 200, description = "Success")))]
 pub async fn remove_category_example(state: &ApiState, id: String) -> AppResult<()> {
     let db = (*state.db).clone();
     run(&db, move |conn| category_examples::remove(conn, &id))
@@ -46,8 +62,15 @@ pub async fn remove_category_example(state: &ApiState, id: String) -> AppResult<
 /// Returns rows for ARCHIVED categories too, mirroring how `list_categories`
 /// still returns `guidance` on an archived row — archiving hides examples from
 /// active consumers, it does not delete them.
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct ListCategoryExamplesRequest {
+    pub category_id: String,
+}
+
 #[utoipa::path(post, path = "/api/rpc/list_category_examples",
-    request_body(content = String), responses((status = 200, body = Vec<CategoryExample>)))]
+    request_body(content = ListCategoryExamplesRequest), responses((status = 200, body = Vec<CategoryExample>)))]
 pub async fn list_category_examples(
     state: &ApiState,
     category_id: String,

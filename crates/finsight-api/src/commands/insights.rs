@@ -13,8 +13,15 @@ pub async fn list_agent_memory(state: &ApiState) -> AppResult<Vec<AgentMemory>> 
     run(&db, agent_memory::list).await.map_err(AppError::from)
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct ForgetAgentMemoryRequest {
+    pub id: String,
+}
+
 #[utoipa::path(post, path = "/api/rpc/forget_agent_memory",
-    request_body(content = String), responses((status = 200, description = "Success")))]
+    request_body(content = ForgetAgentMemoryRequest), responses((status = 200, description = "Success")))]
 pub async fn forget_agent_memory(state: &ApiState, id: String) -> AppResult<()> {
     let db = (*state.db).clone();
     run(&db, move |conn| agent_memory::forget(conn, &id))

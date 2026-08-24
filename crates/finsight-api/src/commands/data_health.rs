@@ -151,8 +151,15 @@ pub async fn create_manual_backup(state: &ApiState) -> AppResult<BackupInfo> {
     })
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct StageRestoreBackupRequest {
+    pub path: String,
+}
+
 #[utoipa::path(post, path = "/api/rpc/stage_restore_backup",
-    request_body(content = String), responses((status = 200, description = "Success")))]
+    request_body(content = StageRestoreBackupRequest), responses((status = 200, description = "Success")))]
 pub async fn stage_restore_backup(state: &ApiState, path: String) -> AppResult<()> {
     let dir = state.data_dir.clone();
     let backups_dir = dir.join("backups");

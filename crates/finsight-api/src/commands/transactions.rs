@@ -20,8 +20,15 @@ pub struct TxnFilterInput {
     pub end_date: Option<String>,
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct ListTransactionsRequest {
+    pub filter: TxnFilterInput,
+}
+
 #[utoipa::path(post, path = "/api/rpc/list_transactions",
-    request_body(content = TxnFilterInput), responses((status = 200, body = Vec<Transaction>)))]
+    request_body(content = ListTransactionsRequest), responses((status = 200, body = Vec<Transaction>)))]
 pub async fn list_transactions(
     state: &ApiState,
     filter: TxnFilterInput,
@@ -46,8 +53,15 @@ pub async fn list_transactions(
     Ok(result)
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct CreateTransactionRequest {
+    pub input: NewTransaction,
+}
+
 #[utoipa::path(post, path = "/api/rpc/create_transaction",
-    request_body(content = NewTransaction), responses((status = 200, body = Transaction)))]
+    request_body(content = CreateTransactionRequest), responses((status = 200, body = Transaction)))]
 pub async fn create_transaction(state: &ApiState, input: NewTransaction) -> AppResult<Transaction> {
     let db = (*state.db).clone();
     run(&db, move |conn| transactions::insert(conn, input))
@@ -68,7 +82,15 @@ pub struct UpdateTxnResult {
     pub proposed_rule: Option<ProposedRuleDto>,
 }
 
-#[utoipa::path(post, path = "/api/rpc/update_transaction", responses((status = 200, body = UpdateTxnResult)))]
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct UpdateTransactionRequest {
+    pub id: String,
+    pub patch: TxnPatch,
+}
+
+#[utoipa::path(post, path = "/api/rpc/update_transaction", request_body(content = UpdateTransactionRequest), responses((status = 200, body = UpdateTxnResult)))]
 pub async fn update_transaction(
     state: &ApiState,
     id: String,
@@ -91,8 +113,15 @@ pub async fn update_transaction(
     .map_err(AppError::from)
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct DeleteTransactionRequest {
+    pub id: String,
+}
+
 #[utoipa::path(post, path = "/api/rpc/delete_transaction",
-    request_body(content = String), responses((status = 200, description = "Success")))]
+    request_body(content = DeleteTransactionRequest), responses((status = 200, description = "Success")))]
 pub async fn delete_transaction(state: &ApiState, id: String) -> AppResult<()> {
     let db = (*state.db).clone();
     run(&db, move |conn| transactions::delete(conn, &id))
@@ -100,7 +129,15 @@ pub async fn delete_transaction(state: &ApiState, id: String) -> AppResult<()> {
         .map_err(AppError::from)
 }
 
-#[utoipa::path(post, path = "/api/rpc/create_rule", responses((status = 200, body = Rule)))]
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct CreateRuleRequest {
+    pub pattern: String,
+    pub category_id: String,
+}
+
+#[utoipa::path(post, path = "/api/rpc/create_rule", request_body(content = CreateRuleRequest), responses((status = 200, body = Rule)))]
 pub async fn create_rule(
     state: &ApiState,
     pattern: String,
@@ -127,7 +164,15 @@ pub async fn create_rule(
     .map_err(AppError::from)
 }
 
-#[utoipa::path(post, path = "/api/rpc/set_transaction_owner", responses((status = 200, description = "Success")))]
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct SetTransactionOwnerRequest {
+    pub transaction_id: String,
+    pub member_id: Option<String>,
+}
+
+#[utoipa::path(post, path = "/api/rpc/set_transaction_owner", request_body(content = SetTransactionOwnerRequest), responses((status = 200, description = "Success")))]
 pub async fn set_transaction_owner(
     state: &ApiState,
     transaction_id: String,
@@ -331,7 +376,15 @@ pub struct SpendingBreakdown {
     pub total_income_cents: i64,
 }
 
-#[utoipa::path(post, path = "/api/rpc/set_category_spending_type", responses((status = 200, description = "Success")))]
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct SetCategorySpendingTypeRequest {
+    pub id: String,
+    pub spending_type: Option<String>,
+}
+
+#[utoipa::path(post, path = "/api/rpc/set_category_spending_type", request_body(content = SetCategorySpendingTypeRequest), responses((status = 200, description = "Success")))]
 pub async fn set_category_spending_type(
     state: &ApiState,
     id: String,
@@ -473,7 +526,15 @@ pub async fn list_rules_with_categories(state: &ApiState) -> AppResult<Vec<RuleW
     .map_err(AppError::from)
 }
 
-#[utoipa::path(post, path = "/api/rpc/toggle_rule", responses((status = 200, description = "Success")))]
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct ToggleRuleRequest {
+    pub id: String,
+    pub enabled: bool,
+}
+
+#[utoipa::path(post, path = "/api/rpc/toggle_rule", request_body(content = ToggleRuleRequest), responses((status = 200, description = "Success")))]
 pub async fn toggle_rule(state: &ApiState, id: String, enabled: bool) -> AppResult<()> {
     let db = (*state.db).clone();
     run(&db, move |conn| rules::set_enabled(conn, &id, enabled))
@@ -481,7 +542,7 @@ pub async fn toggle_rule(state: &ApiState, id: String, enabled: bool) -> AppResu
         .map_err(AppError::from)
 }
 
-#[utoipa::path(post, path = "/api/rpc/get_transaction_count", responses((status = 200, body = i64)))]
+#[utoipa::path(post, path = "/api/rpc/get_transaction_count", responses((status = 200, content_type = "application/json", body = i64)))]
 pub async fn get_transaction_count(state: &ApiState) -> AppResult<i64> {
     let db = (*state.db).clone();
     run(&db, |conn| {
@@ -491,7 +552,16 @@ pub async fn get_transaction_count(state: &ApiState) -> AppResult<i64> {
     .map_err(AppError::from)
 }
 
-#[utoipa::path(post, path = "/api/rpc/set_transaction_flags", responses((status = 200, body = Transaction)))]
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct SetTransactionFlagsRequest {
+    pub id: String,
+    pub is_reimbursable: bool,
+    pub is_split: bool,
+}
+
+#[utoipa::path(post, path = "/api/rpc/set_transaction_flags", request_body(content = SetTransactionFlagsRequest), responses((status = 200, body = Transaction)))]
 pub async fn set_transaction_flags(
     state: &ApiState,
     id: String,
@@ -522,7 +592,15 @@ pub struct TransferVerdictResult {
     pub similar_count: i64,
 }
 
-#[utoipa::path(post, path = "/api/rpc/set_transaction_transfer", responses((status = 200, body = TransferVerdictResult)))]
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct SetTransactionTransferRequest {
+    pub id: String,
+    pub is_transfer: bool,
+}
+
+#[utoipa::path(post, path = "/api/rpc/set_transaction_transfer", request_body(content = SetTransactionTransferRequest), responses((status = 200, body = TransferVerdictResult)))]
 pub async fn set_transaction_transfer(
     state: &ApiState,
     id: String,
@@ -552,7 +630,15 @@ pub async fn set_transaction_transfer(
     .map_err(AppError::from)
 }
 
-#[utoipa::path(post, path = "/api/rpc/apply_transfer_verdict_to_similar", responses((status = 200, body = u32)))]
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct ApplyTransferVerdictToSimilarRequest {
+    pub pattern: String,
+    pub is_transfer: bool,
+}
+
+#[utoipa::path(post, path = "/api/rpc/apply_transfer_verdict_to_similar", request_body(content = ApplyTransferVerdictToSimilarRequest), responses((status = 200, content_type = "application/json", body = u32)))]
 pub async fn apply_transfer_verdict_to_similar(
     state: &ApiState,
     pattern: String,
@@ -592,7 +678,15 @@ impl From<CounterpartyVerdict> for finsight_core::repos::transactions::Verdict {
 /// Record the user's 3-way verdict (transfer / settle-up / real spending) on
 /// a transfer-review counterparty transaction. Sticky: survives re-imports
 /// and categorizer re-runs.
-#[utoipa::path(post, path = "/api/rpc/set_counterparty_verdict", responses((status = 200, body = Transaction)))]
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct SetCounterpartyVerdictRequest {
+    pub id: String,
+    pub verdict: CounterpartyVerdict,
+}
+
+#[utoipa::path(post, path = "/api/rpc/set_counterparty_verdict", request_body(content = SetCounterpartyVerdictRequest), responses((status = 200, body = Transaction)))]
 pub async fn set_counterparty_verdict(
     state: &ApiState,
     id: String,
@@ -610,7 +704,15 @@ pub async fn set_counterparty_verdict(
 /// counterparty pattern (from [`UnresolvedCounterpartyDto::pattern`] or
 /// `TransferVerdictResult::similar_pattern`). One decision clears a whole
 /// person's e-transfer history from the review list.
-#[utoipa::path(post, path = "/api/rpc/apply_counterparty_verdict_to_similar", responses((status = 200, body = u32)))]
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct ApplyCounterpartyVerdictToSimilarRequest {
+    pub pattern: String,
+    pub verdict: CounterpartyVerdict,
+}
+
+#[utoipa::path(post, path = "/api/rpc/apply_counterparty_verdict_to_similar", request_body(content = ApplyCounterpartyVerdictToSimilarRequest), responses((status = 200, content_type = "application/json", body = u32)))]
 pub async fn apply_counterparty_verdict_to_similar(
     state: &ApiState,
     pattern: String,
@@ -684,8 +786,15 @@ pub struct SplitInputDto {
     pub amount_cents: i64,
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct GetTransactionSplitsRequest {
+    pub transaction_id: String,
+}
+
 #[utoipa::path(post, path = "/api/rpc/get_transaction_splits",
-    request_body(content = String), responses((status = 200, body = Vec<TransactionSplitDto>)))]
+    request_body(content = GetTransactionSplitsRequest), responses((status = 200, body = Vec<TransactionSplitDto>)))]
 pub async fn get_transaction_splits(
     state: &ApiState,
     transaction_id: String,
@@ -707,7 +816,15 @@ pub async fn get_transaction_splits(
     .map_err(AppError::from)
 }
 
-#[utoipa::path(post, path = "/api/rpc/set_transaction_splits", responses((status = 200, description = "Success")))]
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct SetTransactionSplitsRequest {
+    pub transaction_id: String,
+    pub splits: Vec<SplitInputDto>,
+}
+
+#[utoipa::path(post, path = "/api/rpc/set_transaction_splits", request_body(content = SetTransactionSplitsRequest), responses((status = 200, description = "Success")))]
 pub async fn set_transaction_splits(
     state: &ApiState,
     transaction_id: String,
@@ -731,8 +848,15 @@ pub async fn set_transaction_splits(
 /// Returns the CSV content for transactions matching a filter (caller
 /// downloads it client-side — no server-side file I/O). Real implementation
 /// as of Phase 4; previously 501'd behind a native-dialog-only Tauri command.
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct ExportTransactionsCsvRequest {
+    pub filter: TxnFilterInput,
+}
+
 #[utoipa::path(post, path = "/api/rpc/export_transactions_csv",
-    request_body(content = TxnFilterInput), responses((status = 200, body = String)))]
+    request_body(content = ExportTransactionsCsvRequest), responses((status = 200, content_type = "application/json", body = String)))]
 pub async fn export_transactions_csv(
     state: &ApiState,
     filter: TxnFilterInput,
@@ -787,8 +911,15 @@ pub struct SearchTxnQueryInput {
 /// `transactions::search` with the Copilot tool so the exported rows match
 /// exactly what the card displayed. Real implementation as of Phase 4;
 /// previously 501'd behind a native-dialog-only Tauri command.
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct ExportSearchTransactionsCsvRequest {
+    pub query: SearchTxnQueryInput,
+}
+
 #[utoipa::path(post, path = "/api/rpc/export_search_transactions_csv",
-    request_body(content = SearchTxnQueryInput), responses((status = 200, body = String)))]
+    request_body(content = ExportSearchTransactionsCsvRequest), responses((status = 200, content_type = "application/json", body = String)))]
 pub async fn export_search_transactions_csv(
     state: &ApiState,
     query: SearchTxnQueryInput,
