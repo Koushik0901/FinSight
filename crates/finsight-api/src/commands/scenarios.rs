@@ -819,6 +819,7 @@ mod tests {
             avg_monthly_income_cents: income,
             avg_monthly_expense_cents: expense,
             goals: vec![],
+            basis: None,
         }
     }
 

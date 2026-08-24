@@ -1106,6 +1106,7 @@ mod tests {
                 remaining_cents: 1_200_000,
                 monthly_cents: 100_000,
             }],
+            basis: None,
         }
     }
 

@@ -844,6 +844,7 @@ pub(crate) fn months_in_span(months_with_data: i64, window_days: i64) -> i64 {
 /// 90-day mean monthly expense (raw average, anomaly-included) — the
 /// conservative recent burn used by safety and cashflow, as opposed to the
 /// robust median used for display surplus.
+#[allow(dead_code)]
 pub(crate) fn avg_monthly_expense_90d(conn: &Connection) -> CoreResult<i64> {
     avg_monthly_expense_90d_scoped(conn, None)
 }

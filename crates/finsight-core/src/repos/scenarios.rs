@@ -1,7 +1,6 @@
 use crate::error::CoreResult;
 use crate::forecast::{GoalInfo, Snapshot};
-use crate::models::AccountType;
-use crate::repos::{accounts, goals};
+use crate::repos::goals;
 use chrono::Utc;
 use rusqlite::{params, Connection, OptionalExtension};
 use uuid::Uuid;
@@ -11,30 +10,13 @@ use uuid::Uuid;
 /// and goals. Single source of truth so the app's scenario command and the
 /// Copilot's scenario tool compute — and compare against — the SAME baseline.
 pub fn build_baseline(conn: &mut Connection) -> CoreResult<Snapshot> {
-    let accts = accounts::list_summaries(conn)?;
-    let balance: i64 = accts
-        .iter()
-        .filter(|a| !matches!(a.r#type, AccountType::Credit | AccountType::Investment))
-        .map(|a| a.balance_cents)
-        .sum();
-
-    // Average over months actually elapsed since the first transaction in the
-    // window (capped at 12), so a single lumpy import isn't the "typical" month.
-    let (sum_income, sum_expense, span_months): (i64, i64, i64) = conn.query_row(
-        "SELECT COALESCE(SUM(CASE WHEN amount_cents>0 AND settle_up=0 THEN amount_cents ELSE 0 END),0),\
-                COALESCE(SUM(CASE WHEN settle_up=1 THEN -amount_cents \
-                                  WHEN amount_cents<0 THEN -amount_cents \
-                                  ELSE 0 END),0),\
-                COALESCE(\
-                  (CAST(strftime('%Y','now') AS INTEGER) - CAST(strftime('%Y', MIN(posted_at)) AS INTEGER)) * 12\
-                  + (CAST(strftime('%m','now') AS INTEGER) - CAST(strftime('%m', MIN(posted_at)) AS INTEGER)) + 1,\
-                  1)\
-         FROM transactions \
-         WHERE posted_at >= date('now','-12 months')",
-        [],
-        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+    let balances = crate::metrics::balance_breakdown(conn)?;
+    let (expense, _) = crate::metrics::monthly_expense_cents(
+        conn,
+        crate::metrics::ExpenseBasis::SafetyConservative,
+        None,
     )?;
-    let am = span_months.clamp(1, 12);
+    let rolling = crate::metrics::rolling_averages(conn, 90)?;
 
     let goal_infos = goals::list(conn)?
         .into_iter()
@@ -46,10 +28,11 @@ pub fn build_baseline(conn: &mut Connection) -> CoreResult<Snapshot> {
         .collect();
 
     Ok(Snapshot {
-        balance_cents: balance,
-        avg_monthly_income_cents: sum_income / am,
-        avg_monthly_expense_cents: sum_expense / am,
+        balance_cents: balances.liquid_cents,
+        avg_monthly_income_cents: rolling.avg_monthly_income_cents,
+        avg_monthly_expense_cents: expense,
         goals: goal_infos,
+        basis: Some(crate::metrics::ExpenseBasis::SafetyConservative),
     })
 }
 

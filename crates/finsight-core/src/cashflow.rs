@@ -291,10 +291,8 @@ pub fn build_forecast(
 
     let balances = metrics::balance_breakdown(conn)?;
     let rolling = metrics::rolling_averages(conn, EXPENSE_WINDOW_DAYS)?;
-    // Cashflow burn must be the conservative 90-day MEAN, not the robust median
-    // (which excludes anomalies and would be flattered by a quarterly bill
-    // outside the window being folded into the median).
-    let recent_mean_expense = metrics::avg_monthly_expense_90d(conn)?;
+    let (recent_mean_expense, _sufficient) =
+        metrics::monthly_expense_cents(conn, metrics::ExpenseBasis::SafetyConservative, None)?;
     let items = recurring::detect_recurring(conn, RECURRING_WINDOW_DAYS)?;
     // Only obligations whose last charge lands inside the expense window are
     // reflected in `avg_monthly_expense`, so only those may be netted out of the
@@ -750,13 +748,12 @@ mod tests {
 
         let f = build_forecast(&mut conn, 30, &WhatIf::default()).unwrap();
 
-        // (a) The smooth burn equals avg expense minus the dated obligations'
+        // (a) The smooth burn equals conservative expense minus the dated obligations'
         // monthly equivalent — so the bill is counted once, on its date, not also
         // smeared into the daily burn.
-        // Cashflow burn is conservative 90d MEAN (avg_monthly_expense_90d), not the
-        // robust median used for display surplus — see metrics::safety_expense_basis
-        // and docs spec §3. Rolling median would flatter runway/ hide step-ups.
-        let avg_exp = metrics::avg_monthly_expense_90d(&conn).unwrap();
+        let (avg_exp, _) =
+            metrics::monthly_expense_cents(&conn, metrics::ExpenseBasis::SafetyConservative, None)
+                .unwrap();
         let obligations_monthly: i64 =
             recurring::projection_obligations(&conn, RECURRING_WINDOW_DAYS)
                 .unwrap()
@@ -863,5 +860,57 @@ mod tests {
             burn_after, burn_before,
             "a lumpy bill outside the expense window must not pull the daily burn down"
         );
+    }
+
+    #[test]
+    fn safety_unification_daily_burn_uses_conservative_max() {
+        use chrono::Datelike;
+        let (_dir, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let today = chrono::Utc::now().date_naive();
+        conn.execute(
+            "INSERT INTO accounts(id,owner,bank,type,name,color,created_at) \
+             VALUES('acct','me','Bank','Checking','Checking','#fff',datetime('now'))",
+            [],
+        )
+        .unwrap();
+        // Fixture where mean12 > mean90: 12 months of $3000 vs recent 90d $2000
+        // Insert 12 monthly lump sums on the 15th of each prior month.
+        for m in 1..=12 {
+            let mut y = today.year();
+            let mut mon = today.month() as i32 - m as i32;
+            while mon <= 0 {
+                mon += 12;
+                y -= 1;
+            }
+            let date = chrono::NaiveDate::from_ymd_opt(y, mon as u32, 15).unwrap();
+            let amount = if m <= 3 { -200_000 } else { -300_000 };
+            conn.execute(
+                "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,is_transfer,status,created_at) \
+                 VALUES(hex(randomblob(16)),'acct',?1,?2,'MERCHANT_'||?3,0,'cleared',datetime('now'))",
+                rusqlite::params![format!("{}T12:00:00Z", date.format("%Y-%m-%d")), amount, m],
+            )
+            .unwrap();
+        }
+        let (conservative, _) =
+            metrics::monthly_expense_cents(&conn, metrics::ExpenseBasis::SafetyConservative, None)
+                .unwrap();
+        let recent_mean = metrics::avg_monthly_expense_90d(&conn).unwrap();
+        assert!(
+            conservative > recent_mean,
+            "fixture must have mean12 > mean90: conservative {} vs recent {}",
+            conservative,
+            recent_mean
+        );
+        let f = build_forecast(&mut conn, 30, &WhatIf::default()).unwrap();
+        let obligations_monthly: i64 =
+            recurring::projection_obligations(&conn, RECURRING_WINDOW_DAYS)
+                .unwrap()
+                .iter()
+                .map(|o| o.monthly_equivalent_cents())
+                .sum();
+        let expected = ((conservative - obligations_monthly).max(0) as f64 / AVG_DAYS_PER_MONTH)
+            .round() as i64;
+        assert_eq!(f.daily_burn_cents, expected);
     }
 }

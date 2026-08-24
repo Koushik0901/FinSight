@@ -44,6 +44,8 @@ pub struct Snapshot {
     pub avg_monthly_income_cents: i64,
     pub avg_monthly_expense_cents: i64,
     pub goals: Vec<GoalInfo>,
+    #[serde(default)]
+    pub basis: Option<crate::metrics::ExpenseBasis>,
 }
 
 /// Whether two same-driver amounts differ by more than the relative threshold.
@@ -345,6 +347,7 @@ mod tests {
                 remaining_cents: 1_200_000,
                 monthly_cents: 100_000,
             }],
+            basis: None,
         }
     }
 
