@@ -107,11 +107,11 @@ vi.mock("../components/TransactionDrawer", () => ({
     open ? <div data-testid="txn-drawer">{transaction ? `edit:${transaction.id}` : "add-mode"}</div> : null,
 }));
 
-vi.mock("../api/client", async () => {
-  const actual = await vi.importActual("../api/client");
+vi.mock("../api/openapiClient", async () => {
+  const actual = await vi.importActual("../api/openapiClient");
   return {
     ...actual,
-    commands: {
+    api: {
       exportTransactionsCsv: vi.fn(() => Promise.resolve({ status: "ok", data: "date,amount\n2026-06-28,-84.32\n" })),
     },
   };

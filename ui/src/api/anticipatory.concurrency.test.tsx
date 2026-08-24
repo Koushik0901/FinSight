@@ -8,10 +8,11 @@ const { listAccounts, listTransactions, listCategoriesWithSpending } = vi.hoiste
   listTransactions: vi.fn(async () => ({ status: "ok", data: [] })),
   listCategoriesWithSpending: vi.fn(async () => ({ status: "ok", data: [] })),
 }));
-vi.mock("./client", async () => {
-  const actual = await vi.importActual<typeof import("./client")>("./client");
+vi.mock("./openapiClient", async () => {
+  const actual = await vi.importActual<typeof import("./openapiClient")>("./openapiClient");
   return {
     ...actual,
+    api: { listAccounts, listTransactions, listCategoriesWithSpending },
     commands: { listAccounts, listTransactions, listCategoriesWithSpending },
   };
 });

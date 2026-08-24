@@ -20,14 +20,16 @@ describe("mockBackend typed contract", () => {
     expect(() => _fallbackForTest("get_month_totals" as CommandName)).toThrow(/mockBackend\.ts/);
   });
 
-  it("installMockBackend invoke throws on unimplemented command", async () => {
+  it("installMockBackend fetch throws on unimplemented command", async () => {
     installMockBackend("rich");
-    const invoke = (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ as {
-      invoke: (cmd: string, args?: unknown) => Promise<unknown>;
-    };
-    await expect(invoke.invoke("nonexistent_command_xyz", {})).rejects.toThrow(/unimplemented/);
+    const res = await fetch("/api/rpc/nonexistent_command_xyz", { method: "POST", body: JSON.stringify({}) });
+    expect(res.status).toBe(501);
+    const body = (await res.json()) as { code: string };
+    expect(body.code).toMatch(/unimplemented/);
     // Known command still succeeds
-    const accounts = await invoke.invoke("list_accounts", {});
+    const ok = await fetch("/api/rpc/list_accounts", { method: "POST", body: JSON.stringify({}) });
+    expect(ok.status).toBe(200);
+    const accounts = (await ok.json()) as unknown[];
     expect(Array.isArray(accounts)).toBe(true);
   });
 

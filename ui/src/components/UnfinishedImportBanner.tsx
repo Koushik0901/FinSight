@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { commands, type Import } from "../api/client";
-import { unwrap } from "../api/client";
+import { api, type Import } from "../api/openapiClient";
+import { unwrap } from "../api/openapiClient";
 import { isBackendAvailable } from "../utils/runtime";
 
 export default function UnfinishedImportBanner() {
@@ -8,7 +8,7 @@ export default function UnfinishedImportBanner() {
   const { data: unfinished = [] } = useQuery<Import[]>({
     queryKey: ["unfinished-imports"],
     queryFn: async () => {
-      return unwrap(commands.listUnfinishedImports());
+      return unwrap(api.listUnfinishedImports());
     },
     staleTime: 60_000,
     enabled: isBackendAvailable(),
@@ -18,7 +18,7 @@ export default function UnfinishedImportBanner() {
   const top = unfinished[0]!;
 
   async function discard() {
-    const result = await commands.discardUnfinishedImport(top.id);
+    const result = await api.discardUnfinishedImport(top.id);
     if (result.status === "error") {
       console.error("Failed to discard import:", result.error.message);
     }

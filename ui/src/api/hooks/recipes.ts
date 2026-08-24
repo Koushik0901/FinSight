@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { commands, type AgentRecipe, type AgentRecipeRun } from "../client";
+import { api, type AgentRecipe, type AgentRecipeRun } from "../openapiClient";
 
 type AppLikeError = Error & { code?: string };
 
@@ -15,7 +15,7 @@ export function useRecipes(includePaused = false) {
   return useQuery<AgentRecipe[]>({
     queryKey: [...recipesKey, includePaused],
     queryFn: async () => {
-      const result = await commands.listRecipes(includePaused);
+      const result = await api.listRecipes(includePaused);
       if (result.status === "error") toError(result.error.message, result.error.code);
       return result.data;
     },
@@ -35,7 +35,7 @@ export function useCreateRecipe() {
       dayOfWeek: number | null;
       dayOfMonth: number | null;
     }) => {
-      const result = await commands.createRecipe(
+      const result = await api.createRecipe(
         input.title,
         input.description,
         input.recipeKind,
@@ -65,7 +65,7 @@ export function useUpdateRecipe() {
       dayOfWeek: number | null;
       dayOfMonth: number | null;
     }) => {
-      const result = await commands.updateRecipe(
+      const result = await api.updateRecipe(
         input.id,
         input.title,
         input.description,
@@ -87,7 +87,7 @@ export function usePauseRecipe() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
-      const result = await commands.pauseRecipe(id);
+      const result = await api.pauseRecipe(id);
       if (result.status === "error") toError(result.error.message, result.error.code);
     },
     onSuccess: () => {
@@ -100,7 +100,7 @@ export function useResumeRecipe() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
-      const result = await commands.resumeRecipe(id);
+      const result = await api.resumeRecipe(id);
       if (result.status === "error") toError(result.error.message, result.error.code);
     },
     onSuccess: () => {
@@ -113,7 +113,7 @@ export function useDeleteRecipe() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
-      const result = await commands.deleteRecipe(id);
+      const result = await api.deleteRecipe(id);
       if (result.status === "error") toError(result.error.message, result.error.code);
     },
     onSuccess: () => {
@@ -126,7 +126,7 @@ export function useTriggerRecipe() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
-      const result = await commands.triggerRecipe(id);
+      const result = await api.triggerRecipe(id);
       if (result.status === "error") toError(result.error.message, result.error.code);
       return result.data;
     },
@@ -143,7 +143,7 @@ export function useRecipeRuns(recipeId: string) {
     queryKey: ["recipe-runs", recipeId],
     queryFn: async () => {
       if (!recipeId) return [];
-      const result = await commands.listRecipeRuns(recipeId, null);
+      const result = await api.listRecipeRuns(recipeId, null);
       if (result.status === "error") toError(result.error.message, result.error.code);
       return result.data;
     },

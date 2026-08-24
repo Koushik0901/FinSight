@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { commands, type NotificationPrefsDto, type Notification } from "../client";
-import { unwrap } from "../client";
+import { api, type NotificationPrefsDto, type Notification } from "../openapiClient";
+import { unwrap } from "../openapiClient";
 import { isBackendAvailable } from "../../utils/runtime";
 
 const PREFS_KEY = ["notification-prefs"];
@@ -12,7 +12,7 @@ export function useNotificationPrefs() {
   return useQuery<NotificationPrefsDto>({
     queryKey: PREFS_KEY,
     queryFn: async () => {
-      return unwrap(commands.getNotificationPrefs());
+      return unwrap(api.getNotificationPrefs());
     },
     enabled: isBackendAvailable(),
   });
@@ -28,7 +28,7 @@ export function useSetNotificationPrefs() {
       // `local = UTC + offset`. The server has no other way to know the user's
       // clock. Re-stamped on every save, so it tracks travel/DST at save time.
       const stamped: NotificationPrefsDto = { ...prefs, utcOffsetMinutes: -new Date().getTimezoneOffset() };
-      await unwrap(commands.setNotificationPrefs(stamped));
+      await unwrap(api.setNotificationPrefs(stamped));
     },
     // Optimistic: reflect the toggle immediately, roll back on failure.
     onMutate: async (prefs) => {
@@ -49,7 +49,7 @@ export function useNotifications(includeResolved = false) {
   return useQuery<Notification[]>({
     queryKey: [...LIST_KEY, includeResolved],
     queryFn: async () => {
-      return unwrap(commands.listNotifications(includeResolved));
+      return unwrap(api.listNotifications(includeResolved));
     },
     enabled: isBackendAvailable(),
   });
@@ -59,7 +59,7 @@ export function useMarkNotificationRead() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
-      await unwrap(commands.markNotificationRead(id));
+      await unwrap(api.markNotificationRead(id));
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: LIST_KEY });
@@ -72,7 +72,7 @@ export function useMarkAllNotificationsRead() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async () => {
-      await unwrap(commands.markAllNotificationsRead());
+      await unwrap(api.markAllNotificationsRead());
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: LIST_KEY });
@@ -86,7 +86,7 @@ export function useNotificationUnreadCount() {
   return useQuery<number>({
     queryKey: COUNT_KEY,
     queryFn: async () => {
-      return unwrap(commands.notificationUnreadCount());
+      return unwrap(api.notificationUnreadCount());
     },
     enabled: isBackendAvailable(),
     refetchInterval: 60_000,

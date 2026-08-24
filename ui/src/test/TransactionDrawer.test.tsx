@@ -6,9 +6,9 @@ import TransactionDrawer from "../components/TransactionDrawer";
 
 vi.mock("react-focus-lock", () => ({ default: ({ children }: { children: ReactNode }) => <>{children}</> }));
 
-vi.mock("../api/client", () => ({
+vi.mock("../api/openapiClient", () => ({
   unwrap: async (p: Promise<{ status: "ok" | "error"; data?: unknown; error?: { message: string } }>) => { const r = await p; if (r.status === "error") throw new Error(r.error?.message ?? "command failed"); return r.data; },
-  commands: {
+  api: {
     listAccounts: vi.fn().mockResolvedValue({
       status: "ok",
       data: [{ id: "a1", bank: "Chase", name: "Joint Checking", type: "Checking",
@@ -38,9 +38,9 @@ describe("TransactionDrawer", () => {
     fireEvent.change(screen.getByLabelText(/Amount/i), { target: { value: "-8.42" } });
     fireEvent.change(screen.getByLabelText(/Merchant/i), { target: { value: "Safeway" } });
     fireEvent.click(screen.getByRole("button", { name: /save transaction/i }));
-    const { commands } = await import("../api/client");
+    const { api } = await import("../api/openapiClient");
     await waitFor(() => {
-      expect(commands.createTransaction).toHaveBeenCalledWith(expect.objectContaining({
+      expect(api.createTransaction).toHaveBeenCalledWith(expect.objectContaining({
         account_id: "a1",
         amount_cents: -842,
         merchant_raw: "Safeway",

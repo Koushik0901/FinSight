@@ -2,7 +2,7 @@ import ReactMarkdown from "react-markdown";
 import rehypeSanitize from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
 import { ResponsiveContainer, BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip } from "recharts";
-import type { AgentAnswer, AgentResponseBlock } from "../api/client";
+import type { AgentAnswer, AgentResponseBlock } from "../api/openapiClient";
 
 const chartTooltipStyle = {
   background: "var(--elevated)",

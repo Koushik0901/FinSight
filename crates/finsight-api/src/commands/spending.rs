@@ -6,15 +6,25 @@ use finsight_core::spending::plan::{self, SpendingPlan};
 use finsight_core::spending::{annotate, baseline};
 use serde::Serialize;
 use specta::Type;
+use utoipa::ToSchema;
 
 /// Everything the Path Back screen needs, in one read.
-#[derive(Debug, Clone, Serialize, Type)]
+#[derive(Debug, Clone, Serialize, Type, ToSchema)]
 pub struct PathBackView {
     pub period: String,
     pub assessment: PeriodAssessment,
     pub plan: SpendingPlan,
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct GetSpendingPathBackRequest {
+    pub period: Option<String>,
+    pub target_monthly_cents: Option<i64>,
+}
+
+#[utoipa::path(post, path = "/api/rpc/get_spending_path_back", request_body(content = GetSpendingPathBackRequest), responses((status = 200, body = Option<PathBackView>)))]
 pub async fn get_spending_path_back(
     state: &ApiState,
     period: Option<String>,
@@ -41,6 +51,15 @@ pub async fn get_spending_path_back(
     .map_err(AppError::from)
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct SetSpendingAnnotationRequest {
+    pub merchant_key: String,
+    pub verdict: String,
+}
+
+#[utoipa::path(post, path = "/api/rpc/set_spending_annotation", request_body(content = SetSpendingAnnotationRequest), responses((status = 200, description = "Success")))]
 pub async fn set_spending_annotation(
     state: &ApiState,
     merchant_key: String,

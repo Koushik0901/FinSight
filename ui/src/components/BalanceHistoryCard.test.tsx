@@ -3,12 +3,12 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import BalanceHistoryCard from "./BalanceHistoryCard";
-import type { AccountSummary } from "../api/client";
+import type { AccountSummary } from "../api/openapiClient";
 
 const getAccountBalanceTimeline = vi.fn();
-vi.mock("../api/client", () => ({
+vi.mock("../api/openapiClient", () => ({
   unwrap: async (p: Promise<{ status: "ok" | "error"; data?: unknown; error?: { message: string } }>) => { const r = await p; if (r.status === "error") throw new Error(r.error?.message ?? "command failed"); return r.data; },
-  commands: {
+  api: {
     getAccountBalanceTimeline: (...args: unknown[]) => getAccountBalanceTimeline(...args),
   },
 }));

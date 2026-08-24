@@ -1,13 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  commands,
+  api,
   type ApplyScenarioResult,
   type MetricExplanation,
   type ScenarioParamsInput,
   type SavedScenarioDetail,
   type ScenarioPlanProposal,
-} from "../client";
-import { unwrap } from "../client";
+} from "../openapiClient";
+import { unwrap } from "../openapiClient";
 import { isBackendAvailable } from "../../utils/runtime";
 
 const KEY = ["saved-scenarios"];
@@ -21,7 +21,7 @@ export function useSavedScenarios() {
   return useQuery<SavedScenarioDetail[]>({
     queryKey: KEY,
     queryFn: async () => {
-      return unwrap(commands.listSavedScenarios());
+      return unwrap(api.listSavedScenarios());
     },
     enabled: isBackendAvailable(),
   });
@@ -39,7 +39,7 @@ export function useRunScenario() {
       params: ScenarioParamsInput | null;
     }) => {
       if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
-      const result = await commands.runScenario(description, months, params);
+      const result = await api.runScenario(description, months, params);
       if (result.status === "error") {
         const err = new Error(result.error.message) as Error & { code?: string };
         err.code = result.error.code;
@@ -63,7 +63,7 @@ export function useSaveScenario() {
       months: number;
     }) => {
       if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
-      const res = await commands.saveScenario(description, params, months);
+      const res = await api.saveScenario(description, params, months);
       if (res.status === "error") throw new Error(res.error.message);
       return res.data;
     },
@@ -76,7 +76,7 @@ export function useDuplicateScenario() {
   return useMutation({
     mutationFn: async (id: string) => {
       if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
-      const res = await commands.duplicateScenario(id);
+      const res = await api.duplicateScenario(id);
       if (res.status === "error") throw new Error(res.error.message);
       return res.data;
     },
@@ -89,7 +89,7 @@ export function useArchiveScenario() {
   return useMutation({
     mutationFn: async ({ id, archived }: { id: string; archived: boolean }) => {
       if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
-      const res = await commands.archiveScenario(id, archived);
+      const res = await api.archiveScenario(id, archived);
       if (res.status === "error") throw new Error(res.error.message);
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: KEY }),
@@ -102,7 +102,7 @@ export function usePromoteScenario() {
   return useMutation({
     mutationFn: async (id: string): Promise<ScenarioPlanProposal> => {
       if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
-      const res = await commands.promoteScenario(id);
+      const res = await api.promoteScenario(id);
       if (res.status === "error") throw new Error(res.error.message);
       return res.data;
     },
@@ -117,7 +117,7 @@ export function useReviseScenario() {
   return useMutation({
     mutationFn: async ({ id, params }: { id: string; params: ScenarioParamsInput }): Promise<SavedScenarioDetail> => {
       if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
-      const res = await commands.reviseScenario(id, params);
+      const res = await api.reviseScenario(id, params);
       if (res.status === "error") throw new Error(res.error.message);
       return res.data;
     },
@@ -131,7 +131,7 @@ export function useClearScenarioRevision() {
   return useMutation({
     mutationFn: async (id: string): Promise<SavedScenarioDetail> => {
       if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
-      const res = await commands.clearScenarioRevision(id);
+      const res = await api.clearScenarioRevision(id);
       if (res.status === "error") throw new Error(res.error.message);
       return res.data;
     },
@@ -147,7 +147,7 @@ export function useApplyScenario() {
   return useMutation({
     mutationFn: async ({ id, approvedChangeIds }: { id: string; approvedChangeIds: string[] }): Promise<ApplyScenarioResult> => {
       if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
-      const res = await commands.applyScenario(id, approvedChangeIds);
+      const res = await api.applyScenario(id, approvedChangeIds);
       if (res.status === "error") throw new Error(res.error.message);
       return res.data;
     },
@@ -166,7 +166,7 @@ export function useScenarioExplanation(id: string | null) {
   return useQuery<MetricExplanation>({
     queryKey: ["scenario-explanation", id],
     queryFn: async () => {
-      const res = await commands.explainScenario(id!);
+      const res = await api.explainScenario(id!);
       if (res.status === "error") throw new Error(res.error.message);
       return res.data;
     },
@@ -179,7 +179,7 @@ export function useDeleteScenario() {
   return useMutation({
     mutationFn: async (id: string) => {
       if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
-      const res = await commands.deleteScenario(id);
+      const res = await api.deleteScenario(id);
       if (res.status === "error") throw new Error(res.error.message);
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: KEY }),

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatModelRunOptions, ChatModelRunResult, ThreadMessage } from "@assistant-ui/react";
 import { COPILOT_STREAM_FRAME } from "../../api/eventNames";
 import { buildMetaFromMessages, createTauriChatModelAdapter } from "./TauriRuntime";
-import type { ConversationMessage } from "../../api/client";
+import type { ConversationMessage } from "../../api/openapiClient";
 
 const eventMocks = vi.hoisted(() => ({
   listen: vi.fn(),
@@ -16,9 +16,9 @@ vi.mock("@tauri-apps/api/event", () => ({
   listen: eventMocks.listen,
 }));
 
-vi.mock("../../api/client", () => ({
+vi.mock("../../api/openapiClient", () => ({
   unwrap: async (p: Promise<{ status: "ok" | "error"; data?: unknown; error?: { message: string } }>) => { const r = await p; if (r.status === "error") throw new Error(r.error?.message ?? "command failed"); return r.data; },
-  commands: {
+  api: {
     streamCopilotMessage: commandMocks.streamCopilotMessage,
   },
 }));

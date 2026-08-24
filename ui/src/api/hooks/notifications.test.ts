@@ -2,12 +2,12 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import { createWrapper } from "../../test-utils";
 import { useSetNotificationPrefs } from "./notifications";
-import type { NotificationPrefsDto } from "../client";
+import type { NotificationPrefsDto } from "../openapiClient";
 
 const setNotificationPrefs = vi.fn();
-vi.mock("../client", () => ({
+vi.mock("../openapiClient", () => ({
   unwrap: async (p: Promise<{ status: "ok" | "error"; data?: unknown; error?: { message: string } }>) => { const r = await p; if (r.status === "error") throw new Error(r.error?.message ?? "command failed"); return r.data; },
-  commands: {
+  api: {
     get setNotificationPrefs() {
       return setNotificationPrefs;
     },

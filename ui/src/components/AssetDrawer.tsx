@@ -12,7 +12,7 @@ import {
   useHouseholdMembers, useAssetOwners, useSetAssetOwners,
 } from "../api/hooks/household";
 import { useDefaultCurrency } from "../api/hooks/settings";
-import type { ManualAsset } from "../api/client";
+import type { ManualAsset } from "../api/openapiClient";
 
 const ASSET_TYPES = ["cash", "property", "vehicle", "investment", "crypto", "other"] as const;
 

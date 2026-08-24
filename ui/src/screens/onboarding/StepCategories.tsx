@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { commands } from "../../api/client";
-import { unwrap } from "../../api/client";
+import { api } from "../../api/openapiClient";
+import { unwrap } from "../../api/openapiClient";
 import { userErrorMessage } from "../../utils/runtime";
 import { CATEGORY_COLOR_CHOICES, DEFAULT_CATEGORY_COLOR, nextCategoryColor, paletteFor } from "../../utils/categoryColor";
 import Button from "../../components/Button";
@@ -53,7 +53,7 @@ export default function StepCategories({ onNext }: Props) {
     setSaveError(null);
     try {
       const toSave = rows.filter((r) => r.label.trim().length > 0);
-      await unwrap(commands.commitStarterCategories(toSave));
+      await unwrap(api.commitStarterCategories(toSave));
       onNext();
     } catch (err) {
       setSaveError(userErrorMessage(err, "Could not save categories. Check your FinSight server connection and try again."));

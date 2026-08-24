@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { commands, type PushDeliveryReport, type PushStatus } from "../client";
-import { unwrap } from "../client";
+import { api, type PushDeliveryReport, type PushStatus } from "../openapiClient";
+import { unwrap } from "../openapiClient";
 import { isBackendAvailable } from "../../utils/runtime";
 
 /** VAPID public key + how many devices this user has registered. */
@@ -8,7 +8,7 @@ export function usePushStatus() {
   return useQuery<PushStatus>({
     queryKey: ["push-status"],
     queryFn: async () => {
-      return unwrap(commands.getPushStatus());
+      return unwrap(api.getPushStatus());
     },
     // The key is generated once and never rotates; only device_count moves, and
     // only in response to actions taken on this screen.
@@ -21,7 +21,7 @@ export function useSavePushSubscription() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (sub: { endpoint: string; p256dh: string; auth: string; label?: string }) => {
-      return unwrap(commands.savePushSubscription(
+      return unwrap(api.savePushSubscription(
         sub.endpoint,
         sub.p256dh,
         sub.auth,
@@ -36,7 +36,7 @@ export function useDeletePushSubscription() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (endpoint: string) => {
-      return unwrap(commands.deletePushSubscription(endpoint));
+      return unwrap(api.deletePushSubscription(endpoint));
     },
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["push-status"] }),
   });
@@ -46,7 +46,7 @@ export function useDeletePushSubscription() {
 export function useSendTestPush() {
   return useMutation<PushDeliveryReport>({
     mutationFn: async () => {
-      return unwrap(commands.sendTestPush());
+      return unwrap(api.sendTestPush());
     },
   });
 }

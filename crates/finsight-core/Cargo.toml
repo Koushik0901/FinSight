@@ -21,6 +21,7 @@ rand_chacha.workspace = true
 chrono.workspace = true
 uuid.workspace = true
 specta = { workspace = true, features = ["derive", "chrono", "uuid"] }
+utoipa = { version = "4", features = ["chrono"] }
 zeroize.workspace = true
 # Only pulled in by the `testing` feature (see below), never by a release build.
 tempfile = { workspace = true, optional = true }

@@ -1,4 +1,4 @@
-import type { CopilotResponseBlock } from "../../../api/client";
+import type { CopilotResponseBlock } from "../../../api/openapiClient";
 import { ActionChecklist } from "./shared";
 
 type Block = Extract<CopilotResponseBlock, { kind: "actionPlan" }>;

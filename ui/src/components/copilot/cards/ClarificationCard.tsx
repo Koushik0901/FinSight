@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useThreadRuntime } from "@assistant-ui/react";
 import * as I from "../../Icons";
-import type { CopilotResponseBlock } from "../../../api/client";
+import type { CopilotResponseBlock } from "../../../api/openapiClient";
 import { useClarifications } from "../../../state/clarifications";
 
 type Block = Extract<CopilotResponseBlock, { kind: "clarification" }>;

@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use specta::Type;
+use utoipa::ToSchema;
 
 /// A user-curated exemplar transaction description for a category.
 ///
@@ -15,8 +16,9 @@ use specta::Type;
 ///
 /// Nothing reads these yet. Issue #92 embeds `example_text` into a
 /// prototype/centroid vector per category.
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct CategoryExample {
     pub id: String,
     pub category_id: String,

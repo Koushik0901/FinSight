@@ -3,12 +3,12 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import Onboarding from "../screens/Onboarding";
-import { commands } from "../api/client";
+import { api } from "../api/openapiClient";
 import { useOnboardingStore } from "../state/onboarding";
 
-vi.mock("../api/client", () => ({
+vi.mock("../api/openapiClient", () => ({
   unwrap: async (p: Promise<{ status: "ok" | "error"; data?: unknown; error?: { message: string } }>) => { const r = await p; if (r.status === "error") throw new Error(r.error?.message ?? "command failed"); return r.data; },
-  commands: {
+  api: {
     getOnboardingState: vi.fn().mockResolvedValue({
       status: "ok",
       data: { account_count: 0, category_count: 0, completion_marked: false },
@@ -71,8 +71,8 @@ describe("Onboarding · Welcome step", () => {
     fireEvent.click(screen.getByRole("button", { name: /get started/i }));
 
     await waitFor(() => {
-      expect(commands.createHouseholdMember).toHaveBeenCalledWith("John Doe", null);
-      expect(commands.setSelfMember).toHaveBeenCalledWith("member-1");
+      expect(api.createHouseholdMember).toHaveBeenCalledWith("John Doe", null);
+      expect(api.setSelfMember).toHaveBeenCalledWith("member-1");
     });
     expect(screen.getByRole("heading", { name: /start with your accounts/i })).toBeInTheDocument();
   });
@@ -81,12 +81,12 @@ describe("Onboarding · Welcome step", () => {
     renderOnboarding();
     fireEvent.click(screen.getByRole("button", { name: /skip setup/i }));
 
-    await waitFor(() => expect(commands.markOnboardingComplete).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(api.markOnboardingComplete).toHaveBeenCalledTimes(1));
     expect(await screen.findByText("TODAY ROUTE")).toBeInTheDocument();
   });
 
   it("stays in onboarding and shows an error when Skip setup cannot be saved", async () => {
-    vi.mocked(commands.markOnboardingComplete).mockResolvedValueOnce({
+    vi.mocked(api.markOnboardingComplete).mockResolvedValueOnce({
       status: "error",
       error: { code: "onboarding.failed", message: "Could not save completion" },
     });

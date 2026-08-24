@@ -60,19 +60,22 @@ function useActiveSection(ids: readonly string[]) {
 export default function Settings() {
   const serverMode = useMemo(() => isServerMode(), []);
   const sections = useMemo(() => (serverMode ? [...SECTIONS, SERVER_ACCOUNT_SECTION] : SECTIONS), [serverMode]);
-  const sectionIds = useMemo(() => sections.map(([id]) => id), [sections]);
-  const activeSection = useActiveSection(sectionIds);
+  const sectionIds = useMemo(() => sections.map((s) => s[0] as string) as string[], [sections]);
+  const activeSection = useActiveSection(sectionIds as unknown as readonly string[]);
 
   return (
     <div className="screen screen-settings">
       <PageHeader eyebrow="Settings" title="Make it yours." dot={false} />
       <div className="settings-layout">
         <nav className="settings-nav">
-          {sections.map(([id, label]) => (
-            <a key={id} href={`#sec-${id}`} className={`nav-item${activeSection === id ? " active" : ""}`}>
-              {label}
-            </a>
-          ))}
+          {sections.map((entry) => {
+            const [id, label] = entry as unknown as [string, string];
+            return (
+              <a key={id} href={`#sec-${id}`} className={`nav-item${activeSection === id ? " active" : ""}`}>
+                {label}
+              </a>
+            );
+          })}
         </nav>
         <div style={{ display: "flex", flexDirection: "column", gap: 56 }}>
           <SettingsAccounts />

@@ -1,12 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  commands,
+  api,
   type ActionItem,
   type CounterpartyVerdict,
   type InboxBadgeCount,
   type UnresolvedCounterpartyDto,
-} from "../client";
-import { unwrap } from "../client";
+} from "../openapiClient";
+import { unwrap } from "../openapiClient";
 import { isBackendAvailable } from "../../utils/runtime";
 import { invalidateDomains } from "../invalidation";
 
@@ -14,7 +14,7 @@ export function useActionItems() {
   return useQuery<ActionItem[]>({
     queryKey: ["action-items"],
     queryFn: async () => {
-      return unwrap(commands.getActionItems());
+      return unwrap(api.getActionItems());
     },
     staleTime: 30_000,
     refetchInterval: 30_000,
@@ -36,7 +36,7 @@ export function useInboxBadgeCount() {
   return useQuery<InboxBadgeCount>({
     queryKey: ["inbox-badge-count"],
     queryFn: async () => {
-      return unwrap(commands.getInboxBadgeCount());
+      return unwrap(api.getInboxBadgeCount());
     },
     staleTime: 60_000,
     refetchInterval: 120_000,
@@ -52,7 +52,7 @@ export function useUnresolvedCounterparties() {
   return useQuery<UnresolvedCounterpartyDto[]>({
     queryKey: ["unresolved-counterparties"],
     queryFn: async () => {
-      return unwrap(commands.listUnresolvedCounterparties());
+      return unwrap(api.listUnresolvedCounterparties());
     },
     enabled: isBackendAvailable(),
   });
@@ -66,7 +66,7 @@ export function useApplyCounterpartyVerdict() {
   return useMutation({
     mutationFn: async ({ pattern, verdict }: { pattern: string; verdict: CounterpartyVerdict }) => {
       if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
-      return unwrap(commands.applyCounterpartyVerdictToSimilar(pattern, verdict));
+      return unwrap(api.applyCounterpartyVerdictToSimilar(pattern, verdict));
     },
     // A verdict moves money in/out of income & spending — every headline
     // number (savings rate, cashflow, budget, inbox) can change, same as the

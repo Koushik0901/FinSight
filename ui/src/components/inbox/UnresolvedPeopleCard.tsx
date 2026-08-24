@@ -5,7 +5,7 @@ import Card from "../Card";
 import Button from "../Button";
 import { money } from "../../utils/format";
 import { useApplyCounterpartyVerdict, useUnresolvedCounterparties } from "../../api/hooks/inbox";
-import type { CounterpartyVerdict, UnresolvedCounterpartyDto } from "../../api/client";
+import type { CounterpartyVerdict, UnresolvedCounterpartyDto } from "../../api/openapiClient";
 
 const VERDICTS: { verdict: CounterpartyVerdict; label: string }[] = [
   { verdict: "transfer", label: "Transfer" },
@@ -92,7 +92,7 @@ export default function UnresolvedPeopleCard() {
   const applyVerdict = useApplyCounterpartyVerdict();
   const [removedPatterns, setRemovedPatterns] = useState<Set<string>>(new Set());
 
-  const visible = data.filter((g) => g.pattern === null || !removedPatterns.has(g.pattern));
+  const visible = data.filter((g) => g.pattern == null || !removedPatterns.has(g.pattern as string));
 
   if (isLoading || visible.length === 0) return null;
 

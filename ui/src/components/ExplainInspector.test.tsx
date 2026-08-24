@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import ExplainInspector from "./ExplainInspector";
-import type { MetricExplanation } from "../api/client";
+import type { MetricExplanation } from "../api/openapiClient";
 
 // Controllable hook mock: the inspector reads explanations by key from here.
 const useMetricExplanations = vi.fn();

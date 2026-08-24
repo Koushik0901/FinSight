@@ -15,6 +15,7 @@ use finsight_providers::simplefin::{
 use finsight_providers::ProviderError;
 use serde::{Deserialize, Serialize};
 use specta::Type;
+use utoipa::ToSchema;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
 use tokio::time::{sleep, Duration};
@@ -27,15 +28,17 @@ const MAX_FETCH_ATTEMPTS: usize = 5;
 /// as "stale data" via the unified notification policy.
 const STALE_ACCOUNT_THRESHOLD_DAYS: i64 = 3;
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct SimpleFinSyncSettings {
     pub background_sync_enabled: bool,
     pub background_sync_interval_minutes: u32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct AccountSyncResult {
     pub account_id: String,
     pub added: usize,

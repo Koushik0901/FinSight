@@ -7,17 +7,20 @@ use finsight_core::repos::run;
 use rusqlite::params;
 use serde::Serialize;
 use specta::Type;
+use utoipa::ToSchema;
 
-#[derive(Debug, Clone, Serialize, Type)]
+#[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct JourneyStatus {
     pub milestones: Vec<JourneyMilestone>,
     pub current_stage: u8,
     pub completed_count: u8,
 }
 
-#[derive(Debug, Clone, Serialize, Type)]
+#[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct JourneyMilestone {
     pub stage: u8,
     pub name: String,
@@ -37,6 +40,7 @@ fn clamp_pct(value: f64) -> u8 {
     value.round().clamp(0.0, 100.0) as u8
 }
 
+#[utoipa::path(post, path = "/api/rpc/get_journey_status", responses((status = 200, body = JourneyStatus)))]
 pub async fn get_journey_status(state: &ApiState) -> AppResult<JourneyStatus> {
     let db = (*state.db).clone();
 

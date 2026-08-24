@@ -6,7 +6,7 @@
  * regression aid for the card library. Gated behind `import.meta.env.DEV` in
  * App.tsx, so it never ships in a production build. Not a product surface.
  */
-import type { CopilotResponseBlock } from "../api/client";
+import type { CopilotResponseBlock } from "../api/openapiClient";
 import { FinSightResponseBlock } from "../components/copilot/renderers";
 import "../styles/copilot-shell.css";
 

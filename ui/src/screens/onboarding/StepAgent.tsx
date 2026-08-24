@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { commands } from "../../api/client";
-import { unwrap } from "../../api/client";
-import type { OllamaProbeResult } from "../../api/client";
+import { api } from "../../api/openapiClient";
+import { unwrap } from "../../api/openapiClient";
+import type { OllamaProbeResult } from "../../api/openapiClient";
 import { useMarkOnboardingComplete } from "../../api/hooks/onboarding";
 import {
   useSetCompletionProvider,
@@ -39,7 +39,7 @@ export default function StepAgent({ onDone }: Props) {
   const { data: probe, refetch, isFetching } = useQuery<OllamaProbeResult>({
     queryKey: ["ollama-probe", probedBaseUrl],
     queryFn: async () => {
-      return unwrap(commands.probeOllama(probedBaseUrl));
+      return unwrap(api.probeOllama(probedBaseUrl));
     },
     staleTime: 0,
     // probe_ollama is a plain RPC executed server-side, so it works over HTTP —
@@ -78,7 +78,7 @@ export default function StepAgent({ onDone }: Props) {
     setActionError(null);
     try {
       await setProvider.mutateAsync({ kind: "ollama", base_url: probedBaseUrl, model: completionModel });
-      await commands.saveLlmProvider({ kind: "ollama", base_url: probedBaseUrl, completion_model: completionModel, embedding_model: "nomic-embed-text" });
+      await api.saveLlmProvider({ kind: "ollama", base_url: probedBaseUrl, completion_model: completionModel, embedding_model: "nomic-embed-text" });
       await markComplete.mutateAsync();
       onDone();
     } catch (err) {
@@ -110,7 +110,7 @@ export default function StepAgent({ onDone }: Props) {
       : { kind: "openai_compat" as const, preset: selectedPreset.preset, base_url: selectedPreset.base_url, model: cloudModel };
     try {
       const r = await testProvider.mutateAsync({ config, apiKey: apiKey || undefined });
-      setTestResult(r);
+      setTestResult({ ok: r.ok, latency_ms: r.latency_ms, error: r.error ?? null });
       if (!r.ok) return;
       if (apiKey) {
         await saveKey.mutateAsync({ providerId: isAnthropic ? "anthropic" : selectedPreset.preset, key: apiKey });

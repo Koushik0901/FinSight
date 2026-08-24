@@ -7,12 +7,24 @@ use crate::error::{AppError, AppResult};
 use crate::ApiState;
 use finsight_core::cashflow::{self, CashflowForecast, WhatIf};
 use finsight_core::repos::run;
+use utoipa::ToSchema;
 
 /// Project the liquid balance forward `horizon_days` (default 30, clamped
 /// 7–90), optionally against a safety `buffer_cents` and a hypothetical one-off
 /// outflow. Returns the daily trajectory, the lowest point, the first day it
 /// breaches the buffer, the conservative safe-to-spend, upcoming dated events,
 /// and data-quality warnings.
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct GetCashflowForecastRequest {
+    pub horizon_days: Option<i64>,
+    pub buffer_cents: Option<i64>,
+    pub extra_expense_cents: Option<i64>,
+    pub extra_expense_date: Option<String>,
+}
+
+#[utoipa::path(post, path = "/api/rpc/get_cashflow_forecast", request_body(content = GetCashflowForecastRequest), responses((status = 200, body = CashflowForecast)))]
 pub async fn get_cashflow_forecast(
     state: &ApiState,
     horizon_days: Option<i64>,

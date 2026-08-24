@@ -50,7 +50,6 @@ chrono.workspace = true
 zeroize.workspace = true
 [dev-dependencies]
 finsight-core = { path = "../finsight-core", features = ["testing", "dev-seed"] }
-finsight-bindings = { path = "../finsight-bindings" }
 tower = { version = "0.5", features = ["util"] }
 tempfile.workspace = true
 regex = "1"

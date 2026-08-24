@@ -1,7 +1,8 @@
 use serde::{Deserialize, Serialize};
 use specta::Type;
+use utoipa::ToSchema;
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 pub struct Institution {
     pub id: String,
     pub name: String,
@@ -9,7 +10,7 @@ pub struct Institution {
     pub sfin_url: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize, Type)]
+#[derive(Debug, Clone, Deserialize, Type, ToSchema)]
 pub struct NewInstitution {
     pub id: String,
     pub name: String,

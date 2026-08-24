@@ -1,4 +1,4 @@
-import type { Account, AccountSummary, AccountType } from "../api/client";
+import type { Account, AccountSummary, AccountType } from "../api/openapiClient";
 
 export function getAccountDisplayName(account: Account | AccountSummary): string {
   return account.nickname || account.official_name || account.name;

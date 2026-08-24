@@ -1,8 +1,8 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { commands, type ReportData } from "../api/client";
-import { unwrap } from "../api/client";
+import { api, type ReportData } from "../api/openapiClient";
+import { unwrap } from "../api/openapiClient";
 import { money } from "../utils/format";
 import { useNetWorth, useNetWorthHistory } from "../api/hooks/networth";
 import { useFinancialMetrics } from "../api/hooks/metrics";
@@ -41,7 +41,7 @@ function useReportData(scope: Scope, memberId: string | null) {
     // memberId in the key so switching person refetches; null = whole household.
     queryKey: ["report-data", scope, memberId],
     queryFn: async () => {
-      return unwrap(commands.getReportData(scope, memberId));
+      return unwrap(api.getReportData(scope, memberId));
     },
     staleTime: 60_000,
   });

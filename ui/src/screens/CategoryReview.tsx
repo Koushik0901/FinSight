@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import type { CategoryProposal, CategoryDto, Transaction } from "../api/client";
+import type { CategoryProposal, CategoryDto, Transaction } from "../api/openapiClient";
 import {
   useCategoryProposals,
   useAcceptCategoryProposal,

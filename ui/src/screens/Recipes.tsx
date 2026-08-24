@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import type { AgentRecipe, AgentRecipeRun } from "../api/client";
+import type { AgentRecipe, AgentRecipeRun } from "../api/openapiClient";
 import {
   useCreateRecipe,
   useDeleteRecipe,
@@ -126,8 +126,8 @@ function fromRecipe(recipe: AgentRecipe): RecipeDraft {
     recipeKind: recipe.recipeKind,
     promptTemplate: recipe.promptTemplate,
     cadence: recipe.cadence as Cadence,
-    dayOfWeek: recipe.dayOfWeek,
-    dayOfMonth: recipe.dayOfMonth,
+    dayOfWeek: recipe.dayOfWeek ?? null,
+    dayOfMonth: recipe.dayOfMonth ?? null,
   };
 }
 
@@ -236,7 +236,7 @@ function RecipeCard({
           <div className="row-sm wrap" style={{ alignItems: "center" }}>
             <div style={{ fontSize: 18, fontWeight: 600 }}>{recipe.title}</div>
             <Badge>{recipe.recipeKind}</Badge>
-            <Badge>{cadenceLabel(recipe.cadence, recipe.dayOfWeek, recipe.dayOfMonth)}</Badge>
+            <Badge>{cadenceLabel(recipe.cadence, recipe.dayOfWeek ?? null, recipe.dayOfMonth ?? null)}</Badge>
             {statusBadge(recipe.status)}
           </div>
           <p className="muted" style={{ fontSize: 14, lineHeight: 1.6, maxWidth: 720, margin: 0 }}>
@@ -280,7 +280,7 @@ function RecipeCard({
         </Card>
         <Card tone="muted" tight className="stat stack stack-xs" style={{ gap: 8 }}>
           <div className="eyebrow">Next scheduled run</div>
-          <div style={{ fontSize: 14, fontWeight: 600 }}>{fmtDateTime(recipe.nextRunAt)}</div>
+          <div style={{ fontSize: 14, fontWeight: 600 }}>{fmtDateTime(recipe.nextRunAt ?? null)}</div>
         </Card>
         <Card tone="muted" tight className="stat stack stack-xs" style={{ gap: 8 }}>
           <div className="eyebrow">Run count</div>

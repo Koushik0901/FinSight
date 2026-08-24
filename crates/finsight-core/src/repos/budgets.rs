@@ -3,6 +3,7 @@ use chrono::Utc;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
 use specta::Type;
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 /// Set (upsert) a budget for a category in a given month (format: "YYYY-MM").
@@ -104,8 +105,9 @@ pub fn carryover_into_month(
 /// composes the sentence (and applies the user's money formatting/privacy mode)
 /// from `kind` + `amount_cents`/`streak_months`; this never bakes a formatted
 /// dollar string server-side.
-#[derive(Debug, Clone, Serialize, Type)]
+#[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct LookBackFact {
     pub category_id: String,
     pub category_label: String,

@@ -1,4 +1,4 @@
-import type { AccountSummary, MonthSummary } from "../api/client";
+import type { AccountSummary, MonthSummary } from "../api/openapiClient";
 
 export type DataReadiness = "unavailable" | "estimated" | "reliable";
 

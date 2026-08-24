@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import type { Notification } from "../../api/client";
+import type { Notification } from "../../api/openapiClient";
 import { useMarkNotificationRead, useMarkAllNotificationsRead } from "../../api/hooks/notifications";
 import Card from "../Card";
 import Button from "../Button";

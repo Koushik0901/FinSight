@@ -1,12 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
-import { commands, type Position, type InvestmentSummary } from "../client";
+import { api, type Position, type InvestmentSummary } from "../openapiClient";
 
 /** Open positions for an investment account, derived from imported trade rows. */
 export function useAccountPositions(accountId: string | null, enabled = true) {
   return useQuery<Position[]>({
     queryKey: ["investment-positions", accountId],
     queryFn: async () => {
-      const r = await commands.listAccountPositions(accountId!);
+      const r = await api.listAccountPositions(accountId!);
       if (r.status === "error") throw new Error(r.error.message);
       return r.data;
     },
@@ -20,7 +20,7 @@ export function useInvestmentSummary(accountId: string | null, enabled = true) {
   return useQuery<InvestmentSummary>({
     queryKey: ["investment-summary", accountId],
     queryFn: async () => {
-      const r = await commands.getInvestmentSummary(accountId!);
+      const r = await api.getInvestmentSummary(accountId!);
       if (r.status === "error") throw new Error(r.error.message);
       return r.data;
     },

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { commands, type BudgetEnvelope, type CategoryHistory, type GoalContributionDto, type GoalDto, type MemberBudgetEnvelope, type NewGoalInput, type PlanAssignment, type ProjectedValue } from "../client";
-import { unwrap } from "../client";
+import { api, type BudgetEnvelope, type CategoryHistory, type GoalContributionDto, type GoalDto, type MemberBudgetEnvelope, type NewGoalInput, type PlanAssignment, type ProjectedValue } from "../openapiClient";
+import { unwrap } from "../openapiClient";
 import { isBackendAvailable } from "../../utils/runtime";
 import { invalidateDomains } from "../invalidation";
 
@@ -10,7 +10,7 @@ export function useBudgetEnvelopes() {
   return useQuery<BudgetEnvelope[]>({
     queryKey: ["budget-envelopes"],
     queryFn: async () => {
-      return unwrap(commands.listBudgetEnvelopes());
+      return unwrap(api.listBudgetEnvelopes());
     },
     enabled: isBackendAvailable(),
   });
@@ -26,7 +26,7 @@ export function useMemberBudgetEnvelopes(memberId: string | null) {
   return useQuery<MemberBudgetEnvelope[]>({
     queryKey: ["member-budget-envelopes", memberId],
     queryFn: async () => {
-      return unwrap(commands.listMemberBudgetEnvelopes(memberId as string));
+      return unwrap(api.listMemberBudgetEnvelopes(memberId as string));
     },
     enabled: isBackendAvailable() && memberId !== null,
   });
@@ -37,7 +37,7 @@ export function useSetBudget() {
   return useMutation({
     mutationFn: async ({ categoryId, amountCents }: { categoryId: string; amountCents: number }) => {
       if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
-      await unwrap(commands.setBudget(categoryId, amountCents));
+      await unwrap(api.setBudget(categoryId, amountCents));
     },
     onSuccess: () => {
       invalidateDomains(qc, "budgetEnvelopes");
@@ -49,7 +49,7 @@ export function useBudgetHistory(months: number) {
   return useQuery<CategoryHistory[]>({
     queryKey: ["budget-history", months],
     queryFn: async () => {
-      return unwrap(commands.listBudgetHistory(months));
+      return unwrap(api.listBudgetHistory(months));
     },
     staleTime: 60_000,
     enabled: isBackendAvailable(),
@@ -62,7 +62,7 @@ export function useGoals() {
   return useQuery<GoalDto[]>({
     queryKey: ["goals"],
     queryFn: async () => {
-      return unwrap(commands.listGoals());
+      return unwrap(api.listGoals());
     },
     enabled: isBackendAvailable(),
   });
@@ -73,7 +73,7 @@ export function useCreateGoal() {
   return useMutation({
     mutationFn: async (input: NewGoalInput) => {
       if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
-      return unwrap(commands.createGoal(input));
+      return unwrap(api.createGoal(input));
     },
     onSuccess: () => {
       invalidateDomains(qc, "goals");
@@ -86,7 +86,7 @@ export function useUpdateGoalBalance() {
   return useMutation({
     mutationFn: async ({ id, currentCents }: { id: string; currentCents: number }) => {
       if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
-      await unwrap(commands.updateGoalBalance(id, currentCents));
+      await unwrap(api.updateGoalBalance(id, currentCents));
     },
     onSuccess: () => {
       invalidateDomains(qc, "goals");
@@ -99,7 +99,7 @@ export function useContributeToGoal() {
   return useMutation({
     mutationFn: async ({ id, amountCents, note, source }: { id: string; amountCents: number; note?: string | null; source?: string | null }) => {
       if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
-      return unwrap(commands.contributeToGoal(id, amountCents, note ?? null, source ?? null));
+      return unwrap(api.contributeToGoal(id, amountCents, note ?? null, source ?? null));
     },
     onSuccess: (_data, vars) => {
       invalidateDomains(qc, "goals");
@@ -113,7 +113,7 @@ export function useGoalContributions(goalId: string | undefined) {
     queryKey: ["goal-contributions", goalId],
     queryFn: async () => {
       if (!goalId) return [];
-      return unwrap(commands.listGoalContributions(goalId));
+      return unwrap(api.listGoalContributions(goalId));
     },
     enabled: isBackendAvailable() && !!goalId,
   });
@@ -124,7 +124,7 @@ export function useArchiveGoal() {
   return useMutation({
     mutationFn: async (id: string) => {
       if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
-      await unwrap(commands.archiveGoal(id));
+      await unwrap(api.archiveGoal(id));
     },
     onSuccess: () => {
       invalidateDomains(qc, "goals");
@@ -137,7 +137,7 @@ export function useUpdateGoalMonthly() {
   return useMutation({
     mutationFn: async ({ id, monthlyCents }: { id: string; monthlyCents: number }) => {
       if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
-      await unwrap(commands.updateGoalMonthly(id, monthlyCents));
+      await unwrap(api.updateGoalMonthly(id, monthlyCents));
     },
     onSuccess: () => {
       invalidateDomains(qc, "goals");
@@ -150,7 +150,7 @@ export function useProjectGoalGrowth(goalId: string | undefined, years: number) 
     queryKey: ["goal-projection", goalId, years],
     queryFn: async () => {
       if (!goalId) throw new Error("goalId required");
-      return unwrap(commands.projectGoalGrowth(goalId, years));
+      return unwrap(api.projectGoalGrowth(goalId, years));
     },
     enabled: isBackendAvailable() && !!goalId,
   });
@@ -161,7 +161,7 @@ export function useUpdateGoalPurpose() {
   return useMutation({
     mutationFn: async ({ id, purpose }: { id: string; purpose: string | null }) => {
       if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
-      await unwrap(commands.updateGoalPurpose(id, purpose));
+      await unwrap(api.updateGoalPurpose(id, purpose));
     },
     onSuccess: () => {
       invalidateDomains(qc, "goals");
@@ -187,7 +187,7 @@ export function useUpdateGoalPriority() {
       deadlineStrictness: string;
     }) => {
       if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
-      await unwrap(commands.updateGoalPriority(id, priority, deadlineStrictness));
+      await unwrap(api.updateGoalPriority(id, priority, deadlineStrictness));
     },
     onSuccess: () => {
       invalidateDomains(qc, "goals");
@@ -201,7 +201,7 @@ export function usePlanNextMonthData() {
   return useQuery({
     queryKey: ["plan-next-month"],
     queryFn: async () => {
-      return unwrap(commands.getPlanNextMonthData());
+      return unwrap(api.getPlanNextMonthData());
     },
     staleTime: 60_000,
     enabled: isBackendAvailable(),
@@ -213,7 +213,7 @@ export function useApplyNextMonthPlan() {
   return useMutation({
     mutationFn: async (assignments: PlanAssignment[]) => {
       if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
-      return unwrap(commands.applyNextMonthPlan(assignments));
+      return unwrap(api.applyNextMonthPlan(assignments));
     },
     onSuccess: () => {
       invalidateDomains(qc, "budgetEnvelopes");

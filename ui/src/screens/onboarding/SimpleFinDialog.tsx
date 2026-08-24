@@ -8,7 +8,7 @@ import {
   useSimpleFinAccounts,
   useImportSimpleFinAccounts,
 } from "../../api/hooks/simplefin";
-import type { SimpleFinAccountInfo } from "../../api/bindings";
+import type { SimpleFinAccountInfo } from "../../api/openapiClient";
 
 interface Props {
   open: boolean;

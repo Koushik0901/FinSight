@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
-import type { CopilotResponseBlock } from "../../../api/client";
-import { commands } from "../../../api/client";
+import type { CopilotResponseBlock } from "../../../api/openapiClient";
+import { api } from "../../../api/openapiClient";
 import { money } from "../../../utils/format";
 import { colorForCategoryLabel } from "../../../utils/categoryColor";
 import Button from "../../Button";
@@ -21,7 +21,7 @@ export function TransactionTableCard({ block }: { block: Block }) {
     if (!query) return;
     setExporting(true);
     try {
-      const result = await commands.exportSearchTransactionsCsv({
+      const result = await api.exportSearchTransactionsCsv({
         merchant: query.merchant,
         account: query.account,
         startDate: query.startDate,

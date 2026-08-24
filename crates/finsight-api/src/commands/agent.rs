@@ -17,17 +17,20 @@ use finsight_core::settings;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::sync::Arc;
+use utoipa::ToSchema;
 
-#[derive(Debug, Clone, serde::Serialize, specta::Type)]
+#[derive(Debug, Clone, serde::Serialize, specta::Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct AgentActivity {
     pub text: String,
     pub sub: String,
     pub minutes_ago: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(tag = "kind")]
+
 pub enum CompletionProviderConfig {
     #[serde(rename = "unconfigured")]
     Unconfigured,
@@ -43,13 +46,22 @@ pub enum CompletionProviderConfig {
     Anthropic { model: String },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 pub struct ProviderTestResult {
     pub ok: bool,
     pub error: Option<String>,
     pub latency_ms: u64,
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct SetCompletionProviderRequest {
+    pub config: CompletionProviderConfig,
+}
+
+#[utoipa::path(post, path = "/api/rpc/set_completion_provider",
+    request_body(content = SetCompletionProviderRequest), responses((status = 200, description = "Success")))]
 pub async fn set_completion_provider(
     state: &ApiState,
     config: CompletionProviderConfig,
@@ -74,11 +86,21 @@ pub async fn set_completion_provider(
     Ok(())
 }
 
+#[utoipa::path(post, path = "/api/rpc/get_completion_provider", responses((status = 200, body = CompletionProviderConfig)))]
 pub async fn get_completion_provider(state: &ApiState) -> AppResult<CompletionProviderConfig> {
     let db = (*state.db).clone();
     crate::provider::load_completion_provider_config(&db).map_err(AppError::from)
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct SaveProviderApiKeyRequest {
+    pub provider_id: String,
+    pub key: String,
+}
+
+#[utoipa::path(post, path = "/api/rpc/save_provider_api_key", request_body(content = SaveProviderApiKeyRequest), responses((status = 200, description = "Success")))]
 pub async fn save_provider_api_key(
     state: &ApiState,
     provider_id: String,
@@ -108,6 +130,15 @@ pub async fn save_provider_api_key(
     Ok(())
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct ListProviderModelsRequest {
+    pub config: CompletionProviderConfig,
+}
+
+#[utoipa::path(post, path = "/api/rpc/list_provider_models",
+    request_body(content = ListProviderModelsRequest), responses((status = 200, body = Vec<String>)))]
 pub async fn list_provider_models(
     _state: &ApiState,
     config: CompletionProviderConfig,
@@ -124,6 +155,15 @@ pub async fn list_provider_models(
     }
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct TestCompletionProviderRequest {
+    pub config: CompletionProviderConfig,
+    pub api_key: Option<String>,
+}
+
+#[utoipa::path(post, path = "/api/rpc/test_completion_provider", request_body(content = TestCompletionProviderRequest), responses((status = 200, body = ProviderTestResult)))]
 pub async fn test_completion_provider(
     state: &ApiState,
     config: CompletionProviderConfig,
@@ -207,6 +247,7 @@ pub async fn test_completion_provider(
     }
 }
 
+#[utoipa::path(post, path = "/api/rpc/get_needs_review_count", responses((status = 200, content_type = "application/json", body = u32)))]
 pub async fn get_needs_review_count(state: &ApiState) -> AppResult<u32> {
     let db = (*state.db).clone();
     run(&db, |conn| {
@@ -223,6 +264,7 @@ pub async fn get_needs_review_count(state: &ApiState) -> AppResult<u32> {
     .map_err(AppError::from)
 }
 
+#[utoipa::path(post, path = "/api/rpc/recompute_anomalies", responses((status = 200, content_type = "application/json", body = u32)))]
 pub async fn recompute_anomalies(state: &ApiState) -> AppResult<u32> {
     let db = (*state.db).clone();
     run(&db, |conn| {
@@ -232,6 +274,15 @@ pub async fn recompute_anomalies(state: &ApiState) -> AppResult<u32> {
     .map_err(AppError::from)
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct SetAnomalyDismissedRequest {
+    pub txn_id: String,
+    pub dismissed: bool,
+}
+
+#[utoipa::path(post, path = "/api/rpc/set_anomaly_dismissed", request_body(content = SetAnomalyDismissedRequest), responses((status = 200, description = "Success")))]
 pub async fn set_anomaly_dismissed(
     state: &ApiState,
     txn_id: String,
@@ -245,6 +296,7 @@ pub async fn set_anomaly_dismissed(
     .map_err(AppError::from)
 }
 
+#[utoipa::path(post, path = "/api/rpc/trigger_categorize", responses((status = 200, description = "Success")))]
 pub async fn trigger_categorize(state: &ApiState) -> AppResult<()> {
     state
         .agent
@@ -254,6 +306,7 @@ pub async fn trigger_categorize(state: &ApiState) -> AppResult<()> {
     Ok(())
 }
 
+#[utoipa::path(post, path = "/api/rpc/trigger_recategorize_low_confidence", responses((status = 200, description = "Success")))]
 pub async fn trigger_recategorize_low_confidence(state: &ApiState) -> AppResult<()> {
     state
         .agent
@@ -263,6 +316,7 @@ pub async fn trigger_recategorize_low_confidence(state: &ApiState) -> AppResult<
     Ok(())
 }
 
+#[utoipa::path(post, path = "/api/rpc/list_rule_proposals", responses((status = 200, body = Vec<RuleProposal>)))]
 pub async fn list_rule_proposals(state: &ApiState) -> AppResult<Vec<RuleProposal>> {
     let db = (*state.db).clone();
     run(&db, |conn| rule_proposals::list(conn, Some("pending")))
@@ -270,6 +324,15 @@ pub async fn list_rule_proposals(state: &ApiState) -> AppResult<Vec<RuleProposal
         .map_err(AppError::from)
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct AcceptRuleProposalRequest {
+    pub id: String,
+}
+
+#[utoipa::path(post, path = "/api/rpc/accept_rule_proposal",
+    request_body(content = AcceptRuleProposalRequest), responses((status = 200, description = "Success")))]
 pub async fn accept_rule_proposal(state: &ApiState, id: String) -> AppResult<()> {
     let db = (*state.db).clone();
     run(&db, move |conn| {
@@ -291,6 +354,15 @@ pub async fn accept_rule_proposal(state: &ApiState, id: String) -> AppResult<()>
     .map_err(AppError::from)
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct DeclineRuleProposalRequest {
+    pub id: String,
+}
+
+#[utoipa::path(post, path = "/api/rpc/decline_rule_proposal",
+    request_body(content = DeclineRuleProposalRequest), responses((status = 200, description = "Success")))]
 pub async fn decline_rule_proposal(state: &ApiState, id: String) -> AppResult<()> {
     let db = (*state.db).clone();
     run(&db, move |conn| {
@@ -300,6 +372,15 @@ pub async fn decline_rule_proposal(state: &ApiState, id: String) -> AppResult<()
     .map_err(AppError::from)
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct ListRecentAgentActivityRequest {
+    pub limit: u32,
+}
+
+#[utoipa::path(post, path = "/api/rpc/list_recent_agent_activity",
+    request_body(content = ListRecentAgentActivityRequest), responses((status = 200, body = Vec<AgentActivity>)))]
 pub async fn list_recent_agent_activity(
     state: &ApiState,
     limit: u32,
@@ -346,8 +427,9 @@ pub async fn list_recent_agent_activity(
 
 // ── Agent Status ──────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Type)]
+#[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct AgentStatus {
     pub uncategorized_count: u32,
     pub anomaly_count: u32,
@@ -357,6 +439,7 @@ pub struct AgentStatus {
     pub last_scan_categorized: Option<u32>,
 }
 
+#[utoipa::path(post, path = "/api/rpc/get_agent_status", responses((status = 200, body = AgentStatus)))]
 pub async fn get_agent_status(state: &ApiState) -> AppResult<AgentStatus> {
     let db = (*state.db).clone();
     run(&db, |conn| {
@@ -450,46 +533,52 @@ pub async fn get_agent_status(state: &ApiState) -> AppResult<AgentStatus> {
 
 // ── Ask the agent ─────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Type)]
+#[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct AgentChange {
     pub kind: String,
     pub description: String,
 }
 
-#[derive(Debug, Clone, Serialize, Type)]
+#[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct AgentScenarioAlternative {
     pub name: String,
     pub summary: String,
     pub tradeoff: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct AgentTableBlock {
     pub title: Option<String>,
     pub columns: Vec<String>,
     pub rows: Vec<Vec<String>>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct AgentChartPoint {
     pub label: String,
     pub value: f64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct AgentChartBlock {
     pub title: Option<String>,
     pub series_label: Option<String>,
     pub data: Vec<AgentChartPoint>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct AgentMetricBlock {
     pub label: String,
     pub value: String,
@@ -497,8 +586,9 @@ pub struct AgentMetricBlock {
     pub tone: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct AgentTxRow {
     pub date: String,
     pub merchant: String,
@@ -512,8 +602,9 @@ pub struct AgentTxRow {
 /// model never populates this — it's attached server-side from the turn's
 /// `search_transactions` tool call (see `copilot_chat.rs`), so the block is
 /// self-describing and the export never depends on message structure.
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct AgentTxnSearchQuery {
     pub merchant: Option<String>,
     pub account: Option<String>,
@@ -523,8 +614,9 @@ pub struct AgentTxnSearchQuery {
     pub direction: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct AgentTransactionTableBlock {
     pub count: i64,
     pub total_cents: i64,
@@ -537,15 +629,17 @@ pub struct AgentTransactionTableBlock {
     pub query: Option<AgentTxnSearchQuery>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct AgentFundingSource {
     pub label: String,
     pub detail: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct AgentAffordabilityVerdictBlock {
     pub can_afford: bool,
     pub headline: String,
@@ -554,8 +648,9 @@ pub struct AgentAffordabilityVerdictBlock {
     pub funding_source: Option<AgentFundingSource>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct AgentCategoryRow {
     pub category_key: String,
     pub amount_cents: i64,
@@ -563,15 +658,17 @@ pub struct AgentCategoryRow {
     pub is_lever: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct AgentCategoryBreakdownBlock {
     pub period_label: String,
     pub rows: Vec<AgentCategoryRow>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct AgentAllocationSegment {
     pub label: String,
     pub amount_cents: i64,
@@ -579,15 +676,17 @@ pub struct AgentAllocationSegment {
     pub category_key: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct AgentAllocationSplitBlock {
     pub total_cents: i64,
     pub segments: Vec<AgentAllocationSegment>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct AgentRankedOption {
     pub rank_tone: String,
     pub label: String,
@@ -595,38 +694,43 @@ pub struct AgentRankedOption {
     pub rationale: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct AgentRankedOptionsBlock {
     pub title: String,
     pub options: Vec<AgentRankedOption>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct AgentMoneyPoint {
     pub label: String,
     pub amount_cents: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct AgentComparisonBarsBlock {
     pub title: String,
     pub current: AgentMoneyPoint,
     pub prior: AgentMoneyPoint,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct AgentRecatRow {
     pub merchant: String,
     pub category_key: String,
     pub confidence: f64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct AgentRecategorizationPreviewBlock {
     pub count: i64,
     pub rows: Vec<AgentRecatRow>,
@@ -634,8 +738,9 @@ pub struct AgentRecategorizationPreviewBlock {
     pub bundle_id: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct AgentReviewCategory {
     pub label: String,
     pub amount_cents: i64,
@@ -652,8 +757,9 @@ pub struct AgentReviewCategory {
 /// typed deserialize on `missing field "label"` and is dropped before hydration
 /// ever runs — so only a model that DISOBEYS and invents numbers gets rendered,
 /// the exact inversion server synthesis exists to prevent.
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct AgentReviewMonth {
     #[serde(default)]
     pub label: String,
@@ -671,14 +777,16 @@ pub struct AgentReviewMonth {
     pub period: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct AgentSpendingReviewBlock {
     pub months: Vec<AgentReviewMonth>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct AgentAccountRow {
     pub name: String,
     pub subtitle: Option<String>,
@@ -696,8 +804,9 @@ pub struct AgentAccountRow {
 /// can be neither invented nor omitted. `rows` is therefore `#[serde(default)]`:
 /// the requested emission genuinely has no `rows` key on the wire, and without
 /// the default it died on `missing field "rows"` before hydration could run.
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct AgentAccountsOverviewBlock {
     pub title: Option<String>,
     pub subtitle: Option<String>,
@@ -705,8 +814,9 @@ pub struct AgentAccountsOverviewBlock {
     pub rows: Vec<AgentAccountRow>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct AgentTimelinePoint {
     pub label: String,
     pub amount_cents: i64,
@@ -717,16 +827,18 @@ pub struct AgentTimelinePoint {
     pub projected: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct AgentSpendTimelineBlock {
     pub title: Option<String>,
     pub subtitle: Option<String>,
     pub points: Vec<AgentTimelinePoint>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct AgentDriver {
     pub label: String,
     /// "planned" | "trend" | "prices" | "anomaly" | "creep" | "mixed"
@@ -736,39 +848,44 @@ pub struct AgentDriver {
     pub note: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct AgentSpendingDriversBlock {
     pub title: String,
     pub subtitle: Option<String>,
     pub drivers: Vec<AgentDriver>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct AgentWatchItem {
     pub label: String,
     pub detail: String,
     pub amount_display: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct AgentWatchListBlock {
     pub title: String,
     pub items: Vec<AgentWatchItem>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct AgentActionPlanBlock {
     pub title: Option<String>,
     pub items: Vec<String>,
 }
 
 /// One outstanding categorization suggestion, as shown in the Copilot.
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct AgentReviewQueueItem {
     pub merchant: String,
     pub proposed_category: String,
@@ -791,8 +908,9 @@ pub struct AgentReviewQueueItem {
 /// `hydrate_response_blocks`. Both fields therefore default — a thin emission
 /// must survive `parse_response_blocks`, which runs BEFORE hydration, or the
 /// block would be dropped before it ever got its data.
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct AgentCategoryReviewQueueBlock {
     /// Total pending proposals — may exceed `items.len()`, which is capped.
     #[serde(default)]
@@ -805,8 +923,9 @@ pub struct AgentCategoryReviewQueueBlock {
 /// — never by the model, which may only choose the question. A model-invented
 /// option could name an account the user does not have, and clicking it would
 /// produce a confidently wrong answer.
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct AgentClarificationOption {
     /// Stable identifier (e.g. an account id) so the answer resolves to a real
     /// entity rather than being re-matched from its label.
@@ -824,8 +943,9 @@ pub struct AgentClarificationOption {
 /// options, `multi_select` picks single- vs multi-choice. Free text stays
 /// available either way, so the user is never trapped by an option set that
 /// lacks their answer.
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct AgentClarificationBlock {
     /// Correlates an answer back to the question that prompted it.
     pub clarification_id: String,
@@ -846,8 +966,9 @@ pub struct AgentClarificationBlock {
     pub reference_type: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(tag = "kind", rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub enum AgentResponseBlock {
     Markdown {
         markdown: String,
@@ -880,8 +1001,9 @@ pub enum AgentResponseBlock {
     CategoryReviewQueue(AgentCategoryReviewQueueBlock),
 }
 
-#[derive(Debug, Clone, Serialize, Type)]
+#[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct AgentAnswer {
     pub prose: String,
     pub reasoning: String,
@@ -2468,6 +2590,15 @@ async fn router_classify(provider: &Arc<dyn CompletionProvider>, question: &str)
     }
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct AskAgentRequest {
+    pub question: String,
+    pub mode: Option<String>,
+}
+
+#[utoipa::path(post, path = "/api/rpc/ask_agent", request_body(content = AskAgentRequest), responses((status = 200, body = AgentAnswer)))]
 pub async fn ask_agent(
     state: &ApiState,
     question: String,

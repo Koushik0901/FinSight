@@ -8,9 +8,11 @@ use finsight_core::repos::run;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::path::PathBuf;
+use utoipa::ToSchema;
 
-#[derive(Debug, Serialize, Deserialize, Type)]
+#[derive(Debug, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct BackupInfo {
     pub path: String,
     pub name: String,
@@ -19,8 +21,9 @@ pub struct BackupInfo {
     pub created_at: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, Type)]
+#[derive(Debug, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct DataHealth {
     /// "ok" when the last integrity check passed; otherwise the error rows.
     pub integrity_status: String,
@@ -80,6 +83,7 @@ fn list_backup_files(dir: &std::path::Path) -> Vec<BackupInfo> {
     out
 }
 
+#[utoipa::path(post, path = "/api/rpc/get_data_health", responses((status = 200, body = DataHealth)))]
 pub async fn get_data_health(state: &ApiState) -> AppResult<DataHealth> {
     let dir = state.data_dir.clone();
     let db = (*state.db).clone();
@@ -112,6 +116,7 @@ pub async fn get_data_health(state: &ApiState) -> AppResult<DataHealth> {
     })
 }
 
+#[utoipa::path(post, path = "/api/rpc/create_manual_backup", responses((status = 200, body = BackupInfo)))]
 pub async fn create_manual_backup(state: &ApiState) -> AppResult<BackupInfo> {
     let dir = state.data_dir.clone();
     let db = (*state.db).clone();
@@ -146,6 +151,15 @@ pub async fn create_manual_backup(state: &ApiState) -> AppResult<BackupInfo> {
     })
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct StageRestoreBackupRequest {
+    pub path: String,
+}
+
+#[utoipa::path(post, path = "/api/rpc/stage_restore_backup",
+    request_body(content = StageRestoreBackupRequest), responses((status = 200, description = "Success")))]
 pub async fn stage_restore_backup(state: &ApiState, path: String) -> AppResult<()> {
     let dir = state.data_dir.clone();
     let backups_dir = dir.join("backups");
@@ -174,6 +188,7 @@ pub async fn stage_restore_backup(state: &ApiState, path: String) -> AppResult<(
     Ok(())
 }
 
+#[utoipa::path(post, path = "/api/rpc/cancel_staged_restore", responses((status = 200, description = "Success")))]
 pub async fn cancel_staged_restore(state: &ApiState) -> AppResult<()> {
     let dir = state.data_dir.clone();
     let staged = dir.join("data.pending-restore.sqlcipher");

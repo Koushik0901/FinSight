@@ -1,5 +1,5 @@
 import { lazy, Suspense } from "react";
-import type { CopilotResponseBlock } from "../../../api/client";
+import type { CopilotResponseBlock } from "../../../api/openapiClient";
 import { money } from "../../../utils/format";
 
 const FinSightBarComparison = lazy(() =>

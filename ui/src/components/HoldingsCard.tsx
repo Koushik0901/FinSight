@@ -1,6 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { commands, type AccountSummary } from "../api/client";
+import { api, type AccountSummary } from "../api/openapiClient";
 import { useAccountPositions, useInvestmentSummary } from "../api/hooks/investments";
 import { invalidateDomains } from "../api/invalidation";
 import { money } from "../utils/format";
@@ -25,7 +25,7 @@ export default function HoldingsCard({ account }: { account: AccountSummary }) {
   }
 
   const setBalanceFromEstimate = async () => {
-    const r = await commands.setAccountBalance(account.id, summary.portfolioEstimateCents);
+    const r = await api.setAccountBalance(account.id, summary.portfolioEstimateCents);
     if (r.status === "error") {
       toast.error("Could not set balance", { description: r.error.message });
       return;

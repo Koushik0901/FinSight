@@ -9,9 +9,9 @@ vi.mock("react-focus-lock", () => ({
   default: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
 
-vi.mock("../api/client", () => ({
+vi.mock("../api/openapiClient", () => ({
   unwrap: async (p: Promise<{ status: "ok" | "error"; data?: unknown; error?: { message: string } }>) => { const r = await p; if (r.status === "error") throw new Error(r.error?.message ?? "command failed"); return r.data; },
-  commands: {
+  api: {
     previewCsvColumns: vi.fn().mockResolvedValue({
       status: "ok",
       data: {
@@ -131,9 +131,9 @@ describe("ImportMappingDialog", () => {
     await waitFor(() => expect(btn).not.toBeDisabled());
     fireEvent.click(btn);
 
-    const { commands } = await import("../api/client");
+    const { api } = await import("../api/openapiClient");
     await waitFor(() => {
-      expect(commands.importCsv).toHaveBeenCalledWith(
+      expect(api.importCsv).toHaveBeenCalledWith(
         "/tmp/x.csv",
         "a1",
         expect.objectContaining({ amount_convention: "positive_is_outflow" }),
@@ -142,8 +142,8 @@ describe("ImportMappingDialog", () => {
   });
 
   it("pre-fills the amount handling from this account's saved mapping", async () => {
-    const { commands } = await import("../api/client");
-    (commands.getSavedCsvMapping as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+    const { api } = await import("../api/openapiClient");
+    (api.getSavedCsvMapping as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       status: "ok",
       data: {
         skip_header_rows: 1,
@@ -192,9 +192,9 @@ describe("ImportMappingDialog", () => {
     await waitFor(() => expect(btn).not.toBeDisabled());
     fireEvent.click(btn);
 
-    const { commands } = await import("../api/client");
+    const { api } = await import("../api/openapiClient");
     await waitFor(() => {
-      expect(commands.importCsv).toHaveBeenCalledWith("/tmp/x.csv", "new1", expect.anything());
+      expect(api.importCsv).toHaveBeenCalledWith("/tmp/x.csv", "new1", expect.anything());
     });
   });
 
@@ -220,9 +220,9 @@ describe("ImportMappingDialog", () => {
 
     fireEvent.click(btn);
 
-    const { commands } = await import("../api/client");
+    const { api } = await import("../api/openapiClient");
     await waitFor(() => {
-      expect(commands.importCsv).toHaveBeenCalledWith(
+      expect(api.importCsv).toHaveBeenCalledWith(
         "/tmp/x.csv",
         "a1",
         expect.objectContaining({
@@ -246,22 +246,22 @@ describe("ImportMappingDialog", () => {
     fireEvent.change(dd1!, { target: { value: "Merchant" } });
     fireEvent.change(dd2!, { target: { value: "Amount" } });
 
-    const { commands } = await import("../api/client");
-    await waitFor(() => expect(commands.prepareCsvImport).toHaveBeenCalled());
-    (commands.prepareCsvImport as ReturnType<typeof vi.fn>).mockClear();
+    const { api } = await import("../api/openapiClient");
+    await waitFor(() => expect(api.prepareCsvImport).toHaveBeenCalled());
+    (api.prepareCsvImport as ReturnType<typeof vi.fn>).mockClear();
 
     fireEvent.click(screen.getByRole("button", { name: /^import$/i }));
-    await waitFor(() => expect(commands.importCsv).toHaveBeenCalled());
+    await waitFor(() => expect(api.importCsv).toHaveBeenCalled());
 
     // `useImportCsv` invalidates import caches on success. The dialog must not
     // turn that invalidation into a prepare call with the now-consumed token.
     await new Promise((resolve) => setTimeout(resolve, 350));
-    expect(commands.prepareCsvImport).not.toHaveBeenCalled();
+    expect(api.prepareCsvImport).not.toHaveBeenCalled();
   });
 
   it("navigates to /import-review when rows are queued for review", async () => {
-    const { commands } = await import("../api/client");
-    (commands.importCsv as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+    const { api } = await import("../api/openapiClient");
+    (api.importCsv as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       status: "ok",
       data: { summary: { import_id: "imp1", rows_imported: 0, rows_skipped_duplicates: 0, rows_queued_for_review: 3, errors: [] }, builtinCategorized: 0, transfersPaired: 0, uncategorizedAfter: 0, aiCategorizationStarted: false },
     });
@@ -298,8 +298,8 @@ describe("ImportMappingDialog", () => {
   });
 
   it("shows the live prepared outcome in the footer once mapping is complete", async () => {
-    const { commands } = await import("../api/client");
-    (commands.prepareCsvImport as ReturnType<typeof vi.fn>).mockResolvedValue({
+    const { api } = await import("../api/openapiClient");
+    (api.prepareCsvImport as ReturnType<typeof vi.fn>).mockResolvedValue({
       status: "ok",
       data: {
         signature: "sig",
@@ -332,7 +332,7 @@ describe("ImportMappingDialog", () => {
       { timeout: 2000 },
     );
     expect(screen.getByText(/1 duplicate/)).toBeInTheDocument();
-    expect(commands.prepareCsvImport).toHaveBeenCalledWith(
+    expect(api.prepareCsvImport).toHaveBeenCalledWith(
       "/tmp/x.csv",
       "a1",
       expect.objectContaining({ columns: expect.arrayContaining(["Date", "Merchant", "Amount"]) }),

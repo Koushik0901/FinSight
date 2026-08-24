@@ -3,7 +3,7 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import PathBack from "./PathBack";
 import { createWrapper } from "../test-utils";
 import { usePathBack, useSetSpendingAnnotation } from "../api/hooks/spending";
-import type { PathBackView } from "../api/client";
+import type { PathBackView } from "../api/openapiClient";
 
 vi.mock("../api/hooks/spending", () => ({
   usePathBack: vi.fn(),

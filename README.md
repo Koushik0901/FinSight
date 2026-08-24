@@ -183,7 +183,7 @@ FinSight/
 │   ├── finsight-providers/  # CSV parsers and LLM HTTP providers
 │   ├── finsight-agent/      # Copilot, finance tools, categorizer, anomalies, recipes
 │   ├── finsight-api/        # Transport-agnostic command bodies and ApiState
-│   ├── finsight-openapi/    # OpenAPI spec generation (replaces tauri-specta)
+│   ├── finsight-openapi/    # Typed OpenAPI spec (utoipa) — COMMANDS + build_openapi()
 │   ├── finsight-server/     # Axum auth, RPC, uploads, SSE, static UI, user runtimes
 │   └── finsight-eval/       # Evaluation fixtures and runners
 ├── deploy/
@@ -200,9 +200,10 @@ FinSight/
 
 The generated `ui/src/api/openapi.ts` (from `openapi.json` via
 `openapi-typescript`) is the frontend contract. `ui/src/api/openapiClient.ts`
-(`openapi-fetch`) + `ui/src/api/httpBackend.ts`’s `__TAURI_INTERNALS__` shim
-preserve the `bindings.ts` `invoke` shape over `POST /api/rpc/{cmd}` and
-`GET /api/events`, so screens and hooks keep the same `client.ts` API.
+(`openapi-fetch`) is the typed transport over `POST /api/rpc/{cmd}` and
+`GET /api/events` — every hook imports `api` from there, with `Result<T,AppError>`
+envelope and 401 → `FINSIGHT_AUTH_REQUIRED` handling (the sole transport; no
+Tauri shim remains).
 
 ### Adding or changing a shared command
 

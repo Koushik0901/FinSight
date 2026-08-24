@@ -1,4 +1,4 @@
-import type { TxnFilterInput } from "../api/client";
+import type { TxnFilterInput } from "../api/openapiClient";
 
 interface TransactionFilterProps {
   value: TxnFilterInput;

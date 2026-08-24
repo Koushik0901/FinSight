@@ -6,7 +6,7 @@ import { createWrapper } from "../test-utils";
 
 /**
  * These tests drive the REAL hooks (`useCategoryProposals`, `useTransactions`,
- * `useCategories`) through a mocked `commands` object, rather than stubbing the
+ * `useCategories`) through a mocked `api` object, rather than stubbing the
  * hooks out. That is deliberate: the thing most worth protecting here is the
  * wiring — that queue membership comes from `listCategoryProposals` and that
  * each action calls its command with the PROPOSAL id, not the transaction id.
@@ -20,11 +20,11 @@ const listTransactions = vi.fn();
 const listCategories = vi.fn();
 const listAccounts = vi.fn();
 
-vi.mock("../api/client", async () => {
-  const actual = await vi.importActual("../api/client");
+vi.mock("../api/openapiClient", async () => {
+  const actual = await vi.importActual("../api/openapiClient");
   return {
     ...actual,
-    commands: {
+    api: {
       listCategoryProposals: () => listCategoryProposals(),
       acceptCategoryProposal: (id: string) => acceptCategoryProposal(id),
       correctCategoryProposal: (id: string, categoryId: string) =>

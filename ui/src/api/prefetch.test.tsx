@@ -24,10 +24,11 @@ const commandMocks = vi.hoisted(() => ({
   listCategoryProposals: vi.fn(async () => ({ status: "ok", data: [] })),
 }));
 const { listAccounts, getMonthTotals } = commandMocks;
-vi.mock("./client", async () => {
-  const actual = await vi.importActual<typeof import("./client")>("./client");
+vi.mock("./openapiClient", async () => {
+  const actual = await vi.importActual<typeof import("./openapiClient")>("./openapiClient");
   return {
     ...actual,
+    api: commandMocks,
     commands: commandMocks,
   };
 });

@@ -1,10 +1,10 @@
 import type { QueryClient } from "@tanstack/react-query";
-import { commands } from "./client";
-import { unwrapResult } from "./client";
+import { api } from "./openapiClient";
+import { unwrapResult } from "./openapiClient";
 import { isBackendAvailable } from "../utils/runtime";
 import { prefetchRouteChunk } from "../utils/routePrefetch";
 import { TXN_PAGE_SIZE } from "./hooks/transactions";
-import type { TxnFilterInput } from "./client";
+import type { TxnFilterInput } from "./openapiClient";
 
 /**
  * Prefetch-on-intent: warm a route's summary queries when the user *signals*
@@ -39,46 +39,46 @@ interface Descriptor {
  * hook keys it (see the referenced hook in the comment).
  */
 const D = {
-  accounts: { key: ["accounts"], fn: async () => unwrapResult(await commands.listAccounts()) }, // useAccounts
-  monthTotals: { key: ["month-totals"], fn: async () => unwrapResult(await commands.getMonthTotals()) }, // useMonthTotals
+  accounts: { key: ["accounts"], fn: async () => unwrapResult(await api.listAccounts()) }, // useAccounts
+  monthTotals: { key: ["month-totals"], fn: async () => unwrapResult(await api.getMonthTotals()) }, // useMonthTotals
   categoriesWithSpending: {
     key: ["categories-with-spending"],
-    fn: async () => unwrapResult(await commands.listCategoriesWithSpending()),
+    fn: async () => unwrapResult(await api.listCategoriesWithSpending()),
   }, // useCategoriesWithSpending
-  goals: { key: ["goals"], fn: async () => unwrapResult(await commands.listGoals()) }, // useGoals
-  recurring: { key: ["recurring"], fn: async () => unwrapResult(await commands.listRecurring()) }, // useRecurring
+  goals: { key: ["goals"], fn: async () => unwrapResult(await api.listGoals()) }, // useGoals
+  recurring: { key: ["recurring"], fn: async () => unwrapResult(await api.listRecurring()) }, // useRecurring
   savingsRate: {
     key: ["savings-rate-history"],
-    fn: async () => unwrapResult(await commands.getSavingsRateHistory()),
+    fn: async () => unwrapResult(await api.getSavingsRateHistory()),
   }, // useSavingsRateHistory
   needsReview: {
     key: ["needs-review-count"],
-    fn: async () => unwrapResult(await commands.getNeedsReviewCount()),
+    fn: async () => unwrapResult(await api.getNeedsReviewCount()),
   }, // useNeedsReviewCount
-  agentStatus: { key: ["agent-status"], fn: async () => unwrapResult(await commands.getAgentStatus()) }, // useAgentStatus
+  agentStatus: { key: ["agent-status"], fn: async () => unwrapResult(await api.getAgentStatus()) }, // useAgentStatus
   healthScore: {
     key: ["financial-health-score"],
-    fn: async () => unwrapResult(await commands.getFinancialHealthScore()),
+    fn: async () => unwrapResult(await api.getFinancialHealthScore()),
   }, // useHealthScore
   spendingBreakdown: {
     key: ["spending-breakdown"],
-    fn: async () => unwrapResult(await commands.getSpendingBreakdown()),
+    fn: async () => unwrapResult(await api.getSpendingBreakdown()),
   }, // Budget.tsx inline
   budgetEnvelopes: {
     key: ["budget-envelopes"],
-    fn: async () => unwrapResult(await commands.listBudgetEnvelopes()),
+    fn: async () => unwrapResult(await api.listBudgetEnvelopes()),
   }, // useBudgetEnvelopes
   budgetHistory5: {
     key: ["budget-history", 5],
-    fn: async () => unwrapResult(await commands.listBudgetHistory(5)),
+    fn: async () => unwrapResult(await api.listBudgetHistory(5)),
   }, // useBudgetHistory(5)
   householdMembers: {
     key: ["household-members"],
-    fn: async () => unwrapResult(await commands.listHouseholdMembers()),
+    fn: async () => unwrapResult(await api.listHouseholdMembers()),
   }, // useHouseholdMembers
   categoryProposals: {
     key: ["category-proposals"],
-    fn: async () => unwrapResult(await commands.listCategoryProposals()),
+    fn: async () => unwrapResult(await api.listCategoryProposals()),
   }, // useCategoryProposals
 } as const satisfies Record<string, Descriptor>;
 
@@ -190,7 +190,7 @@ export function prefetchAccountTransactions(qc: QueryClient, accountId: string):
     initialPageParam: 0,
     queryFn: async ({ pageParam }) =>
       unwrapResult(
-        await commands.listTransactions({
+        await api.listTransactions({
           ...filter,
           limit: TXN_PAGE_SIZE,
           offset: (pageParam as number) * TXN_PAGE_SIZE,

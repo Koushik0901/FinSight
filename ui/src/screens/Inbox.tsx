@@ -1,7 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import type { ActionItem, ImportCandidateWithMatches, SimpleFinAlert, TransferSuggestionInfo } from "../api/client";
+import type { ActionItem, ImportCandidateWithMatches, SimpleFinAlert, TransferSuggestionInfo } from "../api/openapiClient";
 import { useActionItems, useUnresolvedCounterparties } from "../api/hooks/inbox";
 import { useNotifications } from "../api/hooks/notifications";
 import { useTriggerRecategorizeLowConfidence } from "../api/hooks/agent";

@@ -1,15 +1,18 @@
 use crate::error::{AppError, AppResult};
 use crate::sink::FrameSink;
 use crate::ApiState;
+use finsight_core::repos::imports::Import;
 use finsight_core::repos::{imports as imports_repo, run};
+use finsight_providers::csv::RowError;
 use finsight_providers::{CsvImportMapping, CsvPreview, CsvProvider, ImportSummary};
 use serde::Serialize;
 use specta::Type;
 use std::path::PathBuf;
 use std::sync::Arc;
 use uuid::Uuid;
+use utoipa::ToSchema;
 
-#[derive(Debug, Clone, Serialize, Type)]
+#[derive(Debug, Clone, Serialize, Type, ToSchema)]
 pub struct ProgressPayload {
     pub import_id: String,
     pub rows_done: u32,
@@ -21,15 +24,16 @@ pub struct ProgressPayload {
 /// "N new · D duplicates · R to review" before the user commits to importing.
 /// Deliberately excludes per-row decisions: those can number in the
 /// thousands and must never cross the Tauri IPC boundary wholesale.
-#[derive(Debug, Clone, Serialize, Type)]
+#[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct PreparedImportPreview {
     pub signature: String,
     pub rows_total: u32,
     pub rows_imported: u32,
     pub rows_skipped_duplicates: u32,
     pub rows_queued_for_review: u32,
-    pub errors: Vec<finsight_providers::csv::RowError>,
+    pub errors: Vec<RowError>,
 }
 
 /// Build a bounded preview of the import outcome. Testable without a Tauri
@@ -59,6 +63,16 @@ pub fn build_preview(
     })
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct PrepareCsvImportRequest {
+    pub path: String,
+    pub account_id: String,
+    pub mapping: CsvImportMapping,
+}
+
+#[utoipa::path(post, path = "/api/rpc/prepare_csv_import", request_body(content = PrepareCsvImportRequest), responses((status = 200, body = PreparedImportPreview)))]
 pub async fn prepare_csv_import(
     state: &ApiState,
     path: String,
@@ -72,6 +86,15 @@ pub async fn prepare_csv_import(
         .map_err(|e| AppError::new("internal", format!("join: {e}")))?
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct PreviewCsvColumnsRequest {
+    pub path: String,
+    pub skip_header_rows: u32,
+}
+
+#[utoipa::path(post, path = "/api/rpc/preview_csv_columns", request_body(content = PreviewCsvColumnsRequest), responses((status = 200, body = CsvPreview)))]
 pub async fn preview_csv_columns(path: String, skip_header_rows: u32) -> AppResult<CsvPreview> {
     let path_buf = PathBuf::from(path);
     tokio::task::spawn_blocking(move || CsvProvider::preview(&path_buf, skip_header_rows))
@@ -84,8 +107,9 @@ pub async fn preview_csv_columns(path: String, skip_header_rows: u32) -> AppResu
 /// uncategorized count (and whether the AI pass was auto-started) makes the
 /// cloud LLM categorization a visible, informed choice rather than a silent
 /// background enqueue.
-#[derive(Debug, Clone, Serialize, Type)]
+#[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct ImportResult {
     pub summary: ImportSummary,
     /// Rows the deterministic builtin pass categorized in this import's
@@ -105,11 +129,17 @@ pub struct ImportResult {
 /// Import a CSV file, running the deterministic post-import cascade
 /// (categorization, transfer pairing, anomaly refresh, net-worth refresh) and
 /// enqueuing the AI categorizer. Progress and completion are pushed through the
-/// `sink` (`"import-progress"` / `"import-complete"`, unchanged event names and
-/// payload shapes) — the Tauri wrapper feeds a `TauriFrameSink` that emits real
-/// window events, and ALSO fires the desktop "check_and_fire" notification
-/// after this returns (that notification is native-only and stays in the
-/// wrapper, not here — see `crates/finsight-bindings/src/commands/import.rs`).
+/// `sink` (`"import-progress"` / `"import-complete"`).
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct ImportCsvRequest {
+    pub path: String,
+    pub account_id: String,
+    pub mapping: CsvImportMapping,
+}
+
+#[utoipa::path(post, path = "/api/rpc/import_csv", request_body(content = ImportCsvRequest), responses((status = 200, body = ImportResult)))]
 pub async fn import_csv(
     state: &ApiState,
     sink: Arc<dyn FrameSink>,
@@ -314,6 +344,15 @@ pub async fn import_csv(
     Ok(result)
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct GetSavedCsvMappingRequest {
+    pub account_id: String,
+}
+
+#[utoipa::path(post, path = "/api/rpc/get_saved_csv_mapping",
+    request_body(content = GetSavedCsvMappingRequest), responses((status = 200, body = Option<CsvImportMapping>)))]
 pub async fn get_saved_csv_mapping(
     state: &ApiState,
     account_id: String,
@@ -327,13 +366,23 @@ pub async fn get_saved_csv_mapping(
     .map_err(|e| AppError::new("internal", format!("join: {e}")))?
 }
 
-pub async fn list_unfinished_imports(state: &ApiState) -> AppResult<Vec<imports_repo::Import>> {
+#[utoipa::path(post, path = "/api/rpc/list_unfinished_imports", responses((status = 200, body = Vec<Import>)))]
+pub async fn list_unfinished_imports(state: &ApiState) -> AppResult<Vec<Import>> {
     let db = (*state.db).clone();
     run(&db, |conn| imports_repo::list_unfinished(conn))
         .await
         .map_err(AppError::from)
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct DiscardUnfinishedImportRequest {
+    pub import_id: String,
+}
+
+#[utoipa::path(post, path = "/api/rpc/discard_unfinished_import",
+    request_body(content = DiscardUnfinishedImportRequest), responses((status = 200, description = "Success")))]
 pub async fn discard_unfinished_import(state: &ApiState, import_id: String) -> AppResult<()> {
     let db = (*state.db).clone();
     run(&db, move |conn| {

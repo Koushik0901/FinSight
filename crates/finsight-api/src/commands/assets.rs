@@ -7,12 +7,23 @@ use finsight_core::models::{
 use finsight_core::repos::{accounts, manual_assets, net_worth, run};
 use serde::Serialize;
 use specta::Type;
+use utoipa::ToSchema;
 
+#[utoipa::path(post, path = "/api/rpc/list_manual_assets", responses((status = 200, body = Vec<ManualAsset>)))]
 pub async fn list_manual_assets(state: &ApiState) -> AppResult<Vec<ManualAsset>> {
     let db = (*state.db).clone();
     run(&db, manual_assets::list).await.map_err(AppError::from)
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct CreateManualAssetRequest {
+    pub input: NewManualAsset,
+}
+
+#[utoipa::path(post, path = "/api/rpc/create_manual_asset",
+    request_body(content = CreateManualAssetRequest), responses((status = 200, body = ManualAsset)))]
 pub async fn create_manual_asset(
     state: &ApiState,
     input: NewManualAsset,
@@ -23,6 +34,15 @@ pub async fn create_manual_asset(
         .map_err(AppError::from)
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct UpdateManualAssetRequest {
+    pub id: String,
+    pub patch: ManualAssetPatch,
+}
+
+#[utoipa::path(post, path = "/api/rpc/update_manual_asset", request_body(content = UpdateManualAssetRequest), responses((status = 200, body = ManualAsset)))]
 pub async fn update_manual_asset(
     state: &ApiState,
     id: String,
@@ -34,6 +54,15 @@ pub async fn update_manual_asset(
         .map_err(AppError::from)
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct DeleteManualAssetRequest {
+    pub id: String,
+}
+
+#[utoipa::path(post, path = "/api/rpc/delete_manual_asset",
+    request_body(content = DeleteManualAssetRequest), responses((status = 200, description = "Success")))]
 pub async fn delete_manual_asset(state: &ApiState, id: String) -> AppResult<()> {
     let db = (*state.db).clone();
     run(&db, move |conn| manual_assets::delete(conn, &id))
@@ -41,6 +70,7 @@ pub async fn delete_manual_asset(state: &ApiState, id: String) -> AppResult<()> 
         .map_err(AppError::from)
 }
 
+#[utoipa::path(post, path = "/api/rpc/record_net_worth_snapshot", responses((status = 200, description = "Success")))]
 pub async fn record_net_worth_snapshot(state: &ApiState) -> AppResult<()> {
     let db = (*state.db).clone();
     run(&db, net_worth::record_today)
@@ -48,6 +78,15 @@ pub async fn record_net_worth_snapshot(state: &ApiState) -> AppResult<()> {
         .map_err(AppError::from)
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct ListNetWorthHistoryRequest {
+    pub days: u32,
+}
+
+#[utoipa::path(post, path = "/api/rpc/list_net_worth_history",
+    request_body(content = ListNetWorthHistoryRequest), responses((status = 200, body = Vec<NetWorthPoint>)))]
 pub async fn list_net_worth_history(state: &ApiState, days: u32) -> AppResult<Vec<NetWorthPoint>> {
     let db = (*state.db).clone();
     run(&db, move |conn| net_worth::list_history(conn, days))
@@ -55,8 +94,9 @@ pub async fn list_net_worth_history(state: &ApiState, days: u32) -> AppResult<Ve
         .map_err(AppError::from)
 }
 
-#[derive(Debug, Clone, Serialize, Type)]
+#[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct DebtPayoffMonth {
     pub month: i32,
     pub month_label: String,
@@ -68,8 +108,9 @@ pub struct DebtPayoffMonth {
     pub remaining_balance_cents: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Type)]
+#[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct DebtPayoffSummary {
     pub account_id: String,
     pub account_name: String,
@@ -79,8 +120,9 @@ pub struct DebtPayoffSummary {
     pub months_to_payoff: i32,
 }
 
-#[derive(Debug, Clone, Serialize, Type)]
+#[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct DebtPayoffResult {
     pub strategy: String,
     pub extra_monthly_cents: i64,
@@ -90,6 +132,15 @@ pub struct DebtPayoffResult {
     pub summaries: Vec<DebtPayoffSummary>,
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct ComputeDebtPayoffRequest {
+    pub extra_monthly_cents: i64,
+}
+
+#[utoipa::path(post, path = "/api/rpc/compute_debt_payoff",
+    request_body(content = ComputeDebtPayoffRequest), responses((status = 200, body = Vec<DebtPayoffResult>)))]
 pub async fn compute_debt_payoff(
     state: &ApiState,
     extra_monthly_cents: i64,
@@ -238,6 +289,7 @@ pub async fn compute_debt_payoff(
     .map_err(AppError::from)
 }
 
+#[utoipa::path(post, path = "/api/rpc/get_uncelebrated_milestones", responses((status = 200, body = Vec<i64>)))]
 pub async fn get_uncelebrated_milestones(state: &ApiState) -> AppResult<Vec<i64>> {
     let db = (*state.db).clone();
     run(&db, |conn| {

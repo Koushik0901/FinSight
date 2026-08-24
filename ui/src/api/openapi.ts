@@ -4,23 +4,6 @@
  */
 
 export interface paths {
-    "/api/openapi.json": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** OpenAPI specification */
-        get: operations["get_openapi"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/rpc/accept_category_proposal": {
         parameters: {
             query?: never;
@@ -30,7 +13,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC accept_category_proposal */
         post: operations["accept_category_proposal"];
         delete?: never;
         options?: never;
@@ -47,7 +29,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC accept_import_candidate_match */
         post: operations["accept_import_candidate_match"];
         delete?: never;
         options?: never;
@@ -64,7 +45,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC accept_rule_proposal */
         post: operations["accept_rule_proposal"];
         delete?: never;
         options?: never;
@@ -81,7 +61,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC acknowledge_simplefin_alert */
         post: operations["acknowledge_simplefin_alert"];
         delete?: never;
         options?: never;
@@ -98,7 +77,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC add_category_example */
         post: operations["add_category_example"];
         delete?: never;
         options?: never;
@@ -115,7 +93,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC add_restoration_leg */
         post: operations["add_restoration_leg"];
         delete?: never;
         options?: never;
@@ -132,7 +109,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC app_ready */
         post: operations["app_ready"];
         delete?: never;
         options?: never;
@@ -149,7 +125,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC apply_counterparty_verdict_to_similar */
         post: operations["apply_counterparty_verdict_to_similar"];
         delete?: never;
         options?: never;
@@ -166,7 +141,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC apply_next_month_plan */
         post: operations["apply_next_month_plan"];
         delete?: never;
         options?: never;
@@ -183,7 +157,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC apply_scenario */
         post: operations["apply_scenario"];
         delete?: never;
         options?: never;
@@ -200,7 +173,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC apply_transfer_verdict_to_similar */
         post: operations["apply_transfer_verdict_to_similar"];
         delete?: never;
         options?: never;
@@ -217,7 +189,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC approve_action_item */
         post: operations["approve_action_item"];
         delete?: never;
         options?: never;
@@ -234,7 +205,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC archive_account */
         post: operations["archive_account"];
         delete?: never;
         options?: never;
@@ -251,7 +221,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC archive_category */
         post: operations["archive_category"];
         delete?: never;
         options?: never;
@@ -268,7 +237,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC archive_goal */
         post: operations["archive_goal"];
         delete?: never;
         options?: never;
@@ -285,7 +253,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC archive_scenario */
         post: operations["archive_scenario"];
         delete?: never;
         options?: never;
@@ -302,7 +269,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC ask_agent */
         post: operations["ask_agent"];
         delete?: never;
         options?: never;
@@ -319,7 +285,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC cancel_staged_restore */
         post: operations["cancel_staged_restore"];
         delete?: never;
         options?: never;
@@ -336,7 +301,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC clear_scenario_revision */
         post: operations["clear_scenario_revision"];
         delete?: never;
         options?: never;
@@ -353,7 +317,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC close_agent_session */
         post: operations["close_agent_session"];
         delete?: never;
         options?: never;
@@ -370,7 +333,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC close_restoration_envelope */
         post: operations["close_restoration_envelope"];
         delete?: never;
         options?: never;
@@ -387,7 +349,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC commit_starter_categories */
         post: operations["commit_starter_categories"];
         delete?: never;
         options?: never;
@@ -404,7 +365,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC compute_debt_payoff */
         post: operations["compute_debt_payoff"];
         delete?: never;
         options?: never;
@@ -421,7 +381,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC confirm_simplefin_transfer */
         post: operations["confirm_simplefin_transfer"];
         delete?: never;
         options?: never;
@@ -438,7 +397,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC contribute_to_goal */
         post: operations["contribute_to_goal"];
         delete?: never;
         options?: never;
@@ -455,7 +413,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC correct_category_proposal */
         post: operations["correct_category_proposal"];
         delete?: never;
         options?: never;
@@ -472,7 +429,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC create_account */
         post: operations["create_account"];
         delete?: never;
         options?: never;
@@ -489,7 +445,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC create_agent_session */
         post: operations["create_agent_session"];
         delete?: never;
         options?: never;
@@ -506,7 +461,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC create_category */
         post: operations["create_category"];
         delete?: never;
         options?: never;
@@ -523,7 +477,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC create_category_group */
         post: operations["create_category_group"];
         delete?: never;
         options?: never;
@@ -540,7 +493,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC create_conversation */
         post: operations["create_conversation"];
         delete?: never;
         options?: never;
@@ -557,7 +509,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC create_goal */
         post: operations["create_goal"];
         delete?: never;
         options?: never;
@@ -574,7 +525,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC create_household_member */
         post: operations["create_household_member"];
         delete?: never;
         options?: never;
@@ -591,7 +541,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC create_import_candidate_transaction */
         post: operations["create_import_candidate_transaction"];
         delete?: never;
         options?: never;
@@ -608,7 +557,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC create_manual_asset */
         post: operations["create_manual_asset"];
         delete?: never;
         options?: never;
@@ -625,7 +573,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC create_manual_backup */
         post: operations["create_manual_backup"];
         delete?: never;
         options?: never;
@@ -642,7 +589,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC create_planned_transaction */
         post: operations["create_planned_transaction"];
         delete?: never;
         options?: never;
@@ -659,7 +605,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC create_recipe */
         post: operations["create_recipe"];
         delete?: never;
         options?: never;
@@ -676,7 +621,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC create_restoration_envelope */
         post: operations["create_restoration_envelope"];
         delete?: never;
         options?: never;
@@ -693,7 +637,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC create_rule */
         post: operations["create_rule"];
         delete?: never;
         options?: never;
@@ -710,7 +653,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC create_transaction */
         post: operations["create_transaction"];
         delete?: never;
         options?: never;
@@ -727,7 +669,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC decline_rule_proposal */
         post: operations["decline_rule_proposal"];
         delete?: never;
         options?: never;
@@ -744,7 +685,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC delete_all_data */
         post: operations["delete_all_data"];
         delete?: never;
         options?: never;
@@ -761,7 +701,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC delete_conversation */
         post: operations["delete_conversation"];
         delete?: never;
         options?: never;
@@ -778,7 +717,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC delete_conversation_messages_after */
         post: operations["delete_conversation_messages_after"];
         delete?: never;
         options?: never;
@@ -795,7 +733,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC delete_household_member */
         post: operations["delete_household_member"];
         delete?: never;
         options?: never;
@@ -812,7 +749,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC delete_manual_asset */
         post: operations["delete_manual_asset"];
         delete?: never;
         options?: never;
@@ -829,7 +765,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC delete_planned_transaction */
         post: operations["delete_planned_transaction"];
         delete?: never;
         options?: never;
@@ -846,7 +781,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC delete_push_subscription */
         post: operations["delete_push_subscription"];
         delete?: never;
         options?: never;
@@ -863,7 +797,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC delete_recipe */
         post: operations["delete_recipe"];
         delete?: never;
         options?: never;
@@ -880,7 +813,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC delete_restoration_envelope */
         post: operations["delete_restoration_envelope"];
         delete?: never;
         options?: never;
@@ -897,7 +829,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC delete_scenario */
         post: operations["delete_scenario"];
         delete?: never;
         options?: never;
@@ -914,7 +845,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC delete_simplefin_connection */
         post: operations["delete_simplefin_connection"];
         delete?: never;
         options?: never;
@@ -931,7 +861,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC delete_transaction */
         post: operations["delete_transaction"];
         delete?: never;
         options?: never;
@@ -948,7 +877,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC discard_unfinished_import */
         post: operations["discard_unfinished_import"];
         delete?: never;
         options?: never;
@@ -965,7 +893,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC disconnect_simplefin */
         post: operations["disconnect_simplefin"];
         delete?: never;
         options?: never;
@@ -982,7 +909,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC dismiss_import_candidate */
         post: operations["dismiss_import_candidate"];
         delete?: never;
         options?: never;
@@ -999,7 +925,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC duplicate_scenario */
         post: operations["duplicate_scenario"];
         delete?: never;
         options?: never;
@@ -1016,7 +941,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC edit_conversation_user_message */
         post: operations["edit_conversation_user_message"];
         delete?: never;
         options?: never;
@@ -1033,7 +957,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC execute_action_bundle */
         post: operations["execute_action_bundle"];
         delete?: never;
         options?: never;
@@ -1050,7 +973,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC explain_financial_metrics */
         post: operations["explain_financial_metrics"];
         delete?: never;
         options?: never;
@@ -1067,7 +989,17 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC explain_goals */
+        /**
+         * Structured explanations of every active goal's projected completion — one per
+         * @description goal, keyed `goal:{id}` — from the same ETA the plan and the Copilot use. A
+         *     goal with no monthly contribution honestly withholds a date instead of
+         *     inventing one.
+         *
+         *     (Debt-payoff explanation is produced by the same-shaped
+         *     `finsight_agent::finance::explain_debt_payoff`, surfaced through the Copilot's
+         *     `explain_metric` tool — the debt payoff order has no dedicated screen to hang
+         *     an "explain" affordance on, so it isn't exposed as a standalone command.)
+         */
         post: operations["explain_goals"];
         delete?: never;
         options?: never;
@@ -1084,7 +1016,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC explain_scenario */
         post: operations["explain_scenario"];
         delete?: never;
         options?: never;
@@ -1101,7 +1032,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC export_account_csv */
         post: operations["export_account_csv"];
         delete?: never;
         options?: never;
@@ -1118,7 +1048,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC export_all_data_csv */
+        /** Real implementation as of Phase 4 (previously 501'd — dialog-only). */
         post: operations["export_all_data_csv"];
         delete?: never;
         options?: never;
@@ -1135,7 +1065,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC export_all_data_json */
+        /** Real implementation as of Phase 4 (previously 501'd — dialog-only). */
         post: operations["export_all_data_json"];
         delete?: never;
         options?: never;
@@ -1152,7 +1082,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC export_search_transactions_csv */
         post: operations["export_search_transactions_csv"];
         delete?: never;
         options?: never;
@@ -1169,7 +1098,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC export_transactions_csv */
         post: operations["export_transactions_csv"];
         delete?: never;
         options?: never;
@@ -1186,7 +1114,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC forget_agent_memory */
         post: operations["forget_agent_memory"];
         delete?: never;
         options?: never;
@@ -1203,7 +1130,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC get_account_balance_timeline */
         post: operations["get_account_balance_timeline"];
         delete?: never;
         options?: never;
@@ -1220,7 +1146,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC get_action_bundle */
         post: operations["get_action_bundle"];
         delete?: never;
         options?: never;
@@ -1237,7 +1162,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC get_action_items */
         post: operations["get_action_items"];
         delete?: never;
         options?: never;
@@ -1254,7 +1178,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC get_agent_status */
         post: operations["get_agent_status"];
         delete?: never;
         options?: never;
@@ -1271,7 +1194,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC get_auto_categorize_enabled */
         post: operations["get_auto_categorize_enabled"];
         delete?: never;
         options?: never;
@@ -1288,7 +1210,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC get_cashflow_forecast */
         post: operations["get_cashflow_forecast"];
         delete?: never;
         options?: never;
@@ -1305,7 +1226,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC get_completion_provider */
         post: operations["get_completion_provider"];
         delete?: never;
         options?: never;
@@ -1322,7 +1242,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC get_conversation_messages */
         post: operations["get_conversation_messages"];
         delete?: never;
         options?: never;
@@ -1339,7 +1258,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC get_currency */
         post: operations["get_currency"];
         delete?: never;
         options?: never;
@@ -1356,7 +1274,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC get_data_health */
         post: operations["get_data_health"];
         delete?: never;
         options?: never;
@@ -1373,7 +1290,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC get_financial_health_score */
         post: operations["get_financial_health_score"];
         delete?: never;
         options?: never;
@@ -1390,7 +1306,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC get_financial_metrics */
         post: operations["get_financial_metrics"];
         delete?: never;
         options?: never;
@@ -1407,7 +1322,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC get_financial_philosophy */
         post: operations["get_financial_philosophy"];
         delete?: never;
         options?: never;
@@ -1424,7 +1338,20 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC get_inbox_badge_count */
+        /**
+         * One number for passive "needs attention" surfaces — the installed PWA's icon
+         * @description badge (Badging API), and any future glanceable indicator.
+         *
+         *     This calls the SAME five command bodies the Inbox screen sums for its header
+         *     count instead of re-deriving the total in SQL. That is the whole point: there
+         *     is exactly one definition of "an inbox item", so the badge and the screen
+         *     cannot drift apart when a sixth source is added later — whoever adds it to
+         *     the Inbox necessarily adds it here too.
+         *
+         *     Runs sequentially rather than via `try_join!`: each call borrows a pooled
+         *     blocking connection, and a badge refreshed on a slow poll is not worth
+         *     occupying five pool slots at once on a multi-user server.
+         */
         post: operations["get_inbox_badge_count"];
         delete?: never;
         options?: never;
@@ -1441,7 +1368,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC get_investment_summary */
         post: operations["get_investment_summary"];
         delete?: never;
         options?: never;
@@ -1458,7 +1384,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC get_journey_status */
         post: operations["get_journey_status"];
         delete?: never;
         options?: never;
@@ -1475,7 +1400,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC get_month_close */
         post: operations["get_month_close"];
         delete?: never;
         options?: never;
@@ -1492,7 +1416,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC get_month_totals */
         post: operations["get_month_totals"];
         delete?: never;
         options?: never;
@@ -1509,7 +1432,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC get_needs_review_count */
         post: operations["get_needs_review_count"];
         delete?: never;
         options?: never;
@@ -1526,7 +1448,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC get_notification_prefs */
         post: operations["get_notification_prefs"];
         delete?: never;
         options?: never;
@@ -1543,7 +1464,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC get_notifications_enabled */
         post: operations["get_notifications_enabled"];
         delete?: never;
         options?: never;
@@ -1560,7 +1480,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC get_onboarding_state */
         post: operations["get_onboarding_state"];
         delete?: never;
         options?: never;
@@ -1577,7 +1496,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC get_plan_next_month_data */
         post: operations["get_plan_next_month_data"];
         delete?: never;
         options?: never;
@@ -1594,7 +1512,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC get_planned_transaction */
         post: operations["get_planned_transaction"];
         delete?: never;
         options?: never;
@@ -1611,7 +1528,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC get_push_status */
         post: operations["get_push_status"];
         delete?: never;
         options?: never;
@@ -1628,7 +1544,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC get_report_data */
         post: operations["get_report_data"];
         delete?: never;
         options?: never;
@@ -1645,7 +1560,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC get_restoration_status */
         post: operations["get_restoration_status"];
         delete?: never;
         options?: never;
@@ -1662,7 +1576,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC get_saved_csv_mapping */
         post: operations["get_saved_csv_mapping"];
         delete?: never;
         options?: never;
@@ -1679,7 +1592,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC get_savings_rate_history */
         post: operations["get_savings_rate_history"];
         delete?: never;
         options?: never;
@@ -1696,7 +1608,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC get_simplefin_status */
         post: operations["get_simplefin_status"];
         delete?: never;
         options?: never;
@@ -1713,7 +1624,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC get_simplefin_sync_settings */
         post: operations["get_simplefin_sync_settings"];
         delete?: never;
         options?: never;
@@ -1730,7 +1640,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC get_spending_breakdown */
         post: operations["get_spending_breakdown"];
         delete?: never;
         options?: never;
@@ -1747,7 +1656,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC get_spending_path_back */
         post: operations["get_spending_path_back"];
         delete?: never;
         options?: never;
@@ -1764,7 +1672,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC get_transaction_count */
         post: operations["get_transaction_count"];
         delete?: never;
         options?: never;
@@ -1781,7 +1688,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC get_transaction_splits */
         post: operations["get_transaction_splits"];
         delete?: never;
         options?: never;
@@ -1798,7 +1704,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC get_uncelebrated_milestones */
         post: operations["get_uncelebrated_milestones"];
         delete?: never;
         options?: never;
@@ -1815,7 +1720,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC household_net_worth_breakdown */
         post: operations["household_net_worth_breakdown"];
         delete?: never;
         options?: never;
@@ -1832,7 +1736,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC import_csv */
         post: operations["import_csv"];
         delete?: never;
         options?: never;
@@ -1849,7 +1752,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC import_simplefin_accounts */
         post: operations["import_simplefin_accounts"];
         delete?: never;
         options?: never;
@@ -1866,7 +1768,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC list_account_balance_history */
         post: operations["list_account_balance_history"];
         delete?: never;
         options?: never;
@@ -1883,7 +1784,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC list_account_balance_sparklines */
         post: operations["list_account_balance_sparklines"];
         delete?: never;
         options?: never;
@@ -1900,7 +1800,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC list_account_owners */
         post: operations["list_account_owners"];
         delete?: never;
         options?: never;
@@ -1917,7 +1816,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC list_account_positions */
         post: operations["list_account_positions"];
         delete?: never;
         options?: never;
@@ -1934,7 +1832,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC list_accounts */
         post: operations["list_accounts"];
         delete?: never;
         options?: never;
@@ -1951,7 +1848,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC list_action_bundles */
         post: operations["list_action_bundles"];
         delete?: never;
         options?: never;
@@ -1968,7 +1864,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC list_agent_memory */
         post: operations["list_agent_memory"];
         delete?: never;
         options?: never;
@@ -1985,7 +1880,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC list_agent_sessions */
         post: operations["list_agent_sessions"];
         delete?: never;
         options?: never;
@@ -2002,7 +1896,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC list_asset_owners */
         post: operations["list_asset_owners"];
         delete?: never;
         options?: never;
@@ -2019,7 +1912,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC list_budget_envelopes */
         post: operations["list_budget_envelopes"];
         delete?: never;
         options?: never;
@@ -2036,7 +1928,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC list_budget_history */
         post: operations["list_budget_history"];
         delete?: never;
         options?: never;
@@ -2053,7 +1944,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC list_categories */
         post: operations["list_categories"];
         delete?: never;
         options?: never;
@@ -2070,7 +1960,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC list_categories_with_spending */
         post: operations["list_categories_with_spending"];
         delete?: never;
         options?: never;
@@ -2087,7 +1976,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC list_category_examples */
         post: operations["list_category_examples"];
         delete?: never;
         options?: never;
@@ -2104,7 +1992,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC list_category_groups */
         post: operations["list_category_groups"];
         delete?: never;
         options?: never;
@@ -2121,7 +2008,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC list_category_proposals */
+        /** The current review queue — proposals still awaiting a human decision. */
         post: operations["list_category_proposals"];
         delete?: never;
         options?: never;
@@ -2138,7 +2025,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC list_conversations */
         post: operations["list_conversations"];
         delete?: never;
         options?: never;
@@ -2155,7 +2041,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC list_execution_log */
         post: operations["list_execution_log"];
         delete?: never;
         options?: never;
@@ -2172,7 +2057,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC list_goal_contributions */
         post: operations["list_goal_contributions"];
         delete?: never;
         options?: never;
@@ -2189,7 +2073,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC list_goals */
         post: operations["list_goals"];
         delete?: never;
         options?: never;
@@ -2206,7 +2089,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC list_household_members */
         post: operations["list_household_members"];
         delete?: never;
         options?: never;
@@ -2223,7 +2105,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC list_import_review_candidates */
         post: operations["list_import_review_candidates"];
         delete?: never;
         options?: never;
@@ -2240,7 +2121,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC list_manual_assets */
         post: operations["list_manual_assets"];
         delete?: never;
         options?: never;
@@ -2257,7 +2137,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC list_member_budget_envelopes */
         post: operations["list_member_budget_envelopes"];
         delete?: never;
         options?: never;
@@ -2274,7 +2153,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC list_month_closes */
+        /**
+         * Past closes, newest first — the "revisit a recorded close" surface the old
+         * @description list_monthly_reviews never had a screen for.
+         */
         post: operations["list_month_closes"];
         delete?: never;
         options?: never;
@@ -2291,7 +2173,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC list_net_worth_history */
         post: operations["list_net_worth_history"];
         delete?: never;
         options?: never;
@@ -2308,7 +2189,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC list_notifications */
         post: operations["list_notifications"];
         delete?: never;
         options?: never;
@@ -2325,7 +2205,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC list_planned_transactions */
         post: operations["list_planned_transactions"];
         delete?: never;
         options?: never;
@@ -2342,7 +2221,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC list_provider_models */
         post: operations["list_provider_models"];
         delete?: never;
         options?: never;
@@ -2359,7 +2237,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC list_push_devices */
         post: operations["list_push_devices"];
         delete?: never;
         options?: never;
@@ -2376,7 +2253,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC list_recent_agent_activity */
         post: operations["list_recent_agent_activity"];
         delete?: never;
         options?: never;
@@ -2393,7 +2269,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC list_recipe_runs */
         post: operations["list_recipe_runs"];
         delete?: never;
         options?: never;
@@ -2410,7 +2285,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC list_recipes */
         post: operations["list_recipes"];
         delete?: never;
         options?: never;
@@ -2427,7 +2301,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC list_recurring */
         post: operations["list_recurring"];
         delete?: never;
         options?: never;
@@ -2444,7 +2317,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC list_restoration_envelopes */
         post: operations["list_restoration_envelopes"];
         delete?: never;
         options?: never;
@@ -2461,7 +2333,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC list_rule_proposals */
         post: operations["list_rule_proposals"];
         delete?: never;
         options?: never;
@@ -2478,7 +2349,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC list_rules_with_categories */
         post: operations["list_rules_with_categories"];
         delete?: never;
         options?: never;
@@ -2495,7 +2365,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC list_saved_scenarios */
+        /**
+         * Active saved scenarios, each recomputed against the current baseline so a
+         * @description comparison across them is consistent by construction.
+         */
         post: operations["list_saved_scenarios"];
         delete?: never;
         options?: never;
@@ -2512,7 +2385,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC list_simplefin_accounts */
         post: operations["list_simplefin_accounts"];
         delete?: never;
         options?: never;
@@ -2529,7 +2401,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC list_simplefin_alerts */
         post: operations["list_simplefin_alerts"];
         delete?: never;
         options?: never;
@@ -2546,7 +2417,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC list_simplefin_connections */
         post: operations["list_simplefin_connections"];
         delete?: never;
         options?: never;
@@ -2563,7 +2433,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC list_simplefin_transfer_suggestions */
         post: operations["list_simplefin_transfer_suggestions"];
         delete?: never;
         options?: never;
@@ -2580,7 +2449,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC list_transactions */
         post: operations["list_transactions"];
         delete?: never;
         options?: never;
@@ -2597,7 +2465,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC list_unfinished_imports */
         post: operations["list_unfinished_imports"];
         delete?: never;
         options?: never;
@@ -2614,7 +2481,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC list_unresolved_counterparties */
+        /**
+         * The undecided transfer-review queue, grouped by counterparty for a
+         * @description bulk-decision surface.
+         */
         post: operations["list_unresolved_counterparties"];
         delete?: never;
         options?: never;
@@ -2631,7 +2501,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC mark_all_notifications_read */
         post: operations["mark_all_notifications_read"];
         delete?: never;
         options?: never;
@@ -2648,7 +2517,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC mark_notification_read */
         post: operations["mark_notification_read"];
         delete?: never;
         options?: never;
@@ -2665,7 +2533,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC mark_onboarding_complete */
         post: operations["mark_onboarding_complete"];
         delete?: never;
         options?: never;
@@ -2682,7 +2549,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC mark_subscription_cancelled */
         post: operations["mark_subscription_cancelled"];
         delete?: never;
         options?: never;
@@ -2699,7 +2565,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC notification_unread_count */
+        /** Unread, unresolved count — what the installed-app icon badge reflects. */
         post: operations["notification_unread_count"];
         delete?: never;
         options?: never;
@@ -2716,7 +2582,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC pause_recipe */
         post: operations["pause_recipe"];
         delete?: never;
         options?: never;
@@ -2733,7 +2598,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC prepare_csv_import */
         post: operations["prepare_csv_import"];
         delete?: never;
         options?: never;
@@ -2750,7 +2614,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC preview_csv_columns */
         post: operations["preview_csv_columns"];
         delete?: never;
         options?: never;
@@ -2767,7 +2630,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC probe_ollama */
         post: operations["probe_ollama"];
         delete?: never;
         options?: never;
@@ -2784,7 +2646,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC project_goal_growth */
         post: operations["project_goal_growth"];
         delete?: never;
         options?: never;
@@ -2801,7 +2662,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC promote_scenario */
         post: operations["promote_scenario"];
         delete?: never;
         options?: never;
@@ -2818,7 +2678,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC purge_simplefin_data */
         post: operations["purge_simplefin_data"];
         delete?: never;
         options?: never;
@@ -2835,7 +2694,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC recompute_anomalies */
         post: operations["recompute_anomalies"];
         delete?: never;
         options?: never;
@@ -2869,7 +2727,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC record_net_worth_snapshot */
         post: operations["record_net_worth_snapshot"];
         delete?: never;
         options?: never;
@@ -2886,7 +2743,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC reject_action_item */
         post: operations["reject_action_item"];
         delete?: never;
         options?: never;
@@ -2903,7 +2759,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC reject_category_proposal */
         post: operations["reject_category_proposal"];
         delete?: never;
         options?: never;
@@ -2920,7 +2775,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC reject_simplefin_transfer */
         post: operations["reject_simplefin_transfer"];
         delete?: never;
         options?: never;
@@ -2937,7 +2791,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC remove_category_example */
         post: operations["remove_category_example"];
         delete?: never;
         options?: never;
@@ -2954,7 +2807,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC remove_restoration_leg */
         post: operations["remove_restoration_leg"];
         delete?: never;
         options?: never;
@@ -2971,7 +2823,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC rename_category */
         post: operations["rename_category"];
         delete?: never;
         options?: never;
@@ -2988,7 +2839,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC reset_onboarding_completion */
         post: operations["reset_onboarding_completion"];
         delete?: never;
         options?: never;
@@ -3005,7 +2855,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC resume_recipe */
         post: operations["resume_recipe"];
         delete?: never;
         options?: never;
@@ -3022,7 +2871,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC revise_scenario */
         post: operations["revise_scenario"];
         delete?: never;
         options?: never;
@@ -3039,7 +2887,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC run_scenario */
         post: operations["run_scenario"];
         delete?: never;
         options?: never;
@@ -3056,7 +2903,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC save_llm_provider */
         post: operations["save_llm_provider"];
         delete?: never;
         options?: never;
@@ -3073,7 +2919,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC save_month_close */
         post: operations["save_month_close"];
         delete?: never;
         options?: never;
@@ -3090,7 +2935,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC save_provider_api_key */
         post: operations["save_provider_api_key"];
         delete?: never;
         options?: never;
@@ -3107,7 +2951,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC save_push_subscription */
         post: operations["save_push_subscription"];
         delete?: never;
         options?: never;
@@ -3124,7 +2967,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC save_scenario */
         post: operations["save_scenario"];
         delete?: never;
         options?: never;
@@ -3141,7 +2983,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC save_simplefin_setup_token */
         post: operations["save_simplefin_setup_token"];
         delete?: never;
         options?: never;
@@ -3158,7 +2999,12 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC send_test_push */
+        /**
+         * Send a notification the user asked for, so they can confirm the whole chain
+         * @description (permission, subscription, VAPID signing, push service, worker) actually
+         *     works on their device. Push cannot be verified from the server side alone —
+         *     a 201 from the push service only means it accepted the message for delivery.
+         */
         post: operations["send_test_push"];
         delete?: never;
         options?: never;
@@ -3175,7 +3021,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC set_account_balance */
         post: operations["set_account_balance"];
         delete?: never;
         options?: never;
@@ -3192,7 +3037,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC set_account_owner_shares */
         post: operations["set_account_owner_shares"];
         delete?: never;
         options?: never;
@@ -3209,7 +3053,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC set_account_owners */
         post: operations["set_account_owners"];
         delete?: never;
         options?: never;
@@ -3226,7 +3069,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC set_anomaly_dismissed */
         post: operations["set_anomaly_dismissed"];
         delete?: never;
         options?: never;
@@ -3243,7 +3085,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC set_asset_owners */
         post: operations["set_asset_owners"];
         delete?: never;
         options?: never;
@@ -3260,7 +3101,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC set_auto_categorize_enabled */
         post: operations["set_auto_categorize_enabled"];
         delete?: never;
         options?: never;
@@ -3277,7 +3117,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC set_budget */
         post: operations["set_budget"];
         delete?: never;
         options?: never;
@@ -3294,7 +3133,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC set_category_group */
         post: operations["set_category_group"];
         delete?: never;
         options?: never;
@@ -3311,7 +3149,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC set_category_guidance */
         post: operations["set_category_guidance"];
         delete?: never;
         options?: never;
@@ -3328,7 +3165,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC set_category_spending_type */
         post: operations["set_category_spending_type"];
         delete?: never;
         options?: never;
@@ -3345,7 +3181,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC set_completion_provider */
         post: operations["set_completion_provider"];
         delete?: never;
         options?: never;
@@ -3362,7 +3197,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC set_counterparty_verdict */
         post: operations["set_counterparty_verdict"];
         delete?: never;
         options?: never;
@@ -3379,7 +3213,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC set_currency */
         post: operations["set_currency"];
         delete?: never;
         options?: never;
@@ -3396,7 +3229,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC set_financial_assumptions */
         post: operations["set_financial_assumptions"];
         delete?: never;
         options?: never;
@@ -3413,7 +3245,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC set_financial_philosophy */
         post: operations["set_financial_philosophy"];
         delete?: never;
         options?: never;
@@ -3430,7 +3261,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC set_notification_prefs */
         post: operations["set_notification_prefs"];
         delete?: never;
         options?: never;
@@ -3447,7 +3277,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC set_notifications_enabled */
         post: operations["set_notifications_enabled"];
         delete?: never;
         options?: never;
@@ -3464,7 +3293,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC set_self_member */
         post: operations["set_self_member"];
         delete?: never;
         options?: never;
@@ -3481,7 +3309,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC set_simplefin_sync_settings */
         post: operations["set_simplefin_sync_settings"];
         delete?: never;
         options?: never;
@@ -3498,7 +3325,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC set_spending_annotation */
         post: operations["set_spending_annotation"];
         delete?: never;
         options?: never;
@@ -3515,7 +3341,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC set_subscription_trial */
         post: operations["set_subscription_trial"];
         delete?: never;
         options?: never;
@@ -3532,7 +3357,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC set_subscription_verdict */
         post: operations["set_subscription_verdict"];
         delete?: never;
         options?: never;
@@ -3549,7 +3373,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC set_transaction_flags */
         post: operations["set_transaction_flags"];
         delete?: never;
         options?: never;
@@ -3566,7 +3389,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC set_transaction_owner */
         post: operations["set_transaction_owner"];
         delete?: never;
         options?: never;
@@ -3583,7 +3405,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC set_transaction_splits */
         post: operations["set_transaction_splits"];
         delete?: never;
         options?: never;
@@ -3600,7 +3421,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC set_transaction_transfer */
         post: operations["set_transaction_transfer"];
         delete?: never;
         options?: never;
@@ -3617,7 +3437,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC stage_restore_backup */
         post: operations["stage_restore_backup"];
         delete?: never;
         options?: never;
@@ -3634,7 +3453,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC stream_copilot_message */
         post: operations["stream_copilot_message"];
         delete?: never;
         options?: never;
@@ -3651,7 +3469,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC sync_all_simplefin_accounts */
         post: operations["sync_all_simplefin_accounts"];
         delete?: never;
         options?: never;
@@ -3668,7 +3485,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC sync_simplefin_account */
         post: operations["sync_simplefin_account"];
         delete?: never;
         options?: never;
@@ -3685,7 +3501,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC test_completion_provider */
         post: operations["test_completion_provider"];
         delete?: never;
         options?: never;
@@ -3702,7 +3517,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC toggle_rule */
         post: operations["toggle_rule"];
         delete?: never;
         options?: never;
@@ -3719,7 +3533,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC trigger_categorize */
         post: operations["trigger_categorize"];
         delete?: never;
         options?: never;
@@ -3736,7 +3549,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC trigger_recategorize_low_confidence */
         post: operations["trigger_recategorize_low_confidence"];
         delete?: never;
         options?: never;
@@ -3753,7 +3565,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC trigger_recipe */
         post: operations["trigger_recipe"];
         delete?: never;
         options?: never;
@@ -3770,7 +3581,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC update_account */
         post: operations["update_account"];
         delete?: never;
         options?: never;
@@ -3787,7 +3597,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC update_category_color */
         post: operations["update_category_color"];
         delete?: never;
         options?: never;
@@ -3804,7 +3613,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC update_goal_balance */
         post: operations["update_goal_balance"];
         delete?: never;
         options?: never;
@@ -3821,7 +3629,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC update_goal_monthly */
         post: operations["update_goal_monthly"];
         delete?: never;
         options?: never;
@@ -3838,7 +3645,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC update_goal_priority */
         post: operations["update_goal_priority"];
         delete?: never;
         options?: never;
@@ -3855,7 +3661,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC update_goal_purpose */
         post: operations["update_goal_purpose"];
         delete?: never;
         options?: never;
@@ -3872,7 +3677,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC update_manual_asset */
         post: operations["update_manual_asset"];
         delete?: never;
         options?: never;
@@ -3889,7 +3693,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC update_planned_transaction */
         post: operations["update_planned_transaction"];
         delete?: never;
         options?: never;
@@ -3906,7 +3709,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC update_recipe */
         post: operations["update_recipe"];
         delete?: never;
         options?: never;
@@ -3923,7 +3725,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC update_transaction */
         post: operations["update_transaction"];
         delete?: never;
         options?: never;
@@ -3934,7 +3735,4120 @@ export interface paths {
 }
 export type webhooks = Record<string, never>;
 export interface components {
-    schemas: never;
+    schemas: {
+        /**
+         * @description The user agrees with the proposed category. Writes it as if the user had
+         *     typed it into the transaction-edit drawer — the write is a `source='user'`
+         *     categorization from this point on, not an unreviewed AI guess.
+         */
+        AcceptCategoryProposalRequest: {
+            id: string;
+        };
+        AcceptImportCandidateMatchRequest: {
+            candidateId: string;
+            transactionId: string;
+        };
+        AcceptRuleProposalRequest: {
+            id: string;
+        };
+        Account: {
+            account_group: string;
+            /**
+             * Format: double
+             * @description Debt fields, meaningful only for Credit/Loan-type accounts (shown
+             *     conditionally in the UI, mirroring `apy_pct` for Savings). Together
+             *     these let a Credit/Loan account fully replace the standalone
+             *     liability-tracking model: a debt is just an account with a negative
+             *     balance and these optional details, not a separate entity.
+             */
+            apr_pct?: number | null;
+            /** Format: double */
+            apy_pct?: number | null;
+            /** Format: date-time */
+            archived_at?: string | null;
+            /** Format: int64 */
+            available_balance_cents?: number | null;
+            /** Format: date-time */
+            balance_date?: string | null;
+            bank: string;
+            color: string;
+            connection_id?: string | null;
+            /** Format: date-time */
+            created_at: string;
+            currency: string;
+            emergency_fund_eligible: boolean;
+            external_account_id?: string | null;
+            extra_json?: string | null;
+            goal_earmark?: string | null;
+            id: string;
+            import_pending: boolean;
+            institution_id?: string | null;
+            last4?: string | null;
+            /** Format: date-time */
+            last_synced_at?: string | null;
+            /** Format: int64 */
+            limit_cents?: number | null;
+            liquidity_type: string;
+            mask?: string | null;
+            /** Format: int64 */
+            min_payment_cents?: number | null;
+            name: string;
+            nickname?: string | null;
+            official_name?: string | null;
+            /** Format: int64 */
+            original_balance_cents?: number | null;
+            owner: string;
+            payoff_date?: string | null;
+            /**
+             * Format: double
+             * @description The rate that takes over once the promo ends. `None` alongside a set
+             *     expiry means the user recorded that the rate WILL change but not to
+             *     what — a real state that must be surfaced as unknown, never silently
+             *     projected as 0%.
+             */
+            post_promo_apr_pct?: number | null;
+            /**
+             * @description ISO date a promotional rate ends. `None` means `apr_pct` is permanent.
+             *     See [`effective_apr_pct`] — `apr_pct` always means "the rate right now",
+             *     which is why adding a promo needs no rewrite of existing data.
+             */
+            promo_apr_expires_on?: string | null;
+            raw_json?: string | null;
+            simplefin_account_id?: string | null;
+            started_at?: string | null;
+            subtype?: string | null;
+            type: components["schemas"]["AccountType"];
+        };
+        AccountBalancePoint: {
+            /** Format: int64 */
+            balanceCents: number;
+            date: string;
+        };
+        /**
+         * @description A reconstructed balance curve for one account, derived from its opening
+         *     anchor plus cleared transaction activity.
+         */
+        AccountBalanceTimeline: {
+            accountId: string;
+            accountName: string;
+            anchor: components["schemas"]["BalanceAnchorQuality"];
+            /**
+             * Format: int64
+             * @description Balance at the end of the series — the reconstruction's answer for today.
+             */
+            currentCents: number;
+            /**
+             * @description Earliest cleared transaction *included in this curve*. History cannot
+             *     reach back further, so a peak before it would be invisible.
+             */
+            earliestTxnDate?: string | null;
+            peak?: components["schemas"]["AccountBalancePoint"] | null;
+            /**
+             * @description End-of-day balance for each day the account saw activity, ascending.
+             *     Empty when the account is not reconstructable.
+             */
+            points: components["schemas"]["AccountBalancePoint"][];
+            /**
+             * @description False when the balance cannot be honestly derived from the ledger. See
+             *     [`AccountBalanceTimeline::skip_reason`] for which case applies.
+             */
+            reconstructable: boolean;
+            /**
+             * @description Why reconstruction was refused, phrased for a human (or a model) to
+             *     relay. `None` when `reconstructable` is true.
+             */
+            skipReason?: string | null;
+            trough?: components["schemas"]["AccountBalancePoint"] | null;
+        };
+        /**
+         * @description One (account, member) ownership pair with the member's explicit share, if
+         *     any. The full list lets the UI derive sole/joint badges and per-member
+         *     net-worth attribution in one query. `share_bps` None = equal split.
+         */
+        AccountOwner: {
+            accountId: string;
+            memberId: string;
+            /** Format: int64 */
+            shareBps?: number | null;
+        };
+        AccountPatch: {
+            account_group?: string | null;
+            account_type?: components["schemas"]["AccountType"] | null;
+            /** Format: double */
+            apr_pct?: number | null;
+            /** Format: double */
+            apy_pct?: number | null;
+            bank?: string | null;
+            color?: string | null;
+            currency?: string | null;
+            emergency_fund_eligible?: boolean | null;
+            goal_earmark?: string | null;
+            import_pending?: boolean | null;
+            last4?: string | null;
+            /** Format: int64 */
+            limit_cents?: number | null;
+            liquidity_type?: string | null;
+            /** Format: int64 */
+            min_payment_cents?: number | null;
+            name?: string | null;
+            nickname?: string | null;
+            official_name?: string | null;
+            /** Format: int64 */
+            original_balance_cents?: number | null;
+            payoff_date?: string | null;
+            /** Format: double */
+            post_promo_apr_pct?: number | null;
+            promo_apr_expires_on?: string | null;
+            started_at?: string | null;
+            subtype?: string | null;
+        };
+        AccountSparkline: {
+            accountId: string;
+            points: components["schemas"]["AccountBalancePoint"][];
+        };
+        AccountSummary: {
+            account_group: string;
+            /** Format: double */
+            apr_pct?: number | null;
+            /** Format: double */
+            apy_pct?: number | null;
+            /** Format: int64 */
+            available_balance_cents?: number | null;
+            /** Format: int64 */
+            balance_cents: number;
+            /** Format: date-time */
+            balance_date?: string | null;
+            /**
+             * @description False when `balance_cents` is just the untouched account-creation seed
+             *     value and the account has transaction activity that could have moved
+             *     the real balance since then. The UI must not present `balance_cents`
+             *     as a trustworthy current balance when this is false.
+             */
+            balance_known?: boolean;
+            /**
+             * @description Source of the snapshot `balance_cents` came from: `simplefin` (bank-
+             *     reported), `manual` (legacy user-stamped), `derived` (computed from
+             *     opening + activity), or `seed` (untouched opening). Lets the UI show the
+             *     balance's basis — "synced", "estimated from your transactions", etc.
+             */
+            balance_source?: string | null;
+            bank: string;
+            color: string;
+            connection_id?: string | null;
+            currency: string;
+            emergency_fund_eligible?: boolean;
+            external_account_id?: string | null;
+            extra_json?: string | null;
+            goal_earmark?: string | null;
+            id: string;
+            import_pending: boolean;
+            institution_id?: string | null;
+            /** Format: date-time */
+            last_synced_at?: string | null;
+            /** Format: int64 */
+            limit_cents?: number | null;
+            liquidity_type?: string;
+            mask?: string | null;
+            /** Format: int64 */
+            min_payment_cents?: number | null;
+            name: string;
+            nickname?: string | null;
+            official_name?: string | null;
+            /** Format: int64 */
+            original_balance_cents?: number | null;
+            owner: string;
+            payoff_date?: string | null;
+            /** Format: double */
+            post_promo_apr_pct?: number | null;
+            promo_apr_expires_on?: string | null;
+            raw_json?: string | null;
+            simplefin_account_id?: string | null;
+            source: string;
+            started_at?: string | null;
+            subtype?: string | null;
+            type: components["schemas"]["AccountType"];
+        };
+        AccountSyncResult: {
+            accountId: string;
+            added: number;
+            error?: string | null;
+            queuedForReview: number;
+            skipped: number;
+            updated: number;
+        };
+        /** @enum {string} */
+        AccountType: "Checking" | "Savings" | "Credit" | "Investment" | "Cash" | "Loan" | "Other";
+        AcknowledgeSimplefinAlertRequest: {
+            alertId: string;
+        };
+        /** @description A single prioritized action item in the Financial Inbox. */
+        ActionItem: {
+            actionLabel: string;
+            /** @description Frontend route the CTA navigates to (e.g., "/transactions"). */
+            actionRoute: string;
+            /**
+             * Format: int64
+             * @description Optional monetary amount in cents (e.g., bill amount).
+             */
+            amountCents?: number | null;
+            /**
+             * Format: int64
+             * @description Optional count for badge display (e.g., number of uncategorized txns).
+             */
+            badgeCount?: number | null;
+            /** @description "review" | "bills" | "budget" | "goals" | "savings" | "debt" */
+            category: string;
+            detail: string;
+            /** @description Stable ID for this item — used as React key and for deduplication. */
+            id: string;
+            /** @description "high" | "medium" | "low" */
+            priority: string;
+            title: string;
+        };
+        /**
+         * @description Attach an exemplar description to a category, keyed by the category's
+         *     stable id (so it rides through renames). Idempotent per (category, text).
+         *
+         *     `source_txn_id` is an optional provenance breadcrumb for an "add this
+         *     transaction as an example" affordance; the example survives that
+         *     transaction being deleted.
+         */
+        AddCategoryExampleRequest: {
+            categoryId: string;
+            exampleText: string;
+            sourceTxnId?: string | null;
+        };
+        /** @description Attribute money that has gone back into the pot. */
+        AddRestorationLegRequest: {
+            /** Format: int64 */
+            amountCents: number;
+            envelopeId: string;
+            notedOn: string;
+            transactionId?: string | null;
+        };
+        AgentAccountRow: {
+            /**
+             * Format: int64
+             * @description None → account has no known balance; renderer shows `badge` instead.
+             */
+            amountCents?: number | null;
+            badge?: string | null;
+            name: string;
+            subtitle?: string | null;
+            typeLabel: string;
+        };
+        /**
+         * @description The user's accounts.
+         *
+         *     SERVER-RENDERED: the system prompt asks the model for a bare
+         *     `{"kind":"accountsOverview"}` — no rows, balances, title, or badges — and
+         *     `synthesize_accounts_overview` fills all of it from the ledger, so a balance
+         *     can be neither invented nor omitted. `rows` is therefore `#[serde(default)]`:
+         *     the requested emission genuinely has no `rows` key on the wire, and without
+         *     the default it died on `missing field "rows"` before hydration could run.
+         */
+        AgentAccountsOverviewBlock: {
+            rows?: components["schemas"]["AgentAccountRow"][];
+            subtitle?: string | null;
+            title?: string | null;
+        };
+        AgentActionBundle: {
+            /** Format: double */
+            confidence: number;
+            createdAt: string;
+            id: string;
+            items: components["schemas"]["AgentActionItem"][];
+            modelId?: string | null;
+            providerId?: string | null;
+            rationale: string;
+            sessionId?: string | null;
+            status: string;
+            summary: string;
+            title: string;
+            updatedAt: string;
+        };
+        AgentActionItem: {
+            actionKind: string;
+            bundleId: string;
+            /** Format: double */
+            confidence: number;
+            createdAt: string;
+            id: string;
+            payloadJson: string;
+            previewJson?: string | null;
+            rationale: string;
+            /** Format: int64 */
+            sortOrder: number;
+            status: string;
+            updatedAt: string;
+            validationErrors?: string | null;
+        };
+        AgentActionPlanBlock: {
+            items: string[];
+            title?: string | null;
+        };
+        AgentActivity: {
+            /** Format: int64 */
+            minutesAgo: number;
+            sub: string;
+            text: string;
+        };
+        AgentAffordabilityVerdictBlock: {
+            canAfford: boolean;
+            caveat?: string | null;
+            fundingSource?: components["schemas"]["AgentFundingSource"] | null;
+            headline: string;
+            sub: string;
+        };
+        AgentAllocationSegment: {
+            /** Format: int64 */
+            amountCents: number;
+            categoryKey: string;
+            label: string;
+            rationale: string;
+        };
+        AgentAllocationSplitBlock: {
+            segments: components["schemas"]["AgentAllocationSegment"][];
+            /** Format: int64 */
+            totalCents: number;
+        };
+        AgentAnswer: {
+            actionLabel?: string | null;
+            actionPath?: string | null;
+            alternatives: components["schemas"]["AgentScenarioAlternative"][];
+            assumptions: string[];
+            bundleId?: string | null;
+            changes: components["schemas"]["AgentChange"][];
+            dataSources: string[];
+            followUpQuestions: string[];
+            missingData: components["schemas"]["MissingDataItem"][];
+            plan: string[];
+            prose: string;
+            reasoning: string;
+            responseBlocks: components["schemas"]["AgentResponseBlock"][];
+            trace: string[];
+        };
+        AgentCategoryBreakdownBlock: {
+            periodLabel: string;
+            rows: components["schemas"]["AgentCategoryRow"][];
+        };
+        /**
+         * @description The categorization review queue (issue #94), as a Copilot block.
+         *
+         *     SERVER-RENDERED: the model emits only `{"kind":"categoryReviewQueue"}` and
+         *     every field below is rebuilt from `category_proposals` in
+         *     `hydrate_response_blocks`. Both fields therefore default — a thin emission
+         *     must survive `parse_response_blocks`, which runs BEFORE hydration, or the
+         *     block would be dropped before it ever got its data.
+         */
+        AgentCategoryReviewQueueBlock: {
+            items?: components["schemas"]["AgentReviewQueueItem"][];
+            /**
+             * Format: int64
+             * @description Total pending proposals — may exceed `items.len()`, which is capped.
+             */
+            pendingCount?: number;
+        };
+        AgentCategoryRow: {
+            /** Format: int64 */
+            amountCents: number;
+            categoryKey: string;
+            isFixed: boolean;
+            isLever: boolean;
+        };
+        AgentChange: {
+            description: string;
+            kind: string;
+        };
+        AgentChartBlock: {
+            data: components["schemas"]["AgentChartPoint"][];
+            seriesLabel?: string | null;
+            title?: string | null;
+        };
+        AgentChartPoint: {
+            label: string;
+            /** Format: double */
+            value: number;
+        };
+        /**
+         * @description A question the Copilot must have answered before it can continue.
+         *
+         *     One block covers all three shapes deliberately, so the interaction reads as a
+         *     single feature rather than two: `options` empty means free text only; with
+         *     options, `multi_select` picks single- vs multi-choice. Free text stays
+         *     available either way, so the user is never trapped by an option set that
+         *     lacks their answer.
+         */
+        AgentClarificationBlock: {
+            /** @description Correlates an answer back to the question that prompted it. */
+            clarificationId: string;
+            /** @description Ignored when `options` is empty. */
+            multiSelect: boolean;
+            options: components["schemas"]["AgentClarificationOption"][];
+            question: string;
+            /**
+             * @description What kind of thing the question is about — the model names it so the
+             *     server knows what to enumerate. `"account"` today; unknown or absent
+             *     values ground to nothing and the block degrades to its free-text mode,
+             *     which is why this is optional rather than an enum.
+             *
+             *     The model naming the type is deliberate. Inferring it by pattern-
+             *     matching the question text would be a heuristic keyed on the wrong
+             *     signal — the same shape as reading intent out of model prose, which is
+             *     how confidently-wrong answers get built.
+             */
+            referenceType?: string | null;
+            textPlaceholder?: string | null;
+        };
+        /**
+         * @description One grounded choice in a clarification. Filled by the SERVER from real data
+         *     — never by the model, which may only choose the question. A model-invented
+         *     option could name an account the user does not have, and clicking it would
+         *     produce a confidently wrong answer.
+         */
+        AgentClarificationOption: {
+            /**
+             * @description Optional secondary line — a balance, a date, whatever disambiguates two
+             *     similarly-named entities.
+             */
+            hint?: string | null;
+            /**
+             * @description Stable identifier (e.g. an account id) so the answer resolves to a real
+             *     entity rather than being re-matched from its label.
+             */
+            id: string;
+            label: string;
+        };
+        AgentComparisonBarsBlock: {
+            current: components["schemas"]["AgentMoneyPoint"];
+            prior: components["schemas"]["AgentMoneyPoint"];
+            title: string;
+        };
+        AgentDriver: {
+            /** @description Presentational delta string, e.g. "+$213/mo" (bounded short string). */
+            amountDisplay: string;
+            label: string;
+            note?: string | null;
+            /** @description "planned" | "trend" | "prices" | "anomaly" | "creep" | "mixed" */
+            tag: string;
+        };
+        AgentExecutionEntry: {
+            actionKind: string;
+            bundleId: string;
+            error?: string | null;
+            executedAt: string;
+            id: string;
+            itemId: string;
+            resultJson?: string | null;
+            status: string;
+        };
+        AgentFundingSource: {
+            detail: string;
+            label: string;
+        };
+        AgentMemory: {
+            createdAt: string;
+            description: string;
+            id: string;
+            kind: string;
+            merchantKey?: string | null;
+        };
+        AgentMetricBlock: {
+            detail?: string | null;
+            label: string;
+            tone?: string | null;
+            value: string;
+        };
+        AgentMoneyPoint: {
+            /** Format: int64 */
+            amountCents: number;
+            label: string;
+        };
+        /**
+         * @description A screen the user can jump to in order to *see* a change the agent made.
+         *
+         *     Always an offer rendered as a link — never an automatic redirect. Yanking
+         *     someone out of a conversation mid-thread is worse than making them click.
+         *
+         *     Built from executed action payloads (which carry real entity ids) rather
+         *     than from model-authored prose, so the destination is always a screen that
+         *     exists and an entity that was actually touched.
+         */
+        AgentNavigationTarget: {
+            /** @description Button text, e.g. "View in Budget". */
+            label: string;
+            /** @description An app-relative path, e.g. `/budget?focusCategory=abc`. */
+            path: string;
+        };
+        AgentRankedOption: {
+            detail: string;
+            label: string;
+            rankTone: string;
+            rationale: string;
+        };
+        AgentRankedOptionsBlock: {
+            options: components["schemas"]["AgentRankedOption"][];
+            title: string;
+        };
+        AgentRecatRow: {
+            categoryKey: string;
+            /** Format: double */
+            confidence: number;
+            merchant: string;
+        };
+        AgentRecategorizationPreviewBlock: {
+            bundleId: string;
+            /** Format: int64 */
+            count: number;
+            /** Format: int64 */
+            more: number;
+            rows: components["schemas"]["AgentRecatRow"][];
+        };
+        AgentRecipe: {
+            cadence: string;
+            createdAt: string;
+            /** Format: int64 */
+            dayOfMonth?: number | null;
+            /** Format: int64 */
+            dayOfWeek?: number | null;
+            description: string;
+            id: string;
+            lastRunAt?: string | null;
+            nextRunAt?: string | null;
+            promptTemplate: string;
+            recipeKind: string;
+            /** Format: int64 */
+            runCount: number;
+            status: string;
+            title: string;
+            updatedAt: string;
+        };
+        AgentRecipeRun: {
+            bundleId?: string | null;
+            createdAt: string;
+            error?: string | null;
+            id: string;
+            recipeId: string;
+            status: string;
+            triggeredAt: string;
+        };
+        AgentResponseBlock: {
+            /** @enum {string} */
+            kind: "markdown";
+            markdown: string;
+        } | (components["schemas"]["AgentTableBlock"] & {
+            /** @enum {string} */
+            kind: "table";
+        }) | (components["schemas"]["AgentChartBlock"] & {
+            /** @enum {string} */
+            kind: "barChart";
+        }) | (components["schemas"]["AgentChartBlock"] & {
+            /** @enum {string} */
+            kind: "lineChart";
+        }) | {
+            /** @enum {string} */
+            kind: "metricGrid";
+            metrics: components["schemas"]["AgentMetricBlock"][];
+        } | {
+            body: string;
+            /** @enum {string} */
+            kind: "callout";
+            title?: string | null;
+            tone: string;
+        } | (components["schemas"]["AgentTransactionTableBlock"] & {
+            /** @enum {string} */
+            kind: "transactionTable";
+        }) | (components["schemas"]["AgentAffordabilityVerdictBlock"] & {
+            /** @enum {string} */
+            kind: "affordabilityVerdict";
+        }) | (components["schemas"]["AgentCategoryBreakdownBlock"] & {
+            /** @enum {string} */
+            kind: "categoryBreakdown";
+        }) | (components["schemas"]["AgentAllocationSplitBlock"] & {
+            /** @enum {string} */
+            kind: "allocationSplit";
+        }) | (components["schemas"]["AgentRankedOptionsBlock"] & {
+            /** @enum {string} */
+            kind: "rankedOptions";
+        }) | (components["schemas"]["AgentComparisonBarsBlock"] & {
+            /** @enum {string} */
+            kind: "comparisonBars";
+        }) | (components["schemas"]["AgentRecategorizationPreviewBlock"] & {
+            /** @enum {string} */
+            kind: "recategorizationPreview";
+        }) | (components["schemas"]["AgentSpendingReviewBlock"] & {
+            /** @enum {string} */
+            kind: "spendingReview";
+        }) | (components["schemas"]["AgentAccountsOverviewBlock"] & {
+            /** @enum {string} */
+            kind: "accountsOverview";
+        }) | (components["schemas"]["AgentSpendTimelineBlock"] & {
+            /** @enum {string} */
+            kind: "spendTimeline";
+        }) | (components["schemas"]["AgentSpendingDriversBlock"] & {
+            /** @enum {string} */
+            kind: "spendingDrivers";
+        }) | (components["schemas"]["AgentWatchListBlock"] & {
+            /** @enum {string} */
+            kind: "watchList";
+        }) | (components["schemas"]["AgentActionPlanBlock"] & {
+            /** @enum {string} */
+            kind: "actionPlan";
+        }) | (components["schemas"]["AgentClarificationBlock"] & {
+            /** @enum {string} */
+            kind: "clarification";
+        }) | (components["schemas"]["AgentCategoryReviewQueueBlock"] & {
+            /** @enum {string} */
+            kind: "categoryReviewQueue";
+        });
+        AgentReviewCategory: {
+            /** Format: int64 */
+            amountCents: number;
+            label: string;
+            /** @description Optional flag: "over" | "fixed" | "lever". None = plain bar. */
+            tag?: string | null;
+        };
+        /**
+         * @description A month in a spending review.
+         *
+         *     Every data-bearing field is `#[serde(default)]` because this block is
+         *     SERVER-RENDERED: the system prompt tells the model to emit only `period`, a
+         *     `summary`, and `actions`, and `synthesize_spending_review` computes the rest
+         *     from the ledger. Without the defaults, the emission the prompt asks for fails
+         *     typed deserialize on `missing field "label"` and is dropped before hydration
+         *     ever runs — so only a model that DISOBEYS and invents numbers gets rendered,
+         *     the exact inversion server synthesis exists to prevent.
+         */
+        AgentReviewMonth: {
+            actions?: string[];
+            categories?: components["schemas"]["AgentReviewCategory"][];
+            label?: string;
+            /**
+             * @description `YYYY-MM` join key. The model supplies this (which months to review);
+             *     the server keys on it to compute label/spentCents/categories from core.
+             */
+            period?: string | null;
+            /** Format: int64 */
+            spentCents?: number;
+            subtitle?: string | null;
+            summary?: string | null;
+        };
+        /** @description One outstanding categorization suggestion, as shown in the Copilot. */
+        AgentReviewQueueItem: {
+            /**
+             * Format: int64
+             * @description None when the transaction row could not be resolved.
+             */
+            amountCents?: number | null;
+            /**
+             * @description Whether the proposed category was ALREADY written to
+             *     `transactions.category_id` when the proposal was recorded. This is a
+             *     different axis from the review status and the card must not collapse
+             *     them: `applied` says whether budgets are already counting it, the
+             *     pending status says whether a human has weighed in.
+             */
+            applied: boolean;
+            /** Format: double */
+            confidence: number;
+            date?: string | null;
+            merchant: string;
+            proposedCategory: string;
+        };
+        AgentScenarioAlternative: {
+            name: string;
+            summary: string;
+            tradeoff: string;
+        };
+        AgentSession: {
+            createdAt: string;
+            id: string;
+            status: string;
+            taskType: string;
+            title: string;
+            updatedAt: string;
+        };
+        AgentSpendTimelineBlock: {
+            points: components["schemas"]["AgentTimelinePoint"][];
+            subtitle?: string | null;
+            title?: string | null;
+        };
+        AgentSpendingDriversBlock: {
+            drivers: components["schemas"]["AgentDriver"][];
+            subtitle?: string | null;
+            title: string;
+        };
+        AgentSpendingReviewBlock: {
+            months: components["schemas"]["AgentReviewMonth"][];
+        };
+        AgentStatus: {
+            /** Format: int32 */
+            anomalyCount: number;
+            lastScanAt?: string | null;
+            /** Format: int32 */
+            lastScanCategorized?: number | null;
+            /** Format: int32 */
+            overBudgetCount: number;
+            /** Format: int32 */
+            uncategorizedCount: number;
+            /** Format: int32 */
+            upcomingBillsCount: number;
+        };
+        AgentTableBlock: {
+            columns: string[];
+            rows: string[][];
+            title?: string | null;
+        };
+        AgentTimelinePoint: {
+            /** Format: int64 */
+            amountCents: number;
+            annotation?: string | null;
+            highlight?: boolean;
+            label: string;
+            projected?: boolean;
+        };
+        AgentTransactionTableBlock: {
+            /** Format: int64 */
+            count: number;
+            /** Format: int64 */
+            more: number;
+            query?: components["schemas"]["AgentTxnSearchQuery"] | null;
+            rows: components["schemas"]["AgentTxRow"][];
+            /** Format: int64 */
+            totalCents: number;
+        };
+        AgentTxRow: {
+            /** Format: int64 */
+            amountCents: number;
+            categoryKey: string;
+            date: string;
+            flag?: string | null;
+            merchant: string;
+        };
+        /**
+         * @description The search filters that produced a transaction table, carried on the block
+         *     itself so the "Export as CSV" action can re-run the exact same query. The
+         *     model never populates this — it's attached server-side from the turn's
+         *     `search_transactions` tool call (see `copilot_chat.rs`), so the block is
+         *     self-describing and the export never depends on message structure.
+         */
+        AgentTxnSearchQuery: {
+            account?: string | null;
+            direction?: string | null;
+            endDate?: string | null;
+            merchant?: string | null;
+            /** Format: int64 */
+            minAmountCents?: number | null;
+            startDate?: string | null;
+        };
+        AgentWatchItem: {
+            amountDisplay?: string | null;
+            detail: string;
+            label: string;
+        };
+        AgentWatchListBlock: {
+            items: components["schemas"]["AgentWatchItem"][];
+            title: string;
+        };
+        /** @enum {string} */
+        AmountConvention: "negative_is_outflow" | "positive_is_outflow" | "split_debit_credit";
+        AppReady: {
+            version: string;
+        };
+        /**
+         * @description Apply one counterparty verdict to every undecided transaction matching a
+         *     counterparty pattern (from [`UnresolvedCounterpartyDto::pattern`] or
+         *     `TransferVerdictResult::similar_pattern`). One decision clears a whole
+         *     person's e-transfer history from the review list.
+         */
+        ApplyCounterpartyVerdictToSimilarRequest: {
+            pattern: string;
+            verdict: components["schemas"]["CounterpartyVerdict"];
+        };
+        /**
+         * @description Write next month's budget assignments. The server has no native
+         *     notifications, so this body is purely the budget write.
+         */
+        ApplyNextMonthPlanRequest: {
+            assignments: components["schemas"]["PlanAssignment"][];
+        };
+        /**
+         * @description Apply the approved, applyable changes of a scenario to the active plan (#72).
+         *
+         *     The ONLY mechanically-applyable change today is a one-time amount, which
+         *     becomes a dated planned transaction (part of the plan, shown on `/recurring`).
+         *     Idempotent: the created transaction is tagged with the scenario id, so a
+         *     re-apply detects it and skips rather than duplicating. Aggregate deltas and
+         *     goal mentions are never written — they remain recommendations. The scenario
+         *     itself is never mutated: applying records a decision, it doesn't consume it.
+         */
+        ApplyScenarioRequest: {
+            approvedChangeIds: string[];
+            id: string;
+        };
+        /** @description The outcome of applying approved scenario changes to the plan (#72). */
+        ApplyScenarioResult: {
+            /** @description Changes written to the plan (a planned transaction was created). */
+            applied: string[];
+            /** @description Human summary of what happened. */
+            note: string;
+            /** @description Approved-but-not-written changes, with why (unsupported, or already applied). */
+            skipped: components["schemas"]["SkippedChange"][];
+        };
+        ApplyTransferVerdictToSimilarRequest: {
+            isTransfer: boolean;
+            pattern: string;
+        };
+        ApproveActionItemRequest: {
+            itemId: string;
+        };
+        ArchiveAccountRequest: {
+            id: string;
+        };
+        ArchiveCategoryRequest: {
+            id: string;
+        };
+        ArchiveGoalRequest: {
+            id: string;
+        };
+        ArchiveScenarioRequest: {
+            archived: boolean;
+            id: string;
+        };
+        AskAgentRequest: {
+            mode?: string | null;
+            question: string;
+        };
+        /**
+         * @description One (asset, member) ownership pair — the manual-asset analogue of
+         *     [`AccountOwner`].
+         */
+        AssetOwner: {
+            assetId: string;
+            memberId: string;
+            /** Format: int64 */
+            shareBps?: number | null;
+        };
+        BackupInfo: {
+            /** Format: int64 */
+            bytes: number;
+            /** @description File modified time, RFC3339. Empty when unavailable. */
+            createdAt: string;
+            name: string;
+            path: string;
+        };
+        /**
+         * @description How trustworthy the *level* of a reconstructed balance curve is.
+         *
+         *     A reconstruction is `opening + Σ(cleared activity)`, so its SHAPE (when the
+         *     balance rose and fell, and therefore when it peaked) is correct regardless of
+         *     the anchor. Its LEVEL is only as good as that opening figure.
+         * @enum {string}
+         */
+        BalanceAnchorQuality: "calibrated" | "anchoredOpening" | "assumedZero";
+        /**
+         * @description A compact view of the baseline a scenario was computed against, for display
+         *     and for showing the user what moved when a scenario goes stale.
+         */
+        BaselineSummary: {
+            /** Format: int64 */
+            avgMonthlyExpenseCents: number;
+            /** Format: int64 */
+            avgMonthlyIncomeCents: number;
+            /** Format: int64 */
+            balanceCents: number;
+            /** Format: int64 */
+            goalCount: number;
+        };
+        /** @description One category's budget + actual for a month. */
+        BudgetEnvelope: {
+            /**
+             * Format: int64
+             * @description Budget set by user for the current month (0 = not budgeted this month)
+             */
+            budgetCents: number;
+            /**
+             * Format: int64
+             * @description Running (budgeted − spent) carried in from prior months, anchored at the
+             *     category's first-ever budgeted month. Positive = unspent rolling forward,
+             *     negative = accumulated overspend.
+             */
+            carryoverCents: number;
+            categoryColor: string;
+            categoryId: string;
+            categoryLabel: string;
+            groupLabel: string;
+            /**
+             * Format: int64
+             * @description Actual outflow this month (positive = spent)
+             */
+            spentCents: number;
+            /** Format: int64 */
+            txnCount: number;
+        };
+        /** @description One projected day. */
+        CashflowDay: {
+            /** @description Whether the projected balance is below the safety buffer this day. */
+            belowBuffer: boolean;
+            /**
+             * Format: int64
+             * @description The day's share of everyday variable spend (<= 0).
+             */
+            burnCents: number;
+            date: string;
+            /**
+             * Format: int64
+             * @description Net of the dated events landing on this day.
+             */
+            eventNetCents: number;
+            /**
+             * Format: int64
+             * @description Projected end-of-day liquid balance.
+             */
+            projectedBalanceCents: number;
+        };
+        /**
+         * @description A single dated cash movement. `amount_cents` is signed: positive inflow,
+         *     negative outflow.
+         */
+        CashflowEvent: {
+            /** Format: int64 */
+            amountCents: number;
+            /**
+             * Format: double
+             * @description Detection confidence for recurring-derived events (0..1); `None` for
+             *     user-entered planned/hypothetical events, which aren't guesses.
+             */
+            confidence?: number | null;
+            date: string;
+            kind: components["schemas"]["CashflowEventKind"];
+            label: string;
+        };
+        /** @enum {string} */
+        CashflowEventKind: "income" | "bill" | "subscription" | "planned" | "hypothetical";
+        /** @description The forward cash-flow forecast. */
+        CashflowForecast: {
+            asOf: string;
+            /** Format: int64 */
+            bufferCents: number;
+            /**
+             * Format: int64
+             * @description Everyday variable spend spread per day (magnitude, >= 0).
+             */
+            dailyBurnCents: number;
+            days: components["schemas"]["CashflowDay"][];
+            /** @description First day the projected balance drops below the buffer, if any. */
+            firstBreachDate?: string | null;
+            /** Format: int64 */
+            horizonDays: number;
+            /** Format: int64 */
+            lowestBalanceCents: number;
+            lowestDate: string;
+            /**
+             * @description False when there's too little history (or no known balance) for the
+             *     forecast to be trusted as precise. Consumers must say so, not imply rigor.
+             */
+            reliable: boolean;
+            /**
+             * Format: int64
+             * @description The conservative amount safe to spend today: the lowest projected balance
+             *     minus the buffer, floored at zero. Spending it today lowers every later
+             *     day by the same amount, so the lowest point is the binding constraint.
+             */
+            safeToSpendCents: number;
+            /** Format: int64 */
+            startBalanceCents: number;
+            /** @description The dated events inside the horizon, chronological, for display. */
+            upcomingEvents: components["schemas"]["CashflowEvent"][];
+            warnings: components["schemas"]["CashflowWarning"][];
+        };
+        CashflowWarning: {
+            level: components["schemas"]["WarningLevel"];
+            message: string;
+        };
+        Categorization: {
+            /** Format: date-time */
+            at: string;
+            category_id?: string | null;
+            /** Format: double */
+            confidence: number;
+            id: string;
+            model?: string | null;
+            source: string;
+            txn_id: string;
+        };
+        Category: {
+            /** Format: date-time */
+            archived_at?: string | null;
+            color: string;
+            group_id: string;
+            /**
+             * @description Free-text guidance the user attaches so the categorizer/Copilot know when
+             *     to use this category (merchant hints, exclusions, intent).
+             */
+            guidance?: string | null;
+            icon?: string | null;
+            id: string;
+            label: string;
+            /** Format: int32 */
+            sort_order: number;
+            spending_type?: string | null;
+        };
+        CategoryDto: {
+            color: string;
+            group_id: string;
+            group_label: string;
+            id: string;
+            label: string;
+            spending_type?: string | null;
+        };
+        /**
+         * @description A user-curated exemplar transaction description for a category.
+         *
+         *     Keyed by the category's STABLE `id`, so examples survive a rename exactly
+         *     the way `categories.guidance` does (rename touches `label` only).
+         *
+         *     `example_text` is a denormalized snapshot rather than a join through
+         *     `source_txn_id`: a factory reset wipes `transactions`, and a CSV re-import
+         *     churns transaction ids, so a pure reference would silently lose a curated
+         *     exemplar set. `source_txn_id` is provenance only — NULL means hand-typed
+         *     or the source transaction is gone (the FK is `ON DELETE SET NULL`).
+         *
+         *     Nothing reads these yet. Issue #92 embeds `example_text` into a
+         *     prototype/centroid vector per category.
+         */
+        CategoryExample: {
+            categoryId: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** @description The exemplar description text (trimmed, never empty). */
+            exampleText: string;
+            id: string;
+            /**
+             * @description Optional provenance breadcrumb back to the transaction the user added
+             *     this from. NULL = hand-typed, or the transaction has since been deleted.
+             */
+            sourceTxnId?: string | null;
+        };
+        CategoryGroup: {
+            hint?: string | null;
+            id: string;
+            label: string;
+            /** Format: int32 */
+            sort_order: number;
+        };
+        CategoryHistory: {
+            categoryId: string;
+            color: string;
+            label: string;
+            monthly: components["schemas"]["MonthlyActual"][];
+        };
+        CategoryPlanRow: {
+            /** Format: int64 */
+            budgetCents: number;
+            categoryId: string;
+            color: string;
+            groupLabel: string;
+            label: string;
+            /** Format: int64 */
+            m0Cents: number;
+            /** Format: int64 */
+            m1Cents: number;
+            /** Format: int64 */
+            m2Cents: number;
+        };
+        /**
+         * @description A first-class record of an automated categorization SUGGESTION for a
+         *     transaction, decoupled from the canonical `transactions.category_id`
+         *     write it may or may not have made (see `applied`).
+         *
+         *     One LIVE row per transaction (`txn_id` is UNIQUE in the schema): a new
+         *     automated suggestion for the same transaction supersedes whatever
+         *     proposal was there before, so `status == "pending"` always means "the
+         *     current outstanding suggestion". Full per-attempt provenance already
+         *     lives in the append-only `categorizations` table (V003) — this table
+         *     exists to drive the review queue, not to be a second audit log.
+         */
+        CategoryProposal: {
+            /**
+             * @description Whether THIS proposal's category was written to
+             *     `transactions.category_id` when the row was created. Always `true`
+             *     today (the LLM pass still auto-writes canonical exactly as before);
+             *     a future ML pass could insert `applied = false` (a suggestion with no
+             *     canonical write) — the schema can express that without another
+             *     migration, even though this issue does not build the unapplied path.
+             */
+            applied: boolean;
+            /**
+             * @description Ranked candidate categories as a JSON array string (opaque to
+             *     finsight-core — not parsed or validated here). NULL until a
+             *     multi-candidate pass exists; today it holds the single winning
+             *     candidate for forward compatibility.
+             */
+            candidatesJson?: string | null;
+            /** Format: double */
+            confidence: number;
+            /** Format: date-time */
+            createdAt: string;
+            id: string;
+            model?: string | null;
+            proposedCategoryId: string;
+            rationale?: string | null;
+            /**
+             * Format: date-time
+             * @description Set when a human resolves the proposal via accept/correct/reject.
+             *     NULL means either still pending, or auto-accepted without review
+             *     (status = "accepted" with reviewed_at = NULL is the auto case; a
+             *     human decision always stamps this).
+             */
+            reviewedAt?: string | null;
+            /**
+             * @description 'llm' today; reserved for a future ML pass ('ml') per issue #87 scope —
+             *     that pass is not built in this issue.
+             */
+            source: string;
+            /** @description "pending" | "accepted" | "corrected" | "rejected" */
+            status: string;
+            txnId: string;
+        };
+        /** @description One category's 12-month total. */
+        CategoryTotal: {
+            categoryId: string;
+            color: string;
+            label: string;
+            /** Format: int64 */
+            totalCents: number;
+            /** Format: int64 */
+            txnCount: number;
+        };
+        /** @description Category with real spending aggregated from transactions. */
+        CategoryWithSpending: {
+            /** Format: int64 */
+            budgetCents: number;
+            color: string;
+            groupId: string;
+            groupLabel: string;
+            /** @description Free-text categorizer/Copilot guidance the user attached. */
+            guidance?: string | null;
+            id: string;
+            label: string;
+            /**
+             * Format: int64
+             * @description Total outflow last calendar month
+             */
+            lastMonthCents: number;
+            spendingType?: string | null;
+            /**
+             * Format: int64
+             * @description Total outflow this calendar month (positive = money spent)
+             */
+            thisMonthCents: number;
+            /**
+             * Format: int64
+             * @description Number of transactions categorised here this month
+             */
+            txnCount: number;
+            /** Format: int64 */
+            yearTotalCents: number;
+            /**
+             * Format: int64
+             * @description Number of transactions categorised here so far this calendar year
+             */
+            yearTxnCount: number;
+        };
+        /** @description A single prior turn from the conversation history for multi-turn awareness. */
+        ChatHistoryEntry: {
+            content: string;
+            role: string;
+        };
+        /** @description Discard a scenario's revision, reverting to the original assumptions only. */
+        ClearScenarioRevisionRequest: {
+            id: string;
+        };
+        CloseAgentSessionRequest: {
+            id: string;
+        };
+        /**
+         * @description A data-quality or subscription-change item to review at close. Mirrors an
+         *     Inbox action item (or #58 subscription changes) and carries a route to the
+         *     screen that resolves it — the close never resolves it inline.
+         */
+        CloseFlag: {
+            /** @description Whether the user acknowledged this at close (frozen with the record). */
+            acknowledged: boolean;
+            actionRoute: string;
+            category: string;
+            /** Format: int64 */
+            count?: number | null;
+            detail: string;
+            id: string;
+            priority: string;
+            title: string;
+        };
+        /**
+         * @description Reconcile and finish. The design nags toward this rather than letting
+         *     envelopes accumulate.
+         */
+        CloseRestorationEnvelopeRequest: {
+            id: string;
+        };
+        /** @enum {string} */
+        ColumnRole: "Date" | "Amount" | "Merchant" | "Notes" | "Category" | "Skip" | "Debit" | "Credit" | "ActivityType" | "ActivitySubType" | "Symbol" | "SecurityName" | "Quantity" | "UnitPrice";
+        CommitStarterCategoriesRequest: {
+            categories: components["schemas"]["StarterCategory"][];
+        };
+        CompletionProviderConfig: {
+            /** @enum {string} */
+            kind: "unconfigured";
+        } | {
+            base_url: string;
+            /** @enum {string} */
+            kind: "ollama";
+            model: string;
+        } | {
+            base_url: string;
+            /** @enum {string} */
+            kind: "openai_compat";
+            model: string;
+            preset: string;
+        } | {
+            /** @enum {string} */
+            kind: "anthropic";
+            model: string;
+        };
+        ComputeDebtPayoffRequest: {
+            /** Format: int64 */
+            extraMonthlyCents: number;
+        };
+        ConfirmSimplefinTransferRequest: {
+            transferId: string;
+        };
+        ContributeToGoalRequest: {
+            /** Format: int64 */
+            amountCents: number;
+            id: string;
+            note?: string | null;
+            source?: string | null;
+        };
+        /** @description A single message within a conversation thread. */
+        ConversationMessage: {
+            actionBundleId?: string | null;
+            /** @description JSON-encoded AG-UI metadata for tool calls, artifacts, approvals, and usage. */
+            agUiMetadataJson?: string | null;
+            branchParentId?: string | null;
+            content: string;
+            conversationId: string;
+            createdAt: string;
+            id: string;
+            /** @description JSON-encoded assistant-ui message parts. `content` remains the text fallback. */
+            partsJson?: string | null;
+            role: string;
+            /** @description Run lifecycle state for AG-UI/assistant reload semantics. */
+            runStatus: string;
+            /** @description JSON-encoded array of tool names used, e.g. `["spending_by_category"]` */
+            toolTrace?: string | null;
+        };
+        /** @description Summary of a conversation thread shown in the sidebar. */
+        ConversationSummary: {
+            createdAt: string;
+            id: string;
+            /** Format: int64 */
+            messageCount: number;
+            title: string;
+            updatedAt: string;
+        };
+        CopilotStreamFrame: {
+            assistant_message_id: string;
+            conversation_id: string;
+            delta: string;
+            parent_message_id?: string | null;
+            run_id: string;
+            /** Format: int64 */
+            sequence_number: number;
+            thread_id: string;
+            /** @enum {string} */
+            type: "text";
+        } | {
+            assistant_message_id: string;
+            conversation_id: string;
+            parent_message_id?: string | null;
+            reasoning_message_id: string;
+            run_id: string;
+            /** Format: int64 */
+            sequence_number: number;
+            text: string;
+            thread_id: string;
+            /** @enum {string} */
+            type: "reasoning";
+        } | {
+            args: unknown;
+            assistant_message_id: string;
+            conversation_id: string;
+            parent_message_id?: string | null;
+            run_id: string;
+            /** Format: int64 */
+            sequence_number: number;
+            thread_id: string;
+            tool_call_id: string;
+            tool_name: string;
+            /** @enum {string} */
+            type: "toolCallStart";
+        } | {
+            assistant_message_id: string;
+            conversation_id: string;
+            is_error: boolean;
+            parent_message_id?: string | null;
+            result: unknown;
+            run_id: string;
+            /** Format: int64 */
+            sequence_number: number;
+            thread_id: string;
+            tool_call_id: string;
+            tool_result_message_id: string;
+            /** @enum {string} */
+            type: "toolCallResult";
+        } | {
+            assistant_message_id: string;
+            block: components["schemas"]["AgentResponseBlock"];
+            block_id: string;
+            conversation_id: string;
+            parent_message_id?: string | null;
+            run_id: string;
+            /** Format: int64 */
+            sequence_number: number;
+            thread_id: string;
+            /** @enum {string} */
+            type: "responseBlock";
+        } | {
+            assistant_message_id: string;
+            conversation_id: string;
+            parent_message_id?: string | null;
+            run_id: string;
+            /** Format: int64 */
+            sequence_number: number;
+            source_id: string;
+            thread_id: string;
+            title: string;
+            /** @enum {string} */
+            type: "source";
+        } | {
+            assistant_message_id: string;
+            conversation_id: string;
+            parent_message_id?: string | null;
+            run_id: string;
+            /** Format: int64 */
+            sequence_number: number;
+            steps: string[];
+            thread_id: string;
+            /** @enum {string} */
+            type: "plan";
+        } | {
+            assistant_message_id: string;
+            /**
+             * Format: int32
+             * @description Prompt tokens the provider served from its cache this run, and the
+             *     total prompt tokens, summed across every turn. 0/0 unless the active
+             *     provider reports usage (OpenAI-compatible). The UI shows the cached
+             *     fraction as a chip.
+             */
+            cached_tokens: number;
+            conversation_id: string;
+            /** Format: int64 */
+            elapsed_ms: number;
+            model_id: string;
+            parent_message_id?: string | null;
+            /** Format: int32 */
+            prompt_tokens: number;
+            provider_id: string;
+            run_id: string;
+            /** Format: int64 */
+            sequence_number: number;
+            thread_id: string;
+            /** Format: int32 */
+            tool_count: number;
+            /** @enum {string} */
+            type: "usage";
+        } | {
+            action_label?: string | null;
+            action_path?: string | null;
+            assistant_message_id: string;
+            bundle_id?: string | null;
+            /** Format: int32 */
+            cached_tokens: number;
+            conversation_id: string;
+            /** Format: int64 */
+            elapsed_ms: number;
+            follow_up_questions: string[];
+            message_id: string;
+            /**
+             * @description Data the answer needed but could not find, each with an optional
+             *     destination where the user can supply it.
+             */
+            missing_data: components["schemas"]["MissingDataItem"][];
+            model_id: string;
+            parent_message_id?: string | null;
+            /** Format: int32 */
+            prompt_tokens: number;
+            provider_id: string;
+            run_id: string;
+            /** Format: int64 */
+            sequence_number: number;
+            thread_id: string;
+            /** Format: int32 */
+            tool_count: number;
+            tool_trace: string[];
+            /** @enum {string} */
+            type: "done";
+        } | {
+            assistant_message_id: string;
+            code: string;
+            conversation_id: string;
+            message: string;
+            parent_message_id?: string | null;
+            run_id: string;
+            /** Format: int64 */
+            sequence_number: number;
+            thread_id: string;
+            /** @enum {string} */
+            type: "error";
+        };
+        /** @description The user picks a DIFFERENT category than what was proposed. */
+        CorrectCategoryProposalRequest: {
+            categoryId: string;
+            id: string;
+        };
+        /**
+         * @description Serializable mirror of `finsight_core::repos::transactions::Verdict` —
+         *     the core enum has no serde/specta derives by design (finsight-core has no
+         *     Tauri/specta dependency), so this DTO crosses the specta boundary instead.
+         * @enum {string}
+         */
+        CounterpartyVerdict: "transfer" | "settleUp" | "real";
+        CreateAccountRequest: {
+            input: components["schemas"]["NewAccount"];
+        };
+        CreateAgentSessionRequest: {
+            taskType: string;
+            title: string;
+        };
+        CreateCategoryGroupRequest: {
+            hint?: string | null;
+            label: string;
+        };
+        CreateCategoryRequest: {
+            color: string;
+            groupId?: string | null;
+            label: string;
+        };
+        CreateGoalRequest: {
+            input: components["schemas"]["NewGoalInput"];
+        };
+        CreateHouseholdMemberRequest: {
+            color?: string | null;
+            name: string;
+        };
+        CreateImportCandidateTransactionRequest: {
+            candidateId: string;
+        };
+        CreateManualAssetRequest: {
+            input: components["schemas"]["NewManualAsset"];
+        };
+        CreatePlannedTransactionRequest: {
+            input: components["schemas"]["NewPlannedTransaction"];
+        };
+        CreateRecipeRequest: {
+            cadence: string;
+            /** Format: int64 */
+            dayOfMonth?: number | null;
+            /** Format: int64 */
+            dayOfWeek?: number | null;
+            description: string;
+            promptTemplate: string;
+            recipeKind: string;
+            title: string;
+        };
+        CreateRestorationEnvelopeRequest: {
+            input: components["schemas"]["RestorationEnvelopeInput"];
+        };
+        CreateRuleRequest: {
+            categoryId: string;
+            pattern: string;
+        };
+        CreateTransactionRequest: {
+            input: components["schemas"]["NewTransaction"];
+        };
+        CsvImportMapping: {
+            amount_convention: components["schemas"]["AmountConvention"];
+            columns: components["schemas"]["ColumnRole"][];
+            date_format: string;
+            decimal_separator?: string;
+            delimiter?: string | null;
+            /** Format: int32 */
+            skip_header_rows: number;
+        };
+        CsvPreview: {
+            detected_delimiter: string;
+            encoding_note?: string | null;
+            headers?: string[] | null;
+            rows: string[][];
+            /** Format: int32 */
+            total_rows: number;
+        };
+        DataHealth: {
+            backups: components["schemas"]["BackupInfo"][];
+            /** Format: int64 */
+            dbBytes: number;
+            integrityCheckedAt?: string | null;
+            /** @description "ok" when the last integrity check passed; otherwise the error rows. */
+            integrityStatus: string;
+            lastBackupAt?: string | null;
+            /** @description Set once a restore is staged; the app must restart to apply it. */
+            pendingRestore: boolean;
+            /**
+             * @description What the last launch's derived-data refresh actually changed
+             *     ("Refreshed on launch: categorized 12 · matched 3 transfer pairs"),
+             *     empty when launch changed nothing.
+             */
+            startupSummary: string;
+            /** @description Non-fatal problems from the last startup derived-data cascade. */
+            startupWarnings: string[];
+            /** Format: int64 */
+            walBytes: number;
+        };
+        DebtPayoffMonth: {
+            /** Format: int64 */
+            interestCents: number;
+            liabilityId: string;
+            liabilityName: string;
+            /** Format: int32 */
+            month: number;
+            monthLabel: string;
+            /** Format: int64 */
+            paymentCents: number;
+            /** Format: int64 */
+            principalCents: number;
+            /** Format: int64 */
+            remainingBalanceCents: number;
+        };
+        DebtPayoffResult: {
+            /** Format: int64 */
+            extraMonthlyCents: number;
+            payoffDateLabel: string;
+            strategy: string;
+            summaries: components["schemas"]["DebtPayoffSummary"][];
+            /** Format: int64 */
+            totalInterestCents: number;
+            /** Format: int32 */
+            totalMonths: number;
+        };
+        DebtPayoffSummary: {
+            accountId: string;
+            accountName: string;
+            /** Format: int64 */
+            initialBalanceCents: number;
+            /** Format: int32 */
+            monthsToPayoff: number;
+            payoffMonthLabel: string;
+            /** Format: int64 */
+            totalInterestCents: number;
+        };
+        DeclineRuleProposalRequest: {
+            id: string;
+        };
+        DeleteConversationMessagesAfterRequest: {
+            conversationId: string;
+            messageId: string;
+        };
+        DeleteConversationRequest: {
+            id: string;
+        };
+        DeleteHouseholdMemberRequest: {
+            id: string;
+        };
+        DeleteManualAssetRequest: {
+            id: string;
+        };
+        DeletePlannedTransactionRequest: {
+            id: string;
+        };
+        DeletePushSubscriptionRequest: {
+            endpoint: string;
+        };
+        DeleteRecipeRequest: {
+            id: string;
+        };
+        DeleteRestorationEnvelopeRequest: {
+            id: string;
+        };
+        DeleteScenarioRequest: {
+            id: string;
+        };
+        DeleteSimplefinConnectionRequest: {
+            connectionId: string;
+        };
+        DeleteTransactionRequest: {
+            id: string;
+        };
+        /**
+         * @description How often to batch routine notifications into one summary instead of pushing
+         *     each individually (#69).
+         * @enum {string}
+         */
+        DigestFrequency: "off" | "daily" | "weekly";
+        DiscardUnfinishedImportRequest: {
+            importId: string;
+        };
+        DismissImportCandidateRequest: {
+            candidateId: string;
+        };
+        /**
+         * @description What happened to an `enqueue`.
+         * @enum {string}
+         */
+        Disposition: "delivered" | "held" | "batched" | "suppressed_duplicate" | "suppressed_disabled";
+        /** @description One "recorded then vs recomputed now" line for a completed close. */
+        DriftLine: {
+            changedMaterially: boolean;
+            /** Format: int64 */
+            currentCents: number;
+            label: string;
+            /** Format: int64 */
+            recordedCents: number;
+        };
+        Driver: {
+            /** Format: int64 */
+            base_monthly_cents: number;
+            /** Format: double */
+            base_txns_per_month: number;
+            category?: string | null;
+            /** Format: int64 */
+            delta_cents: number;
+            display: string;
+            mechanism: components["schemas"]["Mechanism"];
+            merchant_key: string;
+            persistence: components["schemas"]["Persistence"];
+            /** Format: int64 */
+            recent_monthly_cents: number;
+            /** Format: double */
+            recent_txns_per_month: number;
+            /**
+             * @description A sticky user verdict (one_off / expected / investment) if the user has
+             *     annotated this merchant; overrides how it counts toward the "levers".
+             */
+            user_verdict?: string | null;
+        };
+        DuplicateScenarioRequest: {
+            id: string;
+        };
+        EditConversationMessageInput: {
+            content: string;
+            conversationId: string;
+            messageId: string;
+        };
+        EditConversationUserMessageRequest: {
+            input: components["schemas"]["EditConversationMessageInput"];
+        };
+        ExecuteActionBundleRequest: {
+            bundleId: string;
+        };
+        ExecutionItemResult: {
+            actionKind: string;
+            error?: string | null;
+            itemId: string;
+            status: string;
+            summary?: string | null;
+        };
+        ExecutionSummary: {
+            bundleId: string;
+            /** Format: int32 */
+            failed: number;
+            /**
+             * @description Screens the user can open to see the applied changes in context.
+             *     Derived from the payloads of actions that succeeded, so these are
+             *     always real screens holding real entities. Rendered as an offer.
+             */
+            navigation: components["schemas"]["AgentNavigationTarget"][];
+            results: components["schemas"]["ExecutionItemResult"][];
+            /** Format: int32 */
+            succeeded: number;
+        };
+        /**
+         * @description Structured "explain this number" provenance for the decision-driving
+         *     dashboard metrics, optionally scoped to one household member. Every value is
+         *     pulled from the same `finsight-core::metrics` layer `get_financial_metrics`
+         *     reads, so an explanation can never disagree with the number shown elsewhere.
+         *     The single source of truth is shared verbatim with the Copilot's
+         *     `explain_metric` tool.
+         */
+        ExplainFinancialMetricsRequest: {
+            memberId?: string | null;
+        };
+        /**
+         * @description Structured "explain this scenario" — the same recomputed projection the
+         *     comparison shows, described via `provenance::scenario_explanation` (its
+         *     narrative `considerations` become the tradeoffs, so this can never disagree
+         *     with the scenario card). A pre-V055 legacy row that can't be recomputed gets
+         *     the legacy variant: a withheld value with the reason, never a fabricated
+         *     breakdown.
+         */
+        ExplainScenarioRequest: {
+            id: string;
+        };
+        /**
+         * @description Returns the CSV content for one account's transactions (caller downloads
+         *     it client-side — no server-side file I/O). Real implementation as of
+         *     Phase 4; previously 501'd behind a native-dialog-only Tauri command.
+         */
+        ExportAccountCsvRequest: {
+            accountId: string;
+        };
+        /**
+         * @description Re-run the Copilot `search_transactions` query and return the matching
+         *     rows as CSV content (caller downloads it client-side). Shares
+         *     `transactions::search` with the Copilot tool so the exported rows match
+         *     exactly what the card displayed. Real implementation as of Phase 4;
+         *     previously 501'd behind a native-dialog-only Tauri command.
+         */
+        ExportSearchTransactionsCsvRequest: {
+            query: components["schemas"]["SearchTxnQueryInput"];
+        };
+        /**
+         * @description Returns the CSV content for transactions matching a filter (caller
+         *     downloads it client-side — no server-side file I/O). Real implementation
+         *     as of Phase 4; previously 501'd behind a native-dialog-only Tauri command.
+         */
+        ExportTransactionsCsvRequest: {
+            filter: components["schemas"]["TxnFilterInput"];
+        };
+        FinancialAssumptionsInput: {
+            /** Format: double */
+            emergencyFundTargetMonths: number;
+            /** Format: double */
+            expectedAnnualReturnPct: number;
+            /** Format: int64 */
+            targetSavingsRatePct: number;
+        };
+        FinancialMetrics: {
+            /** Format: int64 */
+            accountsWithUnknownBalance: number;
+            /** Format: int64 */
+            avgMonthlyExpenseCents: number;
+            /** Format: int64 */
+            avgMonthlyIncomeCents: number;
+            /**
+             * @description The currency every `_cents` field above is denominated in, derived from
+             *     live accounts and manual assets rather than from a display preference —
+             *     a preference goes stale the moment holdings change. `None` only when
+             *     there are no accounts or manual assets yet.
+             */
+            currency?: string | null;
+            /** Format: int64 */
+            debtCents: number;
+            /** Format: int64 */
+            emergencyFundCents: number;
+            /** Format: double */
+            emergencyFundMonths?: number | null;
+            /** Format: double */
+            emergencyFundTargetMonths: number;
+            /** Format: double */
+            expectedAnnualReturnPct: number;
+            /** Format: int64 */
+            investedCents: number;
+            /** Format: int64 */
+            liquidCents: number;
+            /** Format: int64 */
+            netMonthlyCents: number;
+            /** Format: int64 */
+            netWorthCents: number;
+            /** Format: int64 */
+            rollingSavingsRatePct: number;
+            /** Format: int64 */
+            runwayDays?: number | null;
+            /**
+             * Format: int64
+             * @description Days of history behind the safety basis, so the UI can say WHY a figure
+             *     is withheld instead of showing a bare dash.
+             */
+            safetyBasisSpanDays: number;
+            /** Format: int64 */
+            targetSavingsRatePct: number;
+            /** Format: int64 */
+            thisMonthExpenseCents: number;
+            /** Format: int64 */
+            thisMonthIncomeCents: number;
+            /** Format: int64 */
+            thisMonthNetCents: number;
+            /** Format: int64 */
+            thisMonthSavingsRatePct: number;
+            /**
+             * @description Money held in other currencies, never converted and never folded into
+             *     the totals above. Non-empty means every figure here is a partial view,
+             *     and the UI must label it as such rather than render a bare number.
+             */
+            unconvertedHoldings: components["schemas"]["UnconvertedHolding"][];
+        };
+        /**
+         * @description The user's stated philosophy, as the UI reads and writes it.
+         *
+         *     Strings rather than enums on the wire so an older client that sends an
+         *     unrecognised value degrades to the default instead of failing the request —
+         *     a preference is never worth erroring over.
+         */
+        FinancialPhilosophyDto: {
+            /** @description "avalanche" | "snowball" */
+            debtStrategy: string;
+            /**
+             * Format: double
+             * @description Derived, read-only: the APR at or above which debt is treated as
+             *     high-interest. Surfaced so the Settings screen can show the
+             *     consequence of the choice rather than just its name.
+             */
+            highInterestAprPct: number;
+            /** @description "cautious" | "balanced" | "aggressive" */
+            riskTolerance: string;
+        };
+        ForgetAgentMemoryRequest: {
+            id: string;
+        };
+        /**
+         * @description Reconstruct an account's balance curve from its ledger, with the peak and
+         *     trough over the requested window. `since` is an ISO `YYYY-MM-DD` date; omit
+         *     it for all-time.
+         *
+         *     Unlike [`list_account_balance_history`], which reads the sparse stored
+         *     snapshots, this derives every point — so it can answer "when was this account
+         *     at its highest" rather than "which recorded day was highest".
+         */
+        GetAccountBalanceTimelineRequest: {
+            accountId: string;
+            since?: string | null;
+        };
+        GetActionBundleRequest: {
+            id: string;
+        };
+        /**
+         * @description Project the liquid balance forward `horizon_days` (default 30, clamped
+         *     7–90), optionally against a safety `buffer_cents` and a hypothetical one-off
+         *     outflow. Returns the daily trajectory, the lowest point, the first day it
+         *     breaches the buffer, the conservative safe-to-spend, upcoming dated events,
+         *     and data-quality warnings.
+         */
+        GetCashflowForecastRequest: {
+            /** Format: int64 */
+            bufferCents?: number | null;
+            /** Format: int64 */
+            extraExpenseCents?: number | null;
+            extraExpenseDate?: string | null;
+            /** Format: int64 */
+            horizonDays?: number | null;
+        };
+        GetConversationMessagesRequest: {
+            conversationId: string;
+        };
+        GetFinancialMetricsRequest: {
+            memberId?: string | null;
+        };
+        GetInvestmentSummaryRequest: {
+            accountId: string;
+        };
+        /**
+         * @description The close for a given month: live figures/flags while unopened or in
+         *     progress; the frozen record (plus drift) once completed.
+         */
+        GetMonthCloseRequest: {
+            /** Format: int32 */
+            month: number;
+            /** Format: int32 */
+            year: number;
+        };
+        GetPlannedTransactionRequest: {
+            id: string;
+        };
+        GetReportDataRequest: {
+            memberId?: string | null;
+            scope: string;
+        };
+        /** @description The three reliable numbers plus the honest ceiling, for one envelope. */
+        GetRestorationStatusRequest: {
+            id: string;
+        };
+        GetSavedCsvMappingRequest: {
+            accountId: string;
+        };
+        GetSpendingPathBackRequest: {
+            period?: string | null;
+            /** Format: int64 */
+            targetMonthlyCents?: number | null;
+        };
+        GetTransactionSplitsRequest: {
+            transactionId: string;
+        };
+        GoalContributionDto: {
+            /** Format: int64 */
+            amountCents: number;
+            createdAt: string;
+            goalId: string;
+            id: string;
+            note?: string | null;
+            source: string;
+        };
+        GoalDto: {
+            accountId?: string | null;
+            color: string;
+            createdAt: string;
+            /** Format: int64 */
+            currentCents: number;
+            /** @description "hard" | "target" | "none" — what `target_date` commits the user to. */
+            deadlineStrictness: string;
+            goalType: string;
+            id: string;
+            /** Format: int64 */
+            monthlyCents: number;
+            name: string;
+            notes?: string | null;
+            /**
+             * @description "critical" | "high" | "normal" | "someday" — how much this goal matters,
+             *     as distinct from `sort_order`, which is only where the card sits.
+             */
+            priority: string;
+            purpose?: string | null;
+            /** Format: int64 */
+            sortOrder: number;
+            /** Format: int64 */
+            targetCents: number;
+            targetDate?: string | null;
+        };
+        HealthScore: {
+            breakdown: components["schemas"]["HealthScoreBreakdown"];
+            grade: string;
+            tips: string[];
+            /** Format: int32 */
+            total: number;
+        };
+        HealthScoreBreakdown: {
+            /** Format: int64 */
+            avgGoalPct: number;
+            /** Format: int64 */
+            budgetAdherencePct: number;
+            /** Format: int32 */
+            budgetAdherencePts: number;
+            /** Format: int32 */
+            debtRatioPts: number;
+            /** Format: int64 */
+            debtToIncomePct: number;
+            /** Format: double */
+            emergencyFundMonths: number;
+            /** Format: int32 */
+            emergencyFundPts: number;
+            /** Format: int32 */
+            goalProgressPts: number;
+            /** Format: int64 */
+            savingsRatePct: number;
+            /** Format: int32 */
+            savingsRatePts: number;
+        };
+        Holding: {
+            accountId: string;
+            asOfDate: string;
+            /** Format: int64 */
+            costBasisCents?: number | null;
+            currency?: string | null;
+            id: string;
+            /** Format: int64 */
+            marketValueCents?: number | null;
+            /** Format: double */
+            quantity?: number | null;
+            securityId: string;
+        };
+        /**
+         * @description A person in the household (single user, partner, family member, roommate).
+         *     Accounts are owned by zero or more members; 2+ owners = a joint account.
+         */
+        HouseholdMember: {
+            color?: string | null;
+            createdAt: string;
+            id: string;
+            /**
+             * @description True for the one member who operates this install (the "self"). At most
+             *     one member is self; drives "my finances" views and self-transfer
+             *     recognition. Zero members ⇒ no self, behaves as a solo household.
+             */
+            isSelf: boolean;
+            name: string;
+        };
+        Import: {
+            account_id?: string | null;
+            error?: string | null;
+            filename?: string | null;
+            /** Format: date-time */
+            finished_at?: string | null;
+            id: string;
+            /** Format: int64 */
+            rows_imported: number;
+            /** Format: int64 */
+            rows_skipped_duplicates: number;
+            source: components["schemas"]["ImportSource"];
+            /** Format: date-time */
+            started_at: string;
+        };
+        ImportCandidate: {
+            accountId: string;
+            /** Format: int64 */
+            amountCents: number;
+            candidateJson: string;
+            /** Format: int64 */
+            confidence: number;
+            /** Format: date-time */
+            createdAt: string;
+            externalAccountId?: string | null;
+            externalTxId?: string | null;
+            id: string;
+            importId?: string | null;
+            importedId?: string | null;
+            merchantRaw: string;
+            /** Format: date-time */
+            postedAt: string;
+            rawPayloadJson?: string | null;
+            reason: string;
+            resolution?: string | null;
+            /** Format: date-time */
+            resolvedAt?: string | null;
+            resolvedTransactionId?: string | null;
+            source: string;
+            status: string;
+            syncRunId?: string | null;
+        };
+        ImportCandidateMatch: {
+            candidateId: string;
+            /** Format: date-time */
+            createdAt: string;
+            explanationJson?: string | null;
+            id: string;
+            isRecommended: boolean;
+            matchKind: string;
+            /** Format: int64 */
+            score: number;
+            transactionId: string;
+        };
+        ImportCandidateWithMatches: {
+            candidate: components["schemas"]["ImportCandidate"];
+            matches: components["schemas"]["ImportCandidateMatch"][];
+        };
+        /**
+         * @description Import a CSV file, running the deterministic post-import cascade
+         *     (categorization, transfer pairing, anomaly refresh, net-worth refresh) and
+         *     enqueuing the AI categorizer. Progress and completion are pushed through the
+         *     `sink` (`"import-progress"` / `"import-complete"`, unchanged event names and
+         *     payload shapes) — the Tauri wrapper feeds a `TauriFrameSink` that emits real
+         *     window events, and ALSO fires the desktop "check_and_fire" notification
+         *     after this returns (that notification is native-only and stays in the
+         *     wrapper, not here — see `crates/finsight-bindings/src/commands/import.rs`).
+         */
+        ImportCsvRequest: {
+            accountId: string;
+            mapping: components["schemas"]["CsvImportMapping"];
+            path: string;
+        };
+        /**
+         * @description The import outcome plus what still needs a category. Surfacing the
+         *     uncategorized count (and whether the AI pass was auto-started) makes the
+         *     cloud LLM categorization a visible, informed choice rather than a silent
+         *     background enqueue.
+         */
+        ImportResult: {
+            /**
+             * @description True when the background AI categorizer was auto-enqueued (the
+             *     auto-categorize setting is on). When false, the UI offers an explicit
+             *     "run AI categorization" action.
+             */
+            aiCategorizationStarted: boolean;
+            /**
+             * Format: int32
+             * @description Rows the deterministic builtin pass categorized in this import's
+             *     cascade — shown post-import so the derived work is visible, not silent.
+             */
+            builtinCategorized: number;
+            summary: components["schemas"]["ImportSummary"];
+            /**
+             * Format: int32
+             * @description Cross-account transfer pairs linked in this import's cascade.
+             */
+            transfersPaired: number;
+            /**
+             * Format: int64
+             * @description Uncategorized non-transfer EXPENSE rows in this account after the builtin
+             *     pass — exactly what an AI categorization run would work on.
+             */
+            uncategorizedAfter: number;
+        };
+        ImportSimplefinAccountsRequest: {
+            accounts: components["schemas"]["SimpleFinAccountImportRequest"][];
+        };
+        /** @enum {string} */
+        ImportSource: "csv" | "manual" | "sample" | "simple_fin";
+        ImportSummary: {
+            errors: components["schemas"]["RowError"][];
+            import_id: string;
+            /** Format: int32 */
+            rows_imported: number;
+            /** Format: int32 */
+            rows_queued_for_review: number;
+            /** Format: int32 */
+            rows_skipped_duplicates: number;
+        };
+        /**
+         * @description The "needs attention" total, broken down by source.
+         *
+         *     The breakdown fields exist so the number is debuggable — when a badge shows
+         *     "7" and the user expects "3", the caller can say which bucket the extra four
+         *     came from without re-running five queries by hand.
+         */
+        InboxBadgeCount: {
+            /** Format: int64 */
+            actionItems: number;
+            /** Format: int64 */
+            alerts: number;
+            /** Format: int64 */
+            importReview: number;
+            /** Format: int64 */
+            total: number;
+            /** Format: int64 */
+            transferSuggestions: number;
+            /** Format: int64 */
+            unresolvedCounterparties: number;
+        };
+        Institution: {
+            domain?: string | null;
+            id: string;
+            name: string;
+            sfin_url?: string | null;
+        };
+        /** @description Ledger-derived portfolio summary for one investment account. */
+        InvestmentSummary: {
+            /**
+             * Format: int64
+             * @description Cash in the account: opening (seed) balance + every ledger row. Trades,
+             *     contributions, dividends, interest, and tax are all cash movements.
+             */
+            cashCents: number;
+            /**
+             * Format: int64
+             * @description All-time dividend income (activity_type = 'Dividend').
+             */
+            dividendIncomeCents: number;
+            /**
+             * @description True when any symbol nets below zero — a SELL without its earlier BUYs
+             *     (partial-history import). The estimate is unreliable; warn, don't hide.
+             */
+            hasNegativeQuantity: boolean;
+            /**
+             * Format: int64
+             * @description All-time interest income (activity_type = 'Interest').
+             */
+            interestIncomeCents: number;
+            /** Format: int64 */
+            openPositions: number;
+            /**
+             * Format: int64
+             * @description cash + positions value — the "portfolio estimate".
+             */
+            portfolioEstimateCents: number;
+            /**
+             * Format: int64
+             * @description Σ market value of open positions at their last trade price.
+             */
+            positionsValueCents: number;
+            /**
+             * Format: int64
+             * @description All-time withholding tax, as a positive magnitude (rows are negative).
+             */
+            withholdingTaxCents: number;
+        };
+        JourneyMilestone: {
+            actionPrompt: string;
+            description: string;
+            detail: string;
+            name: string;
+            /** Format: int32 */
+            progressPct: number;
+            /** Format: int32 */
+            stage: number;
+            status: string;
+        };
+        JourneyStatus: {
+            /** Format: int32 */
+            completedCount: number;
+            /** Format: int32 */
+            currentStage: number;
+            milestones: components["schemas"]["JourneyMilestone"][];
+        };
+        ListAccountBalanceHistoryRequest: {
+            accountId: string;
+            /** Format: int32 */
+            days: number;
+        };
+        ListAccountBalanceSparklinesRequest: {
+            /** Format: int32 */
+            days: number;
+        };
+        ListAccountPositionsRequest: {
+            accountId: string;
+        };
+        ListActionBundlesRequest: {
+            /** Format: int32 */
+            limit?: number | null;
+            sessionId?: string | null;
+            statusFilter?: string | null;
+        };
+        ListBudgetHistoryRequest: {
+            /** Format: int32 */
+            months: number;
+        };
+        /**
+         * @description Every exemplar for a category, oldest first.
+         *
+         *     Returns rows for ARCHIVED categories too, mirroring how `list_categories`
+         *     still returns `guidance` on an archived row — archiving hides examples from
+         *     active consumers, it does not delete them.
+         */
+        ListCategoryExamplesRequest: {
+            categoryId: string;
+        };
+        ListExecutionLogRequest: {
+            bundleId: string;
+        };
+        ListGoalContributionsRequest: {
+            goalId: string;
+        };
+        /**
+         * @description Budget-vs-actual for the current month, scoped to one household member's
+         *     share of the spend. The budgets themselves are the household's.
+         */
+        ListMemberBudgetEnvelopesRequest: {
+            memberId: string;
+        };
+        ListNetWorthHistoryRequest: {
+            /** Format: int32 */
+            days: number;
+        };
+        /**
+         * @description The notification history. `includeResolved=false` (default view) shows only
+         *     still-active items; held (quiet-hours) items appear here too so they're never
+         *     lost, just not pushed.
+         */
+        ListNotificationsRequest: {
+            includeResolved?: boolean | null;
+        };
+        ListPlannedTransactionsRequest: {
+            filter: components["schemas"]["PlannedTxnFilter"];
+        };
+        ListProviderModelsRequest: {
+            config: components["schemas"]["CompletionProviderConfig"];
+        };
+        ListRecentAgentActivityRequest: {
+            /** Format: int32 */
+            limit: number;
+        };
+        ListRecipeRunsRequest: {
+            /** Format: int32 */
+            limit?: number | null;
+            recipeId: string;
+        };
+        ListRecipesRequest: {
+            includePaused: boolean;
+        };
+        ListTransactionsRequest: {
+            filter: components["schemas"]["TxnFilterInput"];
+        };
+        LlmProviderConfig: {
+            base_url: string;
+            completion_model: string;
+            embedding_model: string;
+            /** @enum {string} */
+            kind: "ollama";
+        } | {
+            /** @enum {string} */
+            kind: "unconfigured";
+        };
+        /**
+         * @description A single plain-language fact about how `month` went for a budgeted category,
+         *     used to open the Plan Next Month wizard. Deterministic, no LLM — the frontend
+         *     composes the sentence (and applies the user's money formatting/privacy mode)
+         *     from `kind` + `amount_cents`/`streak_months`; this never bakes a formatted
+         *     dollar string server-side.
+         */
+        LookBackFact: {
+            /**
+             * Format: int64
+             * @description Meaningful for "over" (spent − budgeted) and "under" (budgeted − spent); 0 for "streak".
+             */
+            amountCents: number;
+            categoryId: string;
+            categoryLabel: string;
+            /** @description "over" | "under" | "streak" */
+            kind: string;
+            /**
+             * Format: int64
+             * @description Meaningful for "streak" (consecutive zero-spend months including `month`); 0 otherwise.
+             */
+            streakMonths: number;
+        };
+        ManualAsset: {
+            assetType: string;
+            createdAt: string;
+            currency: string;
+            id: string;
+            name: string;
+            notes?: string | null;
+            updatedAt: string;
+            /** Format: int64 */
+            valueCents: number;
+        };
+        ManualAssetPatch: {
+            assetType?: string | null;
+            currency?: string | null;
+            name?: string | null;
+            notes?: string | null;
+            /** Format: int64 */
+            valueCents?: number | null;
+        };
+        MarkNotificationReadRequest: {
+            id: string;
+        };
+        /**
+         * @description Mark a detected subscription CANCELLED as of `cancelled_at` (`YYYY-MM-DD`).
+         *     Ongoing price/renewal alerts stop; a charge dated after the cancel date is
+         *     surfaced as a surprise. `label` names the service in that alert (#75).
+         */
+        MarkSubscriptionCancelledRequest: {
+            cancelledAt: string;
+            label: string;
+            merchantKey: string;
+        };
+        /** @enum {string} */
+        Mechanism: "new" | "stopped" | "price_up" | "price_down" | "frequency_up" | "frequency_down" | "mixed" | "flat";
+        /**
+         * @description One category's household budget alongside a single member's share of the
+         *     spend against it. The budget itself stays household-level — the issue keeps
+         *     budgets a shared pool and adds a per-person *view* of progress against it,
+         *     rather than splitting the target itself.
+         */
+        MemberBudgetEnvelope: {
+            /**
+             * Format: int64
+             * @description The household budget for this category — the same target everyone sees.
+             */
+            budgetCents: number;
+            categoryColor: string;
+            categoryId: string;
+            categoryLabel: string;
+            groupLabel: string;
+            /**
+             * Format: int64
+             * @description The whole household's spend, for "my share of our total" context.
+             */
+            householdSpentCents: number;
+            /**
+             * Format: int64
+             * @description This member's ownership-weighted share of that spend.
+             */
+            memberSpentCents: number;
+            /** Format: int64 */
+            txnCount: number;
+        };
+        /**
+         * @description One row of the "who owns what" household net-worth split. `member_id` None is
+         *     the unassigned residual — value owned by no recorded member, i.e. by people
+         *     running their OWN separate FinSight app (the cross-user share). Member slices
+         *     plus the residual reconcile to the household total.
+         */
+        MemberNetWorth: {
+            color?: string | null;
+            /** Format: int64 */
+            debtCents: number;
+            /** Format: int64 */
+            investedCents: number;
+            /** Format: int64 */
+            liquidCents: number;
+            memberId?: string | null;
+            name: string;
+            /** Format: int64 */
+            netWorthCents: number;
+        };
+        /** @description One merchant's 12-month total. */
+        MerchantTotal: {
+            categoryColor: string;
+            categoryLabel: string;
+            merchantRaw: string;
+            /** Format: int64 */
+            totalCents: number;
+            /** Format: int64 */
+            txnCount: number;
+        };
+        /** @description A tunable assumption that shaped the metric (e.g. the user's target rate). */
+        MetricAssumption: {
+            label: string;
+            value: string;
+        };
+        /**
+         * @description A complete, self-consistent explanation of one financial metric: what it
+         *     means, what produced it, what it leaves out, what it assumes, over what
+         *     period, and how far to trust it.
+         */
+        MetricExplanation: {
+            /** @description Tunable assumptions that shaped it. */
+            assumptions: components["schemas"]["MetricAssumption"][];
+            /** @description One-sentence definition of what the number represents. */
+            definition: string;
+            /** @description What was deliberately left out. */
+            exclusions: string[];
+            /** @description The material inputs that produced it, with their amounts where money. */
+            inputs: components["schemas"]["MetricInput"][];
+            /** @description Stable identifier, e.g. `"net_worth"`. Safe to switch on. */
+            key: string;
+            label: string;
+            /** @description The time window the figure covers. */
+            period: string;
+            /**
+             * @description Material tradeoffs between this result and the competing option(s) — the
+             *     "why this and not the alternative" reasoning. Empty for a descriptive
+             *     metric that has no alternative (e.g. net worth); populated for a
+             *     recommendation such as a debt-payoff order or a contribution level.
+             */
+            tradeoffs?: string[];
+            value: components["schemas"]["MetricValue"];
+            /** @description Data-quality caveats: missing / stale / withheld / low-confidence disclosures. */
+            warnings: components["schemas"]["MetricWarning"][];
+        };
+        /**
+         * @description A material input that fed the metric. `amount_cents` is present when the
+         *     input is a money figure (formatted by the UI in the user's currency);
+         *     `detail` carries non-money context such as "3 months of history".
+         */
+        MetricInput: {
+            /** Format: int64 */
+            amountCents?: number | null;
+            detail?: string | null;
+            label: string;
+        };
+        /**
+         * @description The metric's value, tagged so the UI knows how to format it and so a
+         *     withheld figure is a first-class state rather than a fabricated zero.
+         */
+        MetricValue: {
+            /** Format: int64 */
+            cents: number;
+            /** @enum {string} */
+            kind: "money";
+        } | {
+            /** @enum {string} */
+            kind: "percent";
+            /** Format: int64 */
+            pct: number;
+        } | {
+            /** @enum {string} */
+            kind: "months";
+            /** Format: double */
+            months: number;
+        } | {
+            /** Format: int64 */
+            days: number;
+            /** @enum {string} */
+            kind: "days";
+        } | {
+            /** @enum {string} */
+            kind: "withheld";
+        };
+        /** @description One data-quality caveat: missing, stale, low-confidence, or unsupported data. */
+        MetricWarning: {
+            level: components["schemas"]["MetricWarningLevel"];
+            message: string;
+        };
+        /**
+         * @description Severity of a data-quality caveat attached to a metric.
+         * @enum {string}
+         */
+        MetricWarningLevel: "info" | "caution" | "withheld";
+        /**
+         * @description Something the Copilot needed but could not find, and — where we can work it
+         *     out — where the user would go to supply it.
+         *
+         *     The Copilot deliberately withholds high-confidence debt advice when APR or
+         *     minimum-payment data is absent. That is the right call, but a block that
+         *     does not say how to unblock it reads as the app being unhelpful rather than
+         *     careful. Attaching a destination turns an honest limitation into a
+         *     completed setup step.
+         *
+         *     `action_label` and `action_path` are always set or cleared **together**: a
+         *     labelled button with nowhere to go, or a destination with no label, are
+         *     both worse than plain prose. Producers that do not know which entity is
+         *     missing data (notably the model itself, on the deep reasoning path) build
+         *     these through [`From<String>`], which leaves both `None` — the message
+         *     still renders, just without a shortcut.
+         */
+        MissingDataItem: {
+            /** @description Button text, e.g. "Add APR". `None` when there is nowhere to send them. */
+            actionLabel?: string | null;
+            /** @description App-relative path, e.g. `/accounts?focusAccount=abc`. */
+            actionPath?: string | null;
+            /** @description Human-readable description of what is missing. */
+            message: string;
+        };
+        MonthCloseListItem: {
+            completedAt?: string | null;
+            /** Format: int32 */
+            month: number;
+            monthLabel: string;
+            /** Format: int64 */
+            netWorthCents: number;
+            /** Format: int64 */
+            savingsRatePct: number;
+            status: string;
+            /** Format: int32 */
+            year: number;
+        };
+        /**
+         * @description The month's key figures. Enriched over the old review snapshot with net
+         *     worth, debt, and a count of subscription price changes. Free-form goal JSON
+         *     is kept for the UI's progress list.
+         */
+        MonthCloseSnapshot: {
+            /** Format: int64 */
+            debtTotalCents: number;
+            /** Format: int64 */
+            expenseCents: number;
+            goalProgress: unknown[];
+            /** Format: int64 */
+            incomeCents: number;
+            /** Format: int64 */
+            netWorthCents: number;
+            overBudgetCategories: string[];
+            /** Format: int64 */
+            savingsCents: number;
+            /** Format: int64 */
+            savingsRatePct: number;
+            /** Format: int64 */
+            subscriptionChangeCount: number;
+        };
+        MonthCloseView: {
+            completedAt?: string | null;
+            /** @description Only populated for a completed close whose recorded figures now differ. */
+            drift: components["schemas"]["DriftLine"][];
+            /** @description Live flags while in progress; the frozen (acknowledged-marked) set once completed. */
+            flags: components["schemas"]["CloseFlag"][];
+            /** Format: int32 */
+            month: number;
+            monthLabel: string;
+            notes?: string | null;
+            snapshot: components["schemas"]["MonthCloseSnapshot"];
+            /** @description "not_started" | "in_progress" | "completed" | "skipped". */
+            status: string;
+            /** Format: int32 */
+            year: number;
+        };
+        /** @description One month's summary for the bar chart. */
+        MonthSummary: {
+            /**
+             * Format: int64
+             * @description Total outflows (negative transactions), as positive cents
+             */
+            expenseCents: number;
+            /**
+             * Format: int64
+             * @description Total inflows (positive transactions), as positive cents
+             */
+            incomeCents: number;
+            /** @description Human label e.g. "Jan" */
+            label: string;
+            /** @description "YYYY-MM" */
+            month: string;
+            /**
+             * Format: int64
+             * @description Net = income - expense
+             */
+            netCents: number;
+        };
+        /** @description Lightweight summary for the Today screen. */
+        MonthTotals: {
+            /** Format: int64 */
+            expenseCents: number;
+            /** Format: int64 */
+            incomeCents: number;
+            /** Format: int64 */
+            netCents: number;
+            /** Format: int64 */
+            savingsRatePct: number;
+            /**
+             * Format: int64
+             * @description Number of transactions this month
+             */
+            txnCount: number;
+        };
+        MonthlyActual: {
+            /** Format: int64 */
+            budgetedCents: number;
+            label: string;
+            month: string;
+            /** Format: int64 */
+            spentCents: number;
+        };
+        NetWorthPoint: {
+            date: string;
+            /** Format: int64 */
+            totalCents: number;
+        };
+        NewAccount: {
+            account_group?: string;
+            /** Format: double */
+            apr_pct?: number | null;
+            /** Format: double */
+            apy_pct?: number | null;
+            /** Format: int64 */
+            available_balance_cents?: number | null;
+            /** Format: date-time */
+            balance_date?: string | null;
+            bank: string;
+            color: string;
+            connection_id?: string | null;
+            currency: string;
+            emergency_fund_eligible?: boolean;
+            external_account_id?: string | null;
+            extra_json?: string | null;
+            goal_earmark?: string | null;
+            import_pending?: boolean;
+            institution_id?: string | null;
+            last4?: string | null;
+            /** Format: int64 */
+            limit_cents?: number | null;
+            liquidity_type?: string;
+            mask?: string | null;
+            /** Format: int64 */
+            min_payment_cents?: number | null;
+            name: string;
+            nickname?: string | null;
+            official_name?: string | null;
+            /** Format: int64 */
+            opening_balance_cents: number;
+            /** Format: int64 */
+            original_balance_cents?: number | null;
+            owner: string;
+            payoff_date?: string | null;
+            /** Format: double */
+            post_promo_apr_pct?: number | null;
+            promo_apr_expires_on?: string | null;
+            raw_json?: string | null;
+            simplefin_account_id?: string | null;
+            source?: string;
+            started_at?: string | null;
+            subtype?: string | null;
+            type: components["schemas"]["AccountType"];
+        };
+        NewGoalInput: {
+            accountId?: string | null;
+            color: string;
+            deadlineStrictness?: string | null;
+            goalType: string;
+            /** Format: int64 */
+            monthlyCents: number;
+            name: string;
+            notes?: string | null;
+            /** @description Omitted by callers that do not care; the schema defaults apply. */
+            priority?: string | null;
+            purpose?: string | null;
+            /** Format: int64 */
+            targetCents: number;
+            targetDate?: string | null;
+        };
+        NewInstitution: {
+            domain?: string | null;
+            id: string;
+            name: string;
+            sfin_url?: string | null;
+        };
+        NewManualAsset: {
+            assetType: string;
+            currency: string;
+            name: string;
+            notes?: string | null;
+            /** Format: int64 */
+            valueCents: number;
+        };
+        NewPlannedTransaction: {
+            accountId?: string | null;
+            /** Format: int64 */
+            amountCents: number;
+            categoryId?: string | null;
+            description: string;
+            dueDate: string;
+            source: string;
+        };
+        NewSimpleFinConnection: {
+            access_url_ref: string;
+            conn_id?: string | null;
+            label?: string | null;
+            org_id?: string | null;
+            org_name?: string | null;
+            org_url?: string | null;
+            sfin_url?: string | null;
+        };
+        NewTransaction: {
+            account_id: string;
+            activity?: components["schemas"]["TxnActivity"] | null;
+            /** Format: int64 */
+            amount_cents: number;
+            category_id?: string | null;
+            external_account_id?: string | null;
+            external_tx_id?: string | null;
+            imported_id?: string | null;
+            merchant_raw: string;
+            notes?: string | null;
+            pending: boolean;
+            /** Format: date-time */
+            posted_at: string;
+            raw_synced_data?: string | null;
+            source?: string | null;
+            status: components["schemas"]["TransactionStatus"];
+        };
+        /** @description A stored notification, as the history surface reads it. */
+        Notification: {
+            body: string;
+            category: components["schemas"]["NotificationCategory"];
+            createdAt: string;
+            deliveredAt?: string | null;
+            id: string;
+            readAt?: string | null;
+            resolvedAt?: string | null;
+            route?: string | null;
+            sensitive?: string | null;
+            title: string;
+            urgency: components["schemas"]["Urgency"];
+        };
+        /**
+         * @description What a notification is about. Drives the per-category user preference and how
+         *     events are grouped. The string form is the stored value and the preference key.
+         * @enum {string}
+         */
+        NotificationCategory: "cashflow_risk" | "stale_data" | "debt_deadline" | "subscription_change" | "categorization" | "goal_progress" | "month_end_review" | "security" | "sync_error" | "account_activity" | "digest";
+        NotificationCategoryPref: {
+            enabled: boolean;
+            /** @description Stable key (e.g. "cashflow_risk"). */
+            key: string;
+            label: string;
+        };
+        NotificationPrefsDto: {
+            /** @description Every category with its current enabled state, in a stable order for the UI. */
+            categories: components["schemas"]["NotificationCategoryPref"][];
+            digestFrequency: components["schemas"]["DigestFrequency"];
+            masterEnabled: boolean;
+            privacy: components["schemas"]["PrivacyLevel"];
+            quietHours?: components["schemas"]["QuietHours"] | null;
+            /**
+             * @description A one-off "snooze until" RFC3339 instant, or null. While active it holds
+             *     individual pushes of non-critical notifications (#69). The client sets it
+             *     to `now + duration`; a past value is treated as not snoozed.
+             */
+            snoozeUntil?: string | null;
+            /**
+             * Format: int32
+             * @description The client's UTC offset in minutes (`local = UTC + offset`). The client
+             *     stamps this on every save so the server can evaluate the local-time quiet
+             *     window; the user never edits it directly.
+             */
+            utcOffsetMinutes: number;
+        };
+        OllamaProbeResult: {
+            has_nomic_embed: boolean;
+            models: string[];
+            reachable: boolean;
+        };
+        OnboardingState: {
+            /** Format: int64 */
+            account_count: number;
+            /** Format: int64 */
+            category_count: number;
+            completion_marked: boolean;
+        };
+        /**
+         * @description An owner and their explicit ownership share (basis points, 10000 = 100%) for
+         *     an account or asset. `share_bps` None ⇒ equal split with the other owners.
+         */
+        OwnerShare: {
+            memberId: string;
+            /** Format: int64 */
+            shareBps?: number | null;
+        };
+        /** @description Everything the Path Back screen needs, in one read. */
+        PathBackView: {
+            assessment: components["schemas"]["PeriodAssessment"];
+            period: string;
+            plan: components["schemas"]["SpendingPlan"];
+        };
+        PauseRecipeRequest: {
+            id: string;
+        };
+        PeriodAssessment: {
+            /** Format: int64 */
+            baseline_monthly_cents: number;
+            /** Format: int64 */
+            baseline_months: number;
+            class: components["schemas"]["PeriodClass"];
+            /**
+             * Format: int64
+             * @description How many of the 3 months before `period` were also above the band.
+             */
+            elevated_recent_months: number;
+            /**
+             * @description True when the ledger spans multiple currencies — the totals mix them, so
+             *     treat the verdict as approximate (parity with decompose's warning).
+             */
+            mixed_currency: boolean;
+            note: string;
+            /** Format: int64 */
+            period_total_cents: number;
+            /**
+             * Format: int64
+             * @description median + BAND_K robust sigmas — spend above this is "elevated".
+             */
+            upper_band_cents: number;
+        };
+        /** @enum {string} */
+        PeriodClass: "normal" | "episodic_spike" | "regime_shift" | "insufficient_history";
+        /** @enum {string} */
+        Persistence: "one_off" | "recurring" | "emerging" | "uncertain";
+        PlanAssignment: {
+            /** Format: int64 */
+            amountCents: number;
+            categoryId: string;
+        };
+        /**
+         * @description One proposed plan change from promoting a scenario — a suggestion for the
+         *     user to review. Most are recommendation-only; a change with `applyable=true`
+         *     can be written to the plan on explicit approval (#72).
+         */
+        PlanChange: {
+            /**
+             * @description Whether this change can be mechanically applied to the plan. Only true for
+             *     changes that map to a concrete plan entity — a one-time amount becomes a
+             *     dated planned transaction. Aggregate world-assumptions (income %, monthly
+             *     spending delta) and goal mentions have no unambiguous target, so they stay
+             *     recommendations the user acts on themselves.
+             */
+            applyable: boolean;
+            /** Format: int64 */
+            currentCents?: number | null;
+            detail: string;
+            /** @description Stable key the apply step approves by (e.g. "one_time"). */
+            id: string;
+            /** Format: int64 */
+            proposedCents?: number | null;
+            title: string;
+        };
+        PlanData: {
+            categories: components["schemas"]["CategoryPlanRow"][];
+            goals: components["schemas"]["GoalDto"][];
+            /** Format: int64 */
+            incomeCents: number;
+            lookBack: components["schemas"]["LookBackFact"][];
+            /** Format: int64 */
+            recurringExpenseCents: number;
+            sinkingFunds: components["schemas"]["GoalDto"][];
+        };
+        PlannedTransaction: {
+            accountId?: string | null;
+            /** Format: int64 */
+            amountCents: number;
+            categoryId?: string | null;
+            createdAt: string;
+            description: string;
+            dueDate: string;
+            id: string;
+            source: string;
+            status: string;
+        };
+        PlannedTransactionPatch: {
+            accountId?: string | null;
+            /** Format: int64 */
+            amountCents?: number | null;
+            categoryId?: string | null;
+            description?: string | null;
+            dueDate?: string | null;
+            source?: string | null;
+            status?: string | null;
+        };
+        PlannedTxnFilter: {
+            dueBefore?: string | null;
+            status?: string | null;
+        };
+        /** @description One open position in an investment account, aggregated from Trade rows. */
+        Position: {
+            /**
+             * Format: int64
+             * @description Net cash put into this symbol: SUM(−amount) over its trades. A closed
+             *     round trip leaves the realized P&L here as a negative (profit) or
+             *     positive (loss) residue.
+             */
+            investedCents: number;
+            /**
+             * Format: double
+             * @description Unit price of the most recent trade in this symbol (dollars).
+             */
+            lastPrice?: number | null;
+            /** @description Date of that most recent trade (RFC3339). */
+            lastTradeAt?: string | null;
+            /**
+             * Format: int64
+             * @description quantity × last_price, rounded to cents. None when no price is known.
+             */
+            marketValueCents?: number | null;
+            name?: string | null;
+            /**
+             * Format: double
+             * @description Net units held: SUM(quantity) over all trades (SELL rows are negative).
+             */
+            quantity: number;
+            symbol: string;
+        };
+        PrepareCsvImportRequest: {
+            accountId: string;
+            mapping: components["schemas"]["CsvImportMapping"];
+            path: string;
+        };
+        /**
+         * @description A lightweight, bounded preview of what an import WOULD do — counts + a
+         *     capped error list + a staleness signature — so the UI can show
+         *     "N new · D duplicates · R to review" before the user commits to importing.
+         *     Deliberately excludes per-row decisions: those can number in the
+         *     thousands and must never cross the Tauri IPC boundary wholesale.
+         */
+        PreparedImportPreview: {
+            errors: components["schemas"]["RowError"][];
+            /** Format: int32 */
+            rowsImported: number;
+            /** Format: int32 */
+            rowsQueuedForReview: number;
+            /** Format: int32 */
+            rowsSkippedDuplicates: number;
+            /** Format: int32 */
+            rowsTotal: number;
+            signature: string;
+        };
+        PreviewCsvColumnsRequest: {
+            path: string;
+            /** Format: int32 */
+            skipHeaderRows: number;
+        };
+        /** @description A detected material change in a fixed-price recurring charge's amount (#58). */
+        PriceChangeDto: {
+            currency: string;
+            effectiveDate: string;
+            /** Format: int64 */
+            fromCents: number;
+            /**
+             * Format: double
+             * @description Signed percent change vs the prior price.
+             */
+            pct: number;
+            /** Format: int64 */
+            toCents: number;
+        };
+        /**
+         * @description How much sensitive detail a notification may expose. Mirrors the app's
+         *     "blur amounts" privacy concept rather than inventing a parallel model — a
+         *     push composed server-side can't consult the client's blur, so this is the
+         *     server-side equivalent.
+         * @enum {string}
+         */
+        PrivacyLevel: "full" | "hide_amounts";
+        ProbeOllamaRequest: {
+            baseUrl: string;
+        };
+        ProgressPayload: {
+            import_id: string;
+            /** Format: int32 */
+            rows_done: number;
+            /** Format: int32 */
+            rows_total: number;
+        };
+        ProjectGoalGrowthRequest: {
+            goalId: string;
+            /** Format: int32 */
+            years: number;
+        };
+        ProjectedValue: {
+            /** Format: double */
+            annualRate: number;
+            /** Format: int64 */
+            valueCents: number;
+            /** Format: int32 */
+            years: number;
+        };
+        /**
+         * @description Promote a scenario into a REVIEWABLE set of proposed plan changes. This
+         *     writes nothing: it grounds each proposal in the current baseline and hands
+         *     them back for the user to approve and apply themselves.
+         */
+        PromoteScenarioRequest: {
+            id: string;
+        };
+        ProposedRule: {
+            category_id: string;
+            category_label: string;
+            pattern: string;
+        };
+        ProposedRuleDto: {
+            category_id: string;
+            category_label: string;
+            pattern: string;
+        };
+        ProviderTestResult: {
+            error?: string | null;
+            /** Format: int64 */
+            latency_ms: number;
+            ok: boolean;
+        };
+        /**
+         * @description Outcome of a send. Reported rather than swallowed so the Settings screen can
+         *     tell "no devices registered" apart from "the push service rejected us".
+         */
+        PushDeliveryReport: {
+            /** Format: int64 */
+            delivered: number;
+            /**
+             * Format: int64
+             * @description Subscriptions the push service reported as permanently gone; these are
+             *     deleted rather than retried forever.
+             */
+            expired: number;
+            /** Format: int64 */
+            failed: number;
+        };
+        PushDevice: {
+            createdAt: string;
+            endpoint: string;
+            label?: string | null;
+            lastUsedAt?: string | null;
+        };
+        /**
+         * @description The JSON body `push-sw.js` parses. Keep the field names in lockstep with it
+         *     — the contract is pinned by `ui/src/pwa/push.test.ts`.
+         */
+        PushPayload: {
+            /**
+             * Format: int64
+             * @description Lets the worker refresh the app-icon badge while the app is closed —
+             *     the one thing the foreground badge hook cannot do.
+             */
+            badgeCount?: number | null;
+            body: string;
+            /**
+             * @description Collapse key: a newer message with the same tag replaces the older one
+             *     instead of stacking another line on the lock screen.
+             */
+            tag: string;
+            title: string;
+            /** @description Route to open on click. */
+            url: string;
+        };
+        PushStatus: {
+            /**
+             * Format: int64
+             * @description How many devices are currently registered for this user.
+             */
+            deviceCount: number;
+            /** @description Base64url VAPID public key for `pushManager.subscribe`. */
+            publicKey: string;
+        };
+        QuietHours: {
+            /**
+             * Format: int32
+             * @description Local hour 0–23 it ends. Equal to `start` means "no window".
+             */
+            end: number;
+            /**
+             * Format: int32
+             * @description Local hour 0–23 the quiet window starts.
+             */
+            start: number;
+        };
+        /**
+         * @description A run's result together with the resolved params, so the UI can save a
+         *     scenario it ran from free text (where the params were resolved server-side).
+         */
+        RanScenario: {
+            /** Format: int32 */
+            months: number;
+            params: components["schemas"]["ScenarioParamsInput"];
+            result: components["schemas"]["ScenarioResult"];
+        };
+        /** @description A recurring transaction detected from transaction history (Phase 6 redesign). */
+        RecurringItem: {
+            /** Format: double */
+            avgGapDays: number;
+            cadence: string;
+            /**
+             * @description If the user marked this cancelled, the cancel date (`YYYY-MM-DD`); a
+             *     charge after it is surfaced as a surprise. `null` otherwise (#75).
+             */
+            cancelledAt?: string | null;
+            categoryColor: string;
+            categoryLabel: string;
+            /**
+             * Format: double
+             * @description 0..1 confidence this is a genuine recurring item.
+             */
+            confidence: number;
+            /**
+             * @description Whether this item is confident enough to feed forward-looking
+             *     projections. Low-confidence entries stay VISIBLE — the user is the one
+             *     who can confirm or dismiss them — but do not silently move arithmetic.
+             */
+            feedsProjections: boolean;
+            /** @description True only for genuine subscriptions (not repeat purchases). */
+            isSubscription: boolean;
+            /** @description "subscription" | "bill" | "income" — genuine recurring commitments only. */
+            kind: string;
+            /** Format: int64 */
+            lastAmountCents: number;
+            lastSeen: string;
+            /** Format: int64 */
+            maxAmountCents: number;
+            /**
+             * @description The canonical grouping key — the handle the confirm/dismiss verdict is
+             *     keyed on (`set_subscription_verdict`).
+             */
+            merchantKey: string;
+            merchantRaw: string;
+            /** Format: int64 */
+            minAmountCents: number;
+            /**
+             * Format: int64
+             * @description Cost per month with cadence accounted for, positive. Computed in
+             *     `finsight-core` so the UI does not re-derive the normalisation and
+             *     disagree with the budget and Copilot figures built on the same rule.
+             */
+            monthlyEquivalentCents: number;
+            nextExpected: string;
+            /** Format: int64 */
+            occurrences: number;
+            priceChange?: components["schemas"]["PriceChangeDto"] | null;
+            /** @description Human-readable evidence for the classification. */
+            reasons: string[];
+            /**
+             * @description If the user marked this a free trial, the date it converts (`YYYY-MM-DD`);
+             *     a heads-up fires shortly before. `null` when not a trial (#75).
+             */
+            trialEndsAt?: string | null;
+            /**
+             * @description The user's durable verdict on this series: "confirmed" | "dismissed" |
+             *     "cancelled" | null. A dismissed series is suppressed from alerts; a
+             *     cancelled one stops ongoing alerts but flags a charge after the cancel
+             *     date (#75).
+             */
+            verdict?: string | null;
+        };
+        RejectActionItemRequest: {
+            itemId: string;
+        };
+        /**
+         * @description The user dismisses the proposal without providing a replacement category.
+         *     Canonical `transactions.category_id` is left untouched (it already holds
+         *     the LLM's applied guess) — this only removes the item from the review
+         *     queue.
+         */
+        RejectCategoryProposalRequest: {
+            id: string;
+        };
+        RejectSimplefinTransferRequest: {
+            transferId: string;
+        };
+        /** @description Remove one exemplar by its own id. No-op if it's already gone. */
+        RemoveCategoryExampleRequest: {
+            id: string;
+        };
+        RemoveRestorationLegRequest: {
+            legId: string;
+        };
+        RenameCategoryRequest: {
+            id: string;
+            label: string;
+        };
+        ReportData: {
+            monthly: components["schemas"]["MonthSummary"][];
+            monthlyLastYear: components["schemas"]["MonthSummary"][];
+            topCategories: components["schemas"]["CategoryTotal"][];
+            topMerchants: components["schemas"]["MerchantTotal"][];
+        };
+        RestorationEnvelope: {
+            closedAt?: string | null;
+            counterpartyPattern?: string | null;
+            createdAt: string;
+            destinationAccountId?: string | null;
+            id: string;
+            label: string;
+            note?: string | null;
+            openedOn: string;
+            /** Format: int64 */
+            originalCents: number;
+            sourceAccountId?: string | null;
+        };
+        RestorationEnvelopeInput: {
+            /**
+             * @description Optional `%name%` pattern for the person expected to pay some of it
+             *     back. One person deliberately — see the repo docs.
+             */
+            counterpartyPattern?: string | null;
+            destinationAccountId?: string | null;
+            label: string;
+            note?: string | null;
+            /** @description ISO date the money left the pot. */
+            openedOn: string;
+            /** Format: int64 */
+            originalCents: number;
+            sourceAccountId?: string | null;
+        };
+        RestorationLeg: {
+            /** Format: int64 */
+            amountCents: number;
+            envelopeId: string;
+            id: string;
+            notedOn: string;
+            transactionId?: string | null;
+        };
+        /**
+         * @description Everything needed to say the sentence, and nothing that would need to be
+         *     asserted without evidence.
+         */
+        RestorationStatus: {
+            /**
+             * Format: int64
+             * @description What a person still owes, from the counterparty tab. Zero when the
+             *     envelope names nobody — an unlinked envelope has nothing collectable,
+             *     and guessing across every counterparty would produce a confident wrong
+             *     figure.
+             */
+            collectableCents: number;
+            /** Format: int64 */
+            daysOpen: number;
+            envelope: components["schemas"]["RestorationEnvelope"];
+            /**
+             * Format: int64
+             * @description What the user has to find themselves: left-to-restore minus collectable.
+             */
+            fundYourselfCents: number;
+            /**
+             * Format: int64
+             * @description Original minus restored. The headline number.
+             */
+            leftToRestoreCents: number;
+            legs: components["schemas"]["RestorationLeg"][];
+            /**
+             * Format: int64
+             * @description Sum of everything attributed as already gone back.
+             */
+            restoredCents: number;
+            /** @description Open long enough that it should be reconciled and closed. */
+            stale: boolean;
+            /** @description Why the ceiling is what it is, or why there isn't one. */
+            stillHeldBasis: string;
+            /**
+             * Format: int64
+             * @description An UPPER BOUND on what could still be sitting in the destination
+             *     account, never a claim that it is.
+             *
+             *     The naive "still remaining" figure degrades silently: withdraw in
+             *     January, flag a couple of legs, and it will still confidently report the
+             *     same number in July after six months of unrelated churn. At that point
+             *     it is not measuring anything.
+             *
+             *     The account's lowest end-of-day balance since the withdrawal is a real
+             *     bound instead — if checking dipped to $2,000 in March, the user
+             *     demonstrably is not still holding $9,500. `None` when the destination is
+             *     unknown or its balance cannot be reconstructed, which is the honest
+             *     answer rather than a guess.
+             */
+            stillHeldCeilingCents?: number | null;
+        };
+        ResumeRecipeRequest: {
+            id: string;
+        };
+        /**
+         * @description Revise a saved scenario's assumptions (issue #73). Stores a second set of
+         *     what-if params alongside the immutable original; the returned detail carries
+         *     the recalculated `revised_result` next to the original and current results.
+         *     Never touches the active plan, and never overwrites the original params.
+         */
+        ReviseScenarioRequest: {
+            id: string;
+            params: components["schemas"]["ScenarioParamsInput"];
+        };
+        RowError: {
+            reason: string;
+            /** Format: int32 */
+            row_number: number;
+        };
+        Rule: {
+            category_id: string;
+            /** Format: date-time */
+            created_at: string;
+            enabled: boolean;
+            id: string;
+            pattern: string;
+            source: string;
+            treatment: string;
+        };
+        RuleProposal: {
+            categoryId: string;
+            createdAt: string;
+            description: string;
+            id: string;
+            pattern: string;
+            status: string;
+            whenLabel: string;
+        };
+        /** @description Rule with resolved category label and color. */
+        RuleWithCategory: {
+            categoryColor: string;
+            categoryId: string;
+            categoryLabel: string;
+            createdAt: string;
+            enabled: boolean;
+            id: string;
+            pattern: string;
+            source: string;
+        };
+        RunScenarioRequest: {
+            description: string;
+            /** Format: int32 */
+            months: number;
+            params?: components["schemas"]["ScenarioParamsInput"] | null;
+        };
+        SaveLlmProviderRequest: {
+            config: components["schemas"]["LlmProviderConfig"];
+        };
+        SaveMonthCloseInput: {
+            /** @description Flag ids the user ticked as acknowledged — recorded when completing. */
+            acknowledgedFlagIds?: string[];
+            /** Format: int32 */
+            month: number;
+            notes?: string | null;
+            /** @description Target status: "in_progress" (start/resume), "completed" (freeze), "skipped". */
+            status: string;
+            /** Format: int32 */
+            year: number;
+        };
+        /**
+         * @description Advance the close lifecycle. `completed` freezes the snapshot, baseline, and
+         *     acknowledged flags; `in_progress`/`skipped` only move status + notes and
+         *     leave any prior frozen record intact (reopen keeps history; re-completing
+         *     re-freezes explicitly).
+         */
+        SaveMonthCloseRequest: {
+            input: components["schemas"]["SaveMonthCloseInput"];
+        };
+        SaveProviderApiKeyRequest: {
+            key: string;
+            providerId: string;
+        };
+        SavePushSubscriptionRequest: {
+            auth: string;
+            endpoint: string;
+            label?: string | null;
+            p256dh: string;
+        };
+        /**
+         * @description Save a scenario durably: capture the current baseline, re-project the params
+         *     against it, and store params + baseline + result together so the scenario
+         *     can later be recomputed, compared, and checked for staleness.
+         */
+        SaveScenarioRequest: {
+            description: string;
+            /** Format: int32 */
+            months: number;
+            params: components["schemas"]["ScenarioParamsInput"];
+        };
+        SaveSimplefinSetupTokenRequest: {
+            token: string;
+        };
+        /**
+         * @description A saved scenario with everything needed to compare and act on it. The
+         *     `original_*` fields are exactly what was saved; `current_result`/`is_stale`
+         *     recompute it against TODAY's baseline so every compared scenario shares one
+         *     baseline (consistent by construction) while the original stays distinct.
+         */
+        SavedScenarioDetail: {
+            createdAt: string;
+            currentResult?: components["schemas"]["ScenarioResult"] | null;
+            description: string;
+            id: string;
+            /** @description Whether the current baseline differs materially from the saved one. */
+            isStale?: boolean | null;
+            /** Format: int32 */
+            months: number;
+            originalBaseline?: components["schemas"]["BaselineSummary"] | null;
+            originalResult: components["schemas"]["ScenarioResult"];
+            params?: components["schemas"]["ScenarioParamsInput"] | null;
+            recomputable: boolean;
+            revisedParams?: components["schemas"]["ScenarioParamsInput"] | null;
+            revisedResult?: components["schemas"]["ScenarioResult"] | null;
+        };
+        SavingsRatePoint: {
+            /** Format: int64 */
+            expenseCents: number;
+            /** Format: int64 */
+            incomeCents: number;
+            month: string;
+            /** Format: int64 */
+            savingsRatePct: number;
+        };
+        ScenarioParamsInput: {
+            /** Format: int32 */
+            incomeDeltaPct: number;
+            label: string;
+            /** Format: int64 */
+            monthlyExpenseDeltaCents: number;
+            /** Format: int64 */
+            oneTimeCents: number;
+            /** Format: int32 */
+            startMonthOffset: number;
+        };
+        /**
+         * @description The reviewable result of promoting a scenario. Deliberately carries NO write
+         *     path: promoting produces suggestions only, so exploration can never silently
+         *     change live budgets, goals, or debt plans.
+         */
+        ScenarioPlanProposal: {
+            changes: components["schemas"]["PlanChange"][];
+            description: string;
+            note: string;
+            scenarioId: string;
+        };
+        ScenarioResult: {
+            baselineMonthly: number[];
+            considerations: string[];
+            goalsAffected: string[];
+            /** Format: int64 */
+            monthlyImpactCents: number;
+            /** Format: int64 */
+            runwayChangeDays: number;
+            scenarioMonthly: number[];
+            verdict: boolean;
+        };
+        /**
+         * @description Input for [`export_search_transactions_csv`] — mirrors the Copilot
+         *     `search_transactions` tool's query shape so the exported rows match
+         *     exactly what the card displayed. Moved here from finsight-bindings in Phase 4
+         *     (was finsight-bindings-only before the export commands became transport-agnostic).
+         */
+        SearchTxnQueryInput: {
+            account?: string | null;
+            direction?: string | null;
+            endDate?: string | null;
+            merchant?: string | null;
+            /** Format: int64 */
+            minAmountCents?: number | null;
+            startDate?: string | null;
+        };
+        Security: {
+            connectionId: string;
+            currency?: string | null;
+            externalSecurityId: string;
+            id: string;
+            name?: string | null;
+            tickerSymbol?: string | null;
+        };
+        /**
+         * @description See `vapid_keypair_for_db` — the `Db`-only entry point, for the background
+         *     scheduler.
+         */
+        SendPushForDbRequest: {
+            payload: components["schemas"]["PushPayload"];
+        };
+        /**
+         * @description Deliver `payload` to every device this user registered.
+         *
+         *     Never returns Err for a per-device failure: one dead subscription must not
+         *     abort delivery to the user's other devices, so failures are counted in the
+         *     report instead. A 404/410 from the push service means the subscription is
+         *     permanently gone, and the row is deleted — otherwise every future send
+         *     retries a device that will never come back.
+         */
+        SendPushRequest: {
+            payload: components["schemas"]["PushPayload"];
+        };
+        SetAccountBalanceRequest: {
+            /** Format: int64 */
+            balanceCents: number;
+            id: string;
+        };
+        SetAccountOwnerSharesRequest: {
+            accountId: string;
+            owners: components["schemas"]["OwnerShare"][];
+        };
+        SetAccountOwnersRequest: {
+            accountId: string;
+            memberIds: string[];
+        };
+        SetAnomalyDismissedRequest: {
+            dismissed: boolean;
+            txnId: string;
+        };
+        SetAssetOwnersRequest: {
+            assetId: string;
+            owners: components["schemas"]["OwnerShare"][];
+        };
+        SetAutoCategorizeEnabledRequest: {
+            enabled: boolean;
+        };
+        SetBudgetRequest: {
+            /** Format: int64 */
+            amountCents: number;
+            categoryId: string;
+        };
+        SetCategoryGroupRequest: {
+            categoryId: string;
+            groupId: string;
+        };
+        SetCategoryGuidanceRequest: {
+            guidance?: string | null;
+            id: string;
+        };
+        SetCategorySpendingTypeRequest: {
+            id: string;
+            spendingType?: string | null;
+        };
+        SetCompletionProviderRequest: {
+            config: components["schemas"]["CompletionProviderConfig"];
+        };
+        /**
+         * @description Record the user's 3-way verdict (transfer / settle-up / real spending) on
+         *     a transfer-review counterparty transaction. Sticky: survives re-imports
+         *     and categorizer re-runs.
+         */
+        SetCounterpartyVerdictRequest: {
+            id: string;
+            verdict: components["schemas"]["CounterpartyVerdict"];
+        };
+        SetCurrencyRequest: {
+            currency: string;
+        };
+        SetFinancialAssumptionsRequest: {
+            input: components["schemas"]["FinancialAssumptionsInput"];
+        };
+        SetFinancialPhilosophyRequest: {
+            input: components["schemas"]["FinancialPhilosophyDto"];
+        };
+        SetNotificationPrefsRequest: {
+            prefs: components["schemas"]["NotificationPrefsDto"];
+        };
+        SetNotificationsEnabledRequest: {
+            enabled: boolean;
+        };
+        SetSelfMemberRequest: {
+            memberId: string;
+        };
+        SetSimplefinSyncSettingsRequest: {
+            settings: components["schemas"]["SimpleFinSyncSettings"];
+        };
+        SetSpendingAnnotationRequest: {
+            merchantKey: string;
+            verdict: string;
+        };
+        /**
+         * @description Mark a detected subscription as a free TRIAL converting on `trial_ends_at`
+         *     (`YYYY-MM-DD`), or clear it with `trial_ends_at = None`. `label` is the
+         *     display name captured for the reminder. A heads-up fires shortly before the
+         *     date (#75).
+         */
+        SetSubscriptionTrialRequest: {
+            label: string;
+            merchantKey: string;
+            trialEndsAt?: string | null;
+        };
+        /**
+         * @description Set (or clear, with `verdict = None`) the user's confirm/dismiss verdict on a
+         *     detected subscription. `verdict` accepts "confirmed" | "dismissed"; any other
+         *     value (or null) clears it, so a bad string can't corrupt state.
+         */
+        SetSubscriptionVerdictRequest: {
+            merchantKey: string;
+            verdict?: string | null;
+        };
+        SetTransactionFlagsRequest: {
+            id: string;
+            isReimbursable: boolean;
+            isSplit: boolean;
+        };
+        SetTransactionOwnerRequest: {
+            memberId?: string | null;
+            transactionId: string;
+        };
+        SetTransactionSplitsRequest: {
+            splits: components["schemas"]["SplitInputDto"][];
+            transactionId: string;
+        };
+        SetTransactionTransferRequest: {
+            id: string;
+            isTransfer: boolean;
+        };
+        SimpleFinAccountImportRequest: {
+            connectionId: string;
+            nickname?: string | null;
+            simplefinId: string;
+        };
+        SimpleFinAccountInfo: {
+            accountGroup: string;
+            accountType: components["schemas"]["AccountType"];
+            balance: string;
+            connectionId: string;
+            connectionName: string;
+            currency: string;
+            id: string;
+            name: string;
+        };
+        SimpleFinAlert: {
+            accountId: string;
+            /** Format: date-time */
+            acknowledgedAt?: string | null;
+            alertType: string;
+            /** Format: date-time */
+            createdAt: string;
+            detailsJson?: string | null;
+            id: string;
+            message: string;
+            severity: string;
+        };
+        SimpleFinConnection: {
+            access_url_ref: string;
+            conn_id?: string | null;
+            /** Format: date-time */
+            created_at: string;
+            id: string;
+            label?: string | null;
+            last_error?: string | null;
+            /** Format: date-time */
+            last_synced_at?: string | null;
+            org_id?: string | null;
+            org_name?: string | null;
+            org_url?: string | null;
+            sfin_url?: string | null;
+            status: string;
+        };
+        SimpleFinConnectionInfo: {
+            /** Format: date-time */
+            createdAt: string;
+            id: string;
+            label?: string | null;
+            /** Format: date-time */
+            lastSyncedAt?: string | null;
+            orgName?: string | null;
+            status: string;
+        };
+        SimpleFinConnectionPatch: {
+            label?: string | null;
+            last_error?: string | null;
+            /** Format: date-time */
+            last_synced_at?: string | null;
+            org_name?: string | null;
+            status?: string | null;
+        };
+        SimpleFinPurgeSummary: {
+            /** Format: int64 */
+            accountsDeleted: number;
+            /** Format: int64 */
+            connectionsDeleted: number;
+            /** Format: int64 */
+            transactionsDeleted: number;
+        };
+        SimpleFinStatus: {
+            configured: boolean;
+        };
+        SimpleFinSyncSettings: {
+            backgroundSyncEnabled: boolean;
+            /** Format: int32 */
+            backgroundSyncIntervalMinutes: number;
+        };
+        SkippedChange: {
+            id: string;
+            reason: string;
+        };
+        SpendingBreakdown: {
+            /** Format: int64 */
+            fixedCents: number;
+            /** Format: int64 */
+            guiltFreeCents: number;
+            /** Format: int64 */
+            investmentsCents: number;
+            /** Format: int64 */
+            savingsCents: number;
+            /** Format: int64 */
+            totalIncomeCents: number;
+            /** Format: int64 */
+            untaggedCents: number;
+        };
+        SpendingPlan: {
+            /**
+             * @description Drivers the user accepted (expected/investment) — kept in the floor,
+             *     surfaced so they can be reviewed and undone; not levers, not self-correcting.
+             */
+            accepted: components["schemas"]["Driver"][];
+            /**
+             * Format: int64
+             * @description Your robust normal (median of the trailing months).
+             */
+            baseline_monthly_cents: number;
+            currency: string;
+            /** @description The specific recurring levers to act on, ranked by size. */
+            levers: components["schemas"]["Driver"][];
+            note: string;
+            /**
+             * Format: int64
+             * @description Where you'd land if the one-offs lapse AND you trim every lever.
+             */
+            projected_after_levers_cents: number;
+            /**
+             * Format: int64
+             * @description The elevated month's spend (monthly-equivalent).
+             */
+            recent_monthly_cents: number;
+            /**
+             * Format: int64
+             * @description Recurring/emerging drivers you could trim — the levers.
+             */
+            recoverable_recurring_cents: number;
+            /** @description The one-off drivers that lapse on their own — shown as "leave them". */
+            self_correcting: components["schemas"]["Driver"][];
+            /**
+             * Format: int64
+             * @description One-off drivers that fall off on their own — no action needed.
+             */
+            self_correcting_cents: number;
+            /**
+             * Format: int64
+             * @description Present only with a target BELOW what trimming reaches: the remaining
+             *     gap is structural (a floor / fixed commitments), not more trimming.
+             */
+            structural_gap_cents?: number | null;
+            /** Format: int64 */
+            target_monthly_cents?: number | null;
+        };
+        SplitInputDto: {
+            /** Format: int64 */
+            amountCents: number;
+            categoryId?: string | null;
+        };
+        StageRestoreBackupRequest: {
+            path: string;
+        };
+        StarterCategory: {
+            color: string;
+            group_id: string;
+            id: string;
+            label: string;
+        };
+        /**
+         * @description Send a message to the Copilot within a conversation.
+         *
+         *     1. Persists the user message.
+         *     2. Runs the reasoning engine (deep-mode agent pipeline).
+         *     3. Streams the answer word-by-word via `copilot-stream-frame` frames pushed
+         *     through `sink` (a real Tauri window event on desktop, an SSE broadcast on
+         *     finsight-server).
+         *     4. Persists the assistant message and emits the `Done` frame.
+         *     5. Auto-generates a title for new conversations after the first message.
+         */
+        StreamCopilotMessageRequest: {
+            conversationId: string;
+            history: components["schemas"]["ChatHistoryEntry"][];
+            runId: string;
+            sourceMessageId?: string | null;
+            text: string;
+        };
+        SyncRun: {
+            /** Format: int64 */
+            accountsFailed: number;
+            /** Format: int64 */
+            accountsSucceeded: number;
+            /** Format: int64 */
+            accountsTotal: number;
+            /** Format: int64 */
+            added: number;
+            errorSummary?: string | null;
+            /** Format: date-time */
+            finishedAt?: string | null;
+            id: string;
+            /** Format: int64 */
+            queuedForReview: number;
+            /** Format: int64 */
+            skipped: number;
+            /** Format: date-time */
+            startedAt: string;
+            status: string;
+            trigger: string;
+            /** Format: int64 */
+            updated: number;
+        };
+        SyncSimplefinAccountRequest: {
+            accountId: string;
+        };
+        SyncSummary: {
+            added: number;
+            queuedForReview: number;
+            skipped: number;
+            updated: number;
+        };
+        TestCompletionProviderRequest: {
+            apiKey?: string | null;
+            config: components["schemas"]["CompletionProviderConfig"];
+        };
+        ToggleRuleRequest: {
+            enabled: boolean;
+            id: string;
+        };
+        Transaction: {
+            account_id: string;
+            activity?: components["schemas"]["TxnActivity"] | null;
+            /** Format: double */
+            ai_confidence?: number | null;
+            ai_explanation?: string | null;
+            /** Format: int64 */
+            amount_cents: number;
+            category_color?: string | null;
+            category_id?: string | null;
+            category_label?: string | null;
+            /** Format: date-time */
+            created_at: string;
+            external_account_id?: string | null;
+            external_tx_id?: string | null;
+            id: string;
+            imported_id?: string | null;
+            is_anomaly: boolean;
+            is_reimbursable: boolean;
+            is_split: boolean;
+            is_transfer: boolean;
+            merchant_color?: string | null;
+            merchant_id?: string | null;
+            merchant_initials?: string | null;
+            merchant_label?: string | null;
+            merchant_raw: string;
+            notes?: string | null;
+            /**
+             * @description Household member this transaction is attributed to, overriding the
+             *     account's ownership shares for its cashflow (a personal purchase on a
+             *     joint account). None = use the account shares.
+             */
+            owner_member_id?: string | null;
+            pending: boolean;
+            /** Format: date-time */
+            posted_at: string;
+            raw_synced_data?: string | null;
+            settle_up: boolean;
+            source?: string | null;
+            status: components["schemas"]["TransactionStatus"];
+            /** @description Display name of the peer leg's account ("Transfer → Tangerine Savings"). */
+            transfer_peer_account_name?: string | null;
+            /**
+             * @description Id of the matching leg in another account when this transaction is one
+             *     half of a paired cross-account transfer (see `categorize::pair_transfers`).
+             */
+            transfer_peer_id?: string | null;
+        };
+        TransactionSplitDto: {
+            /** Format: int64 */
+            amountCents: number;
+            categoryId?: string | null;
+            id: string;
+            txnId: string;
+        };
+        /** @enum {string} */
+        TransactionStatus: "cleared" | "pending" | "manual";
+        TransactionTransfer: {
+            confidence: string;
+            /** Format: date-time */
+            detectedAt: string;
+            fromTransactionId: string;
+            id: string;
+            toTransactionId: string;
+            userConfirmed: boolean;
+        };
+        TransferSuggestionInfo: {
+            confidence: string;
+            /** Format: date-time */
+            detectedAt: string;
+            fromAccountName: string;
+            /** Format: int64 */
+            fromAmountCents: number;
+            fromMerchant: string;
+            /** Format: date-time */
+            fromPostedAt: string;
+            fromTransactionId: string;
+            id: string;
+            toAccountName: string;
+            /** Format: int64 */
+            toAmountCents: number;
+            toMerchant: string;
+            /** Format: date-time */
+            toPostedAt: string;
+            toTransactionId: string;
+        };
+        /**
+         * @description Result of a transfer verdict: the updated transaction, plus how many other
+         *     UNDECIDED transactions share the same counterparty so the UI can offer to
+         *     apply the verdict to all of them in one click.
+         */
+        TransferVerdictResult: {
+            /** Format: int64 */
+            similarCount: number;
+            /** @description Human-readable counterparty ("jordan") for the offer text. */
+            similarLabel?: string | null;
+            /**
+             * @description LIKE pattern identifying the siblings (pass to
+             *     `apply_transfer_verdict_to_similar`), e.g. `%jordan%`.
+             */
+            similarPattern?: string | null;
+            transaction: components["schemas"]["Transaction"];
+        };
+        TriggerRecipeRequest: {
+            id: string;
+        };
+        /**
+         * @description Investment/activity metadata parsed from brokerage CSV exports
+         *     (Wealthsimple et al). Stored provider-verbatim in the six V048 columns;
+         *     `categorize::activity_implies_transfer` decides which activity types are
+         *     internal moves (Trade, MoneyMovement) vs real income/expense.
+         */
+        TxnActivity: {
+            activitySubType?: string | null;
+            activityType: string;
+            /**
+             * Format: double
+             * @description Signed units traded; SELL rows are negative.
+             */
+            quantity?: number | null;
+            securityName?: string | null;
+            symbol?: string | null;
+            /**
+             * Format: double
+             * @description Dollars at full export precision (sub-cent), NOT cents.
+             */
+            unitPrice?: number | null;
+        };
+        TxnFilterInput: {
+            accountId?: string | null;
+            endDate?: string | null;
+            filterPreset?: string | null;
+            /** Format: int64 */
+            limit?: number | null;
+            /** Format: int64 */
+            offset?: number | null;
+            search?: string | null;
+            startDate?: string | null;
+        };
+        TxnPatch: {
+            /** Format: double */
+            ai_confidence?: number | null;
+            /** Format: int64 */
+            amount_cents?: number | null;
+            category_id?: string | null;
+            merchant_raw?: string | null;
+            notes?: string | null;
+        };
+        /**
+         * @description A currency the user holds that these metrics are NOT denominated in.
+         *     Reported so the UI can say "also holding US$3,200, not converted" instead of
+         *     either inventing an exchange rate or silently omitting real money.
+         */
+        UnconvertedHolding: {
+            /** Format: int64 */
+            accountCount: number;
+            /** Format: int64 */
+            assetCount: number;
+            /** Format: int64 */
+            balanceCents: number;
+            code: string;
+        };
+        /**
+         * @description One counterparty's undecided transfer-like rows, netted for the grouped
+         *     review surface. Mirrors `finsight_core::repos::transactions::UnresolvedCounterparty`.
+         */
+        UnresolvedCounterpartyDto: {
+            /** Format: int64 */
+            inflowCents: number;
+            label: string;
+            /** Format: int64 */
+            outflowCents: number;
+            pattern?: string | null;
+            /** Format: int64 */
+            txnCount: number;
+        };
+        UpdateAccountRequest: {
+            id: string;
+            patch: components["schemas"]["AccountPatch"];
+        };
+        UpdateCategoryColorRequest: {
+            color: string;
+            id: string;
+        };
+        UpdateGoalBalanceRequest: {
+            /** Format: int64 */
+            currentCents: number;
+            id: string;
+        };
+        UpdateGoalMonthlyRequest: {
+            id: string;
+            /** Format: int64 */
+            monthlyCents: number;
+        };
+        /**
+         * @description Set how much a goal matters and what its date commits the user to.
+         *
+         *     The two travel together because neither is meaningful to the planner alone:
+         *     a hard deadline on a `someday` goal and a `critical` goal with no date are
+         *     both coherent, and allocation needs to see the pair to order them.
+         *
+         *     Unrecognised strings fall back to the neutral defaults rather than erroring
+         *     — this is a preference, and refusing to save a goal over a bad enum value
+         *     would be a worse outcome than storing "normal".
+         */
+        UpdateGoalPriorityRequest: {
+            deadlineStrictness: string;
+            id: string;
+            priority: string;
+        };
+        UpdateGoalPurposeRequest: {
+            id: string;
+            purpose?: string | null;
+        };
+        UpdateManualAssetRequest: {
+            id: string;
+            patch: components["schemas"]["ManualAssetPatch"];
+        };
+        UpdatePlannedTransactionRequest: {
+            id: string;
+            patch: components["schemas"]["PlannedTransactionPatch"];
+        };
+        UpdateRecipeRequest: {
+            cadence: string;
+            /** Format: int64 */
+            dayOfMonth?: number | null;
+            /** Format: int64 */
+            dayOfWeek?: number | null;
+            description: string;
+            id: string;
+            promptTemplate: string;
+            title: string;
+        };
+        UpdateTransactionRequest: {
+            id: string;
+            patch: components["schemas"]["TxnPatch"];
+        };
+        UpdateTxnResult: {
+            proposed_rule?: components["schemas"]["ProposedRuleDto"] | null;
+            transaction: components["schemas"]["Transaction"];
+        };
+        /** @enum {string} */
+        Urgency: "critical" | "normal" | "low";
+        /** @enum {string} */
+        WarningLevel: "info" | "caution";
+    };
     responses: never;
     parameters: never;
     requestBodies: never;
@@ -3943,26 +7857,6 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
-    get_openapi: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OpenAPI JSON */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": Record<string, never>;
-                };
-            };
-        };
-    };
     accept_category_proposal: {
         parameters: {
             query?: never;
@@ -3970,19 +7864,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["AcceptCategoryProposalRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["UpdateTxnResult"];
                 };
             };
         };
@@ -3994,9 +7887,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["AcceptImportCandidateMatchRequest"];
             };
         };
         responses: {
@@ -4005,9 +7898,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -4018,9 +7909,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["AcceptRuleProposalRequest"];
             };
         };
         responses: {
@@ -4029,9 +7920,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -4042,9 +7931,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["AcknowledgeSimplefinAlertRequest"];
             };
         };
         responses: {
@@ -4053,9 +7942,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -4066,19 +7953,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["AddCategoryExampleRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["CategoryExample"];
                 };
             };
         };
@@ -4090,19 +7976,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["AddRestorationLegRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["RestorationLeg"];
                 };
             };
         };
@@ -4114,19 +7999,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["AppReady"];
                 };
             };
         };
@@ -4138,19 +8018,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["ApplyCounterpartyVerdictToSimilarRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": number;
                 };
             };
         };
@@ -4162,9 +8041,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["ApplyNextMonthPlanRequest"];
             };
         };
         responses: {
@@ -4173,9 +8052,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -4186,19 +8063,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["ApplyScenarioRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["ApplyScenarioResult"];
                 };
             };
         };
@@ -4210,19 +8086,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["ApplyTransferVerdictToSimilarRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": number;
                 };
             };
         };
@@ -4234,9 +8109,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["ApproveActionItemRequest"];
             };
         };
         responses: {
@@ -4245,9 +8120,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -4258,9 +8131,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["ArchiveAccountRequest"];
             };
         };
         responses: {
@@ -4269,9 +8142,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -4282,9 +8153,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["ArchiveCategoryRequest"];
             };
         };
         responses: {
@@ -4293,9 +8164,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -4306,9 +8175,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["ArchiveGoalRequest"];
             };
         };
         responses: {
@@ -4317,9 +8186,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -4330,9 +8197,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["ArchiveScenarioRequest"];
             };
         };
         responses: {
@@ -4341,9 +8208,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -4354,19 +8219,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["AskAgentRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["AgentAnswer"];
                 };
             };
         };
@@ -4378,20 +8242,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
             /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -4402,19 +8260,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["ClearScenarioRevisionRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["SavedScenarioDetail"];
                 };
             };
         };
@@ -4426,9 +8283,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["CloseAgentSessionRequest"];
             };
         };
         responses: {
@@ -4437,9 +8294,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -4450,9 +8305,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["CloseRestorationEnvelopeRequest"];
             };
         };
         responses: {
@@ -4461,9 +8316,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -4474,9 +8327,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["CommitStarterCategoriesRequest"];
             };
         };
         responses: {
@@ -4485,9 +8338,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -4498,19 +8349,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["ComputeDebtPayoffRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["DebtPayoffResult"][];
                 };
             };
         };
@@ -4522,9 +8372,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["ConfirmSimplefinTransferRequest"];
             };
         };
         responses: {
@@ -4533,9 +8383,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -4546,19 +8394,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["ContributeToGoalRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["GoalContributionDto"];
                 };
             };
         };
@@ -4570,19 +8417,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["CorrectCategoryProposalRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["UpdateTxnResult"];
                 };
             };
         };
@@ -4594,19 +8440,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["CreateAccountRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["Account"];
                 };
             };
         };
@@ -4618,19 +8463,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["CreateAgentSessionRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["AgentSession"];
                 };
             };
         };
@@ -4642,19 +8486,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["CreateCategoryRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["Category"];
                 };
             };
         };
@@ -4666,19 +8509,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["CreateCategoryGroupRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["CategoryGroup"];
                 };
             };
         };
@@ -4690,19 +8532,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": string;
                 };
             };
         };
@@ -4714,19 +8551,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["CreateGoalRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["GoalDto"];
                 };
             };
         };
@@ -4738,19 +8574,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["CreateHouseholdMemberRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["HouseholdMember"];
                 };
             };
         };
@@ -4762,19 +8597,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["CreateImportCandidateTransactionRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": string;
                 };
             };
         };
@@ -4786,19 +8620,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["CreateManualAssetRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["ManualAsset"];
                 };
             };
         };
@@ -4810,19 +8643,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["BackupInfo"];
                 };
             };
         };
@@ -4834,19 +8662,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["CreatePlannedTransactionRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["PlannedTransaction"];
                 };
             };
         };
@@ -4858,19 +8685,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["CreateRecipeRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["AgentRecipe"];
                 };
             };
         };
@@ -4882,19 +8708,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["CreateRestorationEnvelopeRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["RestorationEnvelope"];
                 };
             };
         };
@@ -4906,19 +8731,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["CreateRuleRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["Rule"];
                 };
             };
         };
@@ -4930,19 +8754,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["CreateTransactionRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["Transaction"];
                 };
             };
         };
@@ -4954,9 +8777,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["DeclineRuleProposalRequest"];
             };
         };
         responses: {
@@ -4965,9 +8788,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -4978,20 +8799,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
             /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -5002,9 +8817,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["DeleteConversationRequest"];
             };
         };
         responses: {
@@ -5013,9 +8828,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -5026,19 +8839,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["DeleteConversationMessagesAfterRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": number;
                 };
             };
         };
@@ -5050,9 +8862,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["DeleteHouseholdMemberRequest"];
             };
         };
         responses: {
@@ -5061,9 +8873,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -5074,9 +8884,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["DeleteManualAssetRequest"];
             };
         };
         responses: {
@@ -5085,9 +8895,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -5098,9 +8906,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["DeletePlannedTransactionRequest"];
             };
         };
         responses: {
@@ -5109,9 +8917,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -5122,19 +8928,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["DeletePushSubscriptionRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": boolean;
                 };
             };
         };
@@ -5146,9 +8951,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["DeleteRecipeRequest"];
             };
         };
         responses: {
@@ -5157,9 +8962,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -5170,9 +8973,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["DeleteRestorationEnvelopeRequest"];
             };
         };
         responses: {
@@ -5181,9 +8984,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -5194,9 +8995,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["DeleteScenarioRequest"];
             };
         };
         responses: {
@@ -5205,9 +9006,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -5218,9 +9017,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["DeleteSimplefinConnectionRequest"];
             };
         };
         responses: {
@@ -5229,9 +9028,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -5242,9 +9039,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["DeleteTransactionRequest"];
             };
         };
         responses: {
@@ -5253,9 +9050,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -5266,9 +9061,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["DiscardUnfinishedImportRequest"];
             };
         };
         responses: {
@@ -5277,9 +9072,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -5290,20 +9083,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
             /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -5314,9 +9101,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["DismissImportCandidateRequest"];
             };
         };
         responses: {
@@ -5325,9 +9112,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -5338,19 +9123,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["DuplicateScenarioRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["SavedScenarioDetail"] | null;
                 };
             };
         };
@@ -5362,9 +9146,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["EditConversationUserMessageRequest"];
             };
         };
         responses: {
@@ -5373,9 +9157,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -5386,19 +9168,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["ExecuteActionBundleRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["ExecutionSummary"];
                 };
             };
         };
@@ -5410,19 +9191,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["ExplainFinancialMetricsRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["MetricExplanation"][];
                 };
             };
         };
@@ -5434,19 +9214,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["MetricExplanation"][];
                 };
             };
         };
@@ -5458,19 +9233,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["ExplainScenarioRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["MetricExplanation"];
                 };
             };
         };
@@ -5482,19 +9256,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["ExportAccountCsvRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": string;
                 };
             };
         };
@@ -5506,19 +9279,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": string;
                 };
             };
         };
@@ -5530,19 +9298,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": string;
                 };
             };
         };
@@ -5554,19 +9317,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["ExportSearchTransactionsCsvRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": string;
                 };
             };
         };
@@ -5578,19 +9340,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["ExportTransactionsCsvRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": string;
                 };
             };
         };
@@ -5602,9 +9363,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["ForgetAgentMemoryRequest"];
             };
         };
         responses: {
@@ -5613,9 +9374,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -5626,19 +9385,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["GetAccountBalanceTimelineRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["AccountBalanceTimeline"];
                 };
             };
         };
@@ -5650,19 +9408,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["GetActionBundleRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["AgentActionBundle"] | null;
                 };
             };
         };
@@ -5674,19 +9431,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["ActionItem"][];
                 };
             };
         };
@@ -5698,19 +9450,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["AgentStatus"];
                 };
             };
         };
@@ -5722,19 +9469,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": boolean;
                 };
             };
         };
@@ -5746,19 +9488,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["GetCashflowForecastRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["CashflowForecast"];
                 };
             };
         };
@@ -5770,19 +9511,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["CompletionProviderConfig"];
                 };
             };
         };
@@ -5794,19 +9530,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["GetConversationMessagesRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["ConversationMessage"][];
                 };
             };
         };
@@ -5818,19 +9553,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": string;
                 };
             };
         };
@@ -5842,19 +9572,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["DataHealth"];
                 };
             };
         };
@@ -5866,19 +9591,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["HealthScore"];
                 };
             };
         };
@@ -5890,19 +9610,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["GetFinancialMetricsRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["FinancialMetrics"];
                 };
             };
         };
@@ -5914,19 +9633,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["FinancialPhilosophyDto"];
                 };
             };
         };
@@ -5938,19 +9652,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["InboxBadgeCount"];
                 };
             };
         };
@@ -5962,19 +9671,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["GetInvestmentSummaryRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["InvestmentSummary"];
                 };
             };
         };
@@ -5986,19 +9694,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["JourneyStatus"];
                 };
             };
         };
@@ -6010,19 +9713,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["GetMonthCloseRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["MonthCloseView"];
                 };
             };
         };
@@ -6034,19 +9736,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["MonthTotals"];
                 };
             };
         };
@@ -6058,19 +9755,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": number;
                 };
             };
         };
@@ -6082,19 +9774,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["NotificationPrefsDto"];
                 };
             };
         };
@@ -6106,19 +9793,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": boolean;
                 };
             };
         };
@@ -6130,19 +9812,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["OnboardingState"];
                 };
             };
         };
@@ -6154,19 +9831,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["PlanData"];
                 };
             };
         };
@@ -6178,19 +9850,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["GetPlannedTransactionRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["PlannedTransaction"] | null;
                 };
             };
         };
@@ -6202,19 +9873,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["PushStatus"];
                 };
             };
         };
@@ -6226,19 +9892,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["GetReportDataRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["ReportData"];
                 };
             };
         };
@@ -6250,19 +9915,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["GetRestorationStatusRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["RestorationStatus"] | null;
                 };
             };
         };
@@ -6274,19 +9938,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["GetSavedCsvMappingRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["CsvImportMapping"] | null;
                 };
             };
         };
@@ -6298,19 +9961,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["SavingsRatePoint"][];
                 };
             };
         };
@@ -6322,19 +9980,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["SimpleFinStatus"];
                 };
             };
         };
@@ -6346,19 +9999,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["SimpleFinSyncSettings"];
                 };
             };
         };
@@ -6370,19 +10018,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["SpendingBreakdown"];
                 };
             };
         };
@@ -6394,19 +10037,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["GetSpendingPathBackRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["PathBackView"] | null;
                 };
             };
         };
@@ -6418,19 +10060,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": number;
                 };
             };
         };
@@ -6442,19 +10079,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["GetTransactionSplitsRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["TransactionSplitDto"][];
                 };
             };
         };
@@ -6466,19 +10102,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": number[];
                 };
             };
         };
@@ -6490,19 +10121,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["MemberNetWorth"][];
                 };
             };
         };
@@ -6514,19 +10140,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["ImportCsvRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["ImportResult"];
                 };
             };
         };
@@ -6538,19 +10163,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["ImportSimplefinAccountsRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": string[];
                 };
             };
         };
@@ -6562,19 +10186,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["ListAccountBalanceHistoryRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["AccountBalancePoint"][];
                 };
             };
         };
@@ -6586,19 +10209,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["ListAccountBalanceSparklinesRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["AccountSparkline"][];
                 };
             };
         };
@@ -6610,19 +10232,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["AccountOwner"][];
                 };
             };
         };
@@ -6634,19 +10251,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["ListAccountPositionsRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["Position"][];
                 };
             };
         };
@@ -6658,19 +10274,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["AccountSummary"][];
                 };
             };
         };
@@ -6682,19 +10293,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["ListActionBundlesRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["AgentActionBundle"][];
                 };
             };
         };
@@ -6706,19 +10316,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["AgentMemory"][];
                 };
             };
         };
@@ -6730,19 +10335,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["AgentSession"][];
                 };
             };
         };
@@ -6754,19 +10354,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["AssetOwner"][];
                 };
             };
         };
@@ -6778,19 +10373,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["BudgetEnvelope"][];
                 };
             };
         };
@@ -6802,19 +10392,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["ListBudgetHistoryRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["CategoryHistory"][];
                 };
             };
         };
@@ -6826,19 +10415,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["CategoryDto"][];
                 };
             };
         };
@@ -6850,19 +10434,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["CategoryWithSpending"][];
                 };
             };
         };
@@ -6874,19 +10453,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["ListCategoryExamplesRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["CategoryExample"][];
                 };
             };
         };
@@ -6898,19 +10476,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["CategoryGroup"][];
                 };
             };
         };
@@ -6922,19 +10495,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["CategoryProposal"][];
                 };
             };
         };
@@ -6946,19 +10514,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["ConversationSummary"][];
                 };
             };
         };
@@ -6970,19 +10533,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["ListExecutionLogRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["AgentExecutionEntry"][];
                 };
             };
         };
@@ -6994,19 +10556,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["ListGoalContributionsRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["GoalContributionDto"][];
                 };
             };
         };
@@ -7018,19 +10579,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["GoalDto"][];
                 };
             };
         };
@@ -7042,19 +10598,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["HouseholdMember"][];
                 };
             };
         };
@@ -7066,19 +10617,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["ImportCandidateWithMatches"][];
                 };
             };
         };
@@ -7090,19 +10636,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["ManualAsset"][];
                 };
             };
         };
@@ -7114,19 +10655,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["ListMemberBudgetEnvelopesRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["MemberBudgetEnvelope"][];
                 };
             };
         };
@@ -7138,19 +10678,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["MonthCloseListItem"][];
                 };
             };
         };
@@ -7162,19 +10697,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["ListNetWorthHistoryRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["NetWorthPoint"][];
                 };
             };
         };
@@ -7186,19 +10720,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["ListNotificationsRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["Notification"][];
                 };
             };
         };
@@ -7210,19 +10743,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["ListPlannedTransactionsRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["PlannedTransaction"][];
                 };
             };
         };
@@ -7234,19 +10766,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["ListProviderModelsRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": string[];
                 };
             };
         };
@@ -7258,19 +10789,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["PushDevice"][];
                 };
             };
         };
@@ -7282,19 +10808,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["ListRecentAgentActivityRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["AgentActivity"][];
                 };
             };
         };
@@ -7306,19 +10831,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["ListRecipeRunsRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["AgentRecipeRun"][];
                 };
             };
         };
@@ -7330,19 +10854,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["ListRecipesRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["AgentRecipe"][];
                 };
             };
         };
@@ -7354,19 +10877,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["RecurringItem"][];
                 };
             };
         };
@@ -7378,19 +10896,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["RestorationEnvelope"][];
                 };
             };
         };
@@ -7402,19 +10915,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["RuleProposal"][];
                 };
             };
         };
@@ -7426,19 +10934,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["RuleWithCategory"][];
                 };
             };
         };
@@ -7450,19 +10953,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["SavedScenarioDetail"][];
                 };
             };
         };
@@ -7474,19 +10972,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["SimpleFinAccountInfo"][];
                 };
             };
         };
@@ -7498,19 +10991,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["SimpleFinAlert"][];
                 };
             };
         };
@@ -7522,19 +11010,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["SimpleFinConnectionInfo"][];
                 };
             };
         };
@@ -7546,19 +11029,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["TransferSuggestionInfo"][];
                 };
             };
         };
@@ -7570,19 +11048,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["ListTransactionsRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["Transaction"][];
                 };
             };
         };
@@ -7594,19 +11071,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["Import"][];
                 };
             };
         };
@@ -7618,19 +11090,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["UnresolvedCounterpartyDto"][];
                 };
             };
         };
@@ -7642,19 +11109,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": number;
                 };
             };
         };
@@ -7666,9 +11128,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["MarkNotificationReadRequest"];
             };
         };
         responses: {
@@ -7677,9 +11139,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -7690,20 +11150,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
             /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -7714,9 +11168,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["MarkSubscriptionCancelledRequest"];
             };
         };
         responses: {
@@ -7725,9 +11179,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -7738,19 +11190,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": number;
                 };
             };
         };
@@ -7762,9 +11209,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["PauseRecipeRequest"];
             };
         };
         responses: {
@@ -7773,9 +11220,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -7786,19 +11231,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["PrepareCsvImportRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["PreparedImportPreview"];
                 };
             };
         };
@@ -7810,19 +11254,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["PreviewCsvColumnsRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["CsvPreview"];
                 };
             };
         };
@@ -7834,19 +11277,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["ProbeOllamaRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["OllamaProbeResult"];
                 };
             };
         };
@@ -7858,19 +11300,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["ProjectGoalGrowthRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["ProjectedValue"];
                 };
             };
         };
@@ -7882,19 +11323,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["PromoteScenarioRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["ScenarioPlanProposal"];
                 };
             };
         };
@@ -7906,19 +11346,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["SimpleFinPurgeSummary"];
                 };
             };
         };
@@ -7930,19 +11365,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": number;
                 };
             };
         };
@@ -7978,20 +11408,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
             /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -8002,9 +11426,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["RejectActionItemRequest"];
             };
         };
         responses: {
@@ -8013,9 +11437,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -8026,9 +11448,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["RejectCategoryProposalRequest"];
             };
         };
         responses: {
@@ -8037,9 +11459,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -8050,9 +11470,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["RejectSimplefinTransferRequest"];
             };
         };
         responses: {
@@ -8061,9 +11481,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -8074,9 +11492,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["RemoveCategoryExampleRequest"];
             };
         };
         responses: {
@@ -8085,9 +11503,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -8098,9 +11514,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["RemoveRestorationLegRequest"];
             };
         };
         responses: {
@@ -8109,9 +11525,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -8122,9 +11536,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["RenameCategoryRequest"];
             };
         };
         responses: {
@@ -8133,9 +11547,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -8146,20 +11558,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
             /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -8170,9 +11576,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["ResumeRecipeRequest"];
             };
         };
         responses: {
@@ -8181,9 +11587,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -8194,19 +11598,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["ReviseScenarioRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["SavedScenarioDetail"];
                 };
             };
         };
@@ -8218,19 +11621,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["RunScenarioRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["RanScenario"];
                 };
             };
         };
@@ -8242,9 +11644,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["SaveLlmProviderRequest"];
             };
         };
         responses: {
@@ -8253,9 +11655,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -8266,19 +11666,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["SaveMonthCloseRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["MonthCloseView"];
                 };
             };
         };
@@ -8290,9 +11689,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["SaveProviderApiKeyRequest"];
             };
         };
         responses: {
@@ -8301,9 +11700,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -8314,9 +11711,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["SavePushSubscriptionRequest"];
             };
         };
         responses: {
@@ -8325,9 +11722,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -8338,19 +11733,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["SaveScenarioRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["SavedScenarioDetail"];
                 };
             };
         };
@@ -8362,19 +11756,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["SaveSimplefinSetupTokenRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["SimpleFinConnectionInfo"][];
                 };
             };
         };
@@ -8386,19 +11779,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["PushDeliveryReport"];
                 };
             };
         };
@@ -8410,9 +11798,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["SetAccountBalanceRequest"];
             };
         };
         responses: {
@@ -8421,9 +11809,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -8434,9 +11820,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["SetAccountOwnerSharesRequest"];
             };
         };
         responses: {
@@ -8445,9 +11831,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -8458,9 +11842,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["SetAccountOwnersRequest"];
             };
         };
         responses: {
@@ -8469,9 +11853,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -8482,9 +11864,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["SetAnomalyDismissedRequest"];
             };
         };
         responses: {
@@ -8493,9 +11875,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -8506,9 +11886,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["SetAssetOwnersRequest"];
             };
         };
         responses: {
@@ -8517,9 +11897,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -8530,9 +11908,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["SetAutoCategorizeEnabledRequest"];
             };
         };
         responses: {
@@ -8541,9 +11919,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -8554,9 +11930,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["SetBudgetRequest"];
             };
         };
         responses: {
@@ -8565,9 +11941,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -8578,9 +11952,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["SetCategoryGroupRequest"];
             };
         };
         responses: {
@@ -8589,9 +11963,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -8602,9 +11974,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["SetCategoryGuidanceRequest"];
             };
         };
         responses: {
@@ -8613,9 +11985,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -8626,9 +11996,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["SetCategorySpendingTypeRequest"];
             };
         };
         responses: {
@@ -8637,9 +12007,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -8650,9 +12018,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["SetCompletionProviderRequest"];
             };
         };
         responses: {
@@ -8661,9 +12029,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -8674,19 +12040,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["SetCounterpartyVerdictRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["Transaction"];
                 };
             };
         };
@@ -8698,9 +12063,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["SetCurrencyRequest"];
             };
         };
         responses: {
@@ -8709,9 +12074,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -8722,9 +12085,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["SetFinancialAssumptionsRequest"];
             };
         };
         responses: {
@@ -8733,9 +12096,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -8746,9 +12107,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["SetFinancialPhilosophyRequest"];
             };
         };
         responses: {
@@ -8757,9 +12118,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -8770,9 +12129,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["SetNotificationPrefsRequest"];
             };
         };
         responses: {
@@ -8781,9 +12140,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -8794,9 +12151,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["SetNotificationsEnabledRequest"];
             };
         };
         responses: {
@@ -8805,9 +12162,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -8818,9 +12173,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["SetSelfMemberRequest"];
             };
         };
         responses: {
@@ -8829,9 +12184,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -8842,9 +12195,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["SetSimplefinSyncSettingsRequest"];
             };
         };
         responses: {
@@ -8853,9 +12206,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -8866,9 +12217,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["SetSpendingAnnotationRequest"];
             };
         };
         responses: {
@@ -8877,9 +12228,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -8890,9 +12239,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["SetSubscriptionTrialRequest"];
             };
         };
         responses: {
@@ -8901,9 +12250,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -8914,9 +12261,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["SetSubscriptionVerdictRequest"];
             };
         };
         responses: {
@@ -8925,9 +12272,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -8938,19 +12283,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["SetTransactionFlagsRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["Transaction"];
                 };
             };
         };
@@ -8962,9 +12306,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["SetTransactionOwnerRequest"];
             };
         };
         responses: {
@@ -8973,9 +12317,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -8986,9 +12328,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["SetTransactionSplitsRequest"];
             };
         };
         responses: {
@@ -8997,9 +12339,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -9010,19 +12350,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["SetTransactionTransferRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["TransferVerdictResult"];
                 };
             };
         };
@@ -9034,9 +12373,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["StageRestoreBackupRequest"];
             };
         };
         responses: {
@@ -9045,9 +12384,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -9058,19 +12395,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["StreamCopilotMessageRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": string;
                 };
             };
         };
@@ -9082,19 +12418,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["AccountSyncResult"][];
                 };
             };
         };
@@ -9106,19 +12437,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["SyncSimplefinAccountRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["SyncSummary"];
                 };
             };
         };
@@ -9130,19 +12460,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["TestCompletionProviderRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["ProviderTestResult"];
                 };
             };
         };
@@ -9154,9 +12483,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["ToggleRuleRequest"];
             };
         };
         responses: {
@@ -9165,9 +12494,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -9178,20 +12505,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
             /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -9202,20 +12523,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
+        requestBody?: never;
         responses: {
             /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -9226,19 +12541,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["TriggerRecipeRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": string;
                 };
             };
         };
@@ -9250,19 +12564,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["UpdateAccountRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["Account"];
                 };
             };
         };
@@ -9274,9 +12587,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["UpdateCategoryColorRequest"];
             };
         };
         responses: {
@@ -9285,9 +12598,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -9298,9 +12609,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["UpdateGoalBalanceRequest"];
             };
         };
         responses: {
@@ -9309,9 +12620,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -9322,9 +12631,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["UpdateGoalMonthlyRequest"];
             };
         };
         responses: {
@@ -9333,9 +12642,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -9346,9 +12653,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["UpdateGoalPriorityRequest"];
             };
         };
         responses: {
@@ -9357,9 +12664,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -9370,9 +12675,9 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["UpdateGoalPurposeRequest"];
             };
         };
         responses: {
@@ -9381,9 +12686,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -9394,19 +12697,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["UpdateManualAssetRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["ManualAsset"];
                 };
             };
         };
@@ -9418,19 +12720,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["UpdatePlannedTransactionRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["PlannedTransaction"];
                 };
             };
         };
@@ -9442,19 +12743,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["UpdateRecipeRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["AgentRecipe"];
                 };
             };
         };
@@ -9466,19 +12766,18 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["UpdateTransactionRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["UpdateTxnResult"];
                 };
             };
         };

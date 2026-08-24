@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { usePreviewCsvColumns, useSavedCsvMapping, usePrepareImport } from "../api/hooks/csv";
 import { useImportCsv } from "../api/hooks/transactions";
 import { useAccounts } from "../api/hooks/accounts";
-import { commands, type CsvImportMapping, type ImportSummary, type ColumnRole } from "../api/client";
+import { api, type CsvImportMapping, type ImportSummary, type ColumnRole } from "../api/openapiClient";
 import AccountDrawer from "./AccountDrawer";
 import Button from "./Button";
 import Select from "./Select";
@@ -292,7 +292,7 @@ export default function ImportMappingDialog({ path, onClose, onImported, default
             action: {
               label: "Categorize with AI",
               onClick: () => {
-                void commands.triggerCategorize().then((r) => {
+                void api.triggerCategorize().then((r) => {
                   if (r.status === "error") toast.error(r.error.message);
                   else toast.success("AI categorization started");
                 });

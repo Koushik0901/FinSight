@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { getAccountDisplayName, getAccountTypeColor } from "./accounts";
-import type { AccountSummary } from "../api/client";
+import type { AccountSummary } from "../api/openapiClient";
 
 function makeAccount(overrides: Partial<AccountSummary> = {}): AccountSummary {
   return {

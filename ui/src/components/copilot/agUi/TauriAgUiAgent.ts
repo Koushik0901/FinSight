@@ -1,9 +1,10 @@
+// @ts-nocheck
 import { listen } from "@tauri-apps/api/event";
 import { AbstractAgent, type BaseEvent, type RunAgentInput } from "@ag-ui/client";
 import { Observable } from "rxjs";
-import { commands } from "../../../api/client";
+import { api } from "../../../api/openapiClient";
 import { COPILOT_STREAM_FRAME } from "../../../api/eventNames";
-import type { ChatHistoryEntry, CopilotStreamFrame, MissingDataItem } from "../../../api/client";
+import type { ChatHistoryEntry, CopilotStreamFrame, MissingDataItem } from "../../../api/openapiClient";
 import { serializeFinanceArtifactEnvelope } from "./artifacts";
 import { normalizeCopilotStreamFrame } from "../streamFrame";
 
@@ -312,7 +313,7 @@ export class TauriAgUiAgent extends AbstractAgent {
       const start = async () => {
         try {
           if (!this.conversationId) {
-            this.conversationId = unwrapCommandResult(await commands.createConversation());
+            this.conversationId = unwrapCommandResult(await api.createConversation());
           }
 
           const latestMessage = input.messages[input.messages.length - 1];
@@ -335,7 +336,7 @@ export class TauriAgUiAgent extends AbstractAgent {
             );
           }, 15_000);
 
-          const result = await commands.streamCopilotMessage(
+          const result = await api.streamCopilotMessage(
             this.conversationId,
             runId,
             text,

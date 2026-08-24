@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useCashflowForecast } from "../api/hooks/cashflow";
 import { useFinancialMetrics } from "../api/hooks/metrics";
-import type { CashflowForecast, CashflowEvent } from "../api/client";
+import type { CashflowForecast, CashflowEvent } from "../api/openapiClient";
 import { money } from "../utils/format";
 import { blurAmounts } from "../utils/blurAmounts";
 

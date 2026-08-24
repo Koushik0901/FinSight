@@ -12,9 +12,9 @@ vi.mock("../api/hooks/agent", () => ({
   useAgentStatus: vi.fn(() => ({ data: { lastScanAt: agentStatusMock.lastScanAt } })),
 }));
 
-vi.mock("../api/client", () => ({
+vi.mock("../api/openapiClient", () => ({
   unwrap: async (p: Promise<{ status: "ok" | "error"; data?: unknown; error?: { message: string } }>) => { const r = await p; if (r.status === "error") throw new Error(r.error?.message ?? "command failed"); return r.data; },
-  commands: {
+  api: {
     listActionBundles: vi.fn(async () => ({ status: "ok", data: [] })),
   },
 }));

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import Scenarios from "./Scenarios";
 import { createWrapper } from "../test-utils";
-import type { SavedScenarioDetail, ScenarioPlanProposal } from "../api/client";
+import type { SavedScenarioDetail, ScenarioPlanProposal } from "../api/openapiClient";
 
 const runMutate = vi.fn();
 const promoteMutate = vi.fn();
@@ -25,9 +25,9 @@ vi.mock("../api/hooks/useScenarios", () => ({
   useDeleteScenario: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
-vi.mock("../api/client", () => ({
+vi.mock("../api/openapiClient", () => ({
   unwrap: async (p: Promise<{ status: "ok" | "error"; data?: unknown; error?: { message: string } }>) => { const r = await p; if (r.status === "error") throw new Error(r.error?.message ?? "command failed"); return r.data; },
-  commands: {
+  api: {
     listCategoriesWithSpending: vi
       .fn()
       .mockResolvedValue({ status: "ok", data: [{ label: "Dining", thisMonthCents: 30000 }] }),

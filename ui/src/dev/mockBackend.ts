@@ -1,22 +1,21 @@
 /**
- * DEV-ONLY browser mock backend.
+ * DEV-ONLY browser mock backend (fetch-based, pure PWA).
  *
- * FinSight is a Tauri desktop app: every screen reads its data through
- * `commands.*`, which delegate to `window.__TAURI_INTERNALS__.invoke`. In a
- * plain `vite` browser that global is absent, so `isTauriRuntime()` is false and
- * screens render empty. This module installs a fixture-backed
- * `__TAURI_INTERNALS__` so the app renders full, realistic data in an ordinary
- * browser — enabling a fast visual-design iteration loop and letting us exercise
- * every data state (rich / empty / partial / large / multi-account) instantly.
+ * Every screen now reads through `api.*` → `fetch POST /api/rpc/{cmd}`.
+ * In a plain `vite` browser with `?mock`, there is no server, so this module
+ * installs a fixture-backed `fetch` interceptor so the app renders full,
+ * realistic data without a backend — enabling a fast visual-design iteration
+ * loop and letting us exercise every data state (rich / empty / partial /
+ * large / multi-account) instantly.
  *
  * SAFETY: this is imported ONLY from main.tsx, ONLY when
  *   import.meta.env.DEV && new URLSearchParams(location.search).has("mock")
- * and ONLY when no real `__TAURI_INTERNALS__` already exists. It is dynamically
- * imported so it is tree-shaken out of production builds, and it never runs
- * under vitest (which drives components directly, not through main.tsx).
+ * It is dynamically imported so it is tree-shaken out of production builds,
+ * and it never runs under vitest (which drives components directly, not
+ * through main.tsx).
  *
  * It is a design harness, not a source of truth. Numbers are plausible, not
- * audited. The real-Tauri build remains the correctness backstop.
+ * audited. The real-server build remains the correctness backstop.
  */
 
 type Kind = "rich" | "empty" | "partial" | "large" | "multi";
@@ -1394,53 +1393,100 @@ export function installMockBackend(kindRaw: string | null) {
     : "rich") as Kind;
   const ds = buildDataset(kind);
   const responders = buildResponders(ds);
-
-  let cbSeq = 0;
   const w = window as unknown as AnyRec;
+  const origFetch = globalThis.fetch.bind(globalThis);
 
-  const invoke = async (cmd: string, args?: AnyRec): Promise<unknown> => {
-    // Tauri core/event plugin traffic — resolve harmlessly.
-    if (cmd.startsWith("plugin:")) {
-      if (cmd === "plugin:event|listen") return ++cbSeq;
-      return null;
+  globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : (input as Request).url;
+    const method = (init?.method ?? (input instanceof Request ? (input as Request).method : "GET")).toUpperCase();
+    // RPC dispatch — the pure PWA transport
+    if (url.includes("/api/rpc/") && method === "POST") {
+      const cmd = url.split("/api/rpc/")[1]?.split("?")[0]?.split("#")[0] ?? "";
+      let args: AnyRec = {};
+      const rawBody = (init?.body as string | undefined) ?? (input instanceof Request ? await (input as Request).clone().text().catch(() => "") : "");
+      if (rawBody) {
+        try {
+          args = JSON.parse(rawBody) as AnyRec;
+        } catch {
+          args = {};
+        }
+      }
+      const fn = responders[cmd as CommandName];
+      if (fn) {
+        const data = await fn(args);
+        return new Response(JSON.stringify(data), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (!w.__finsightMockWarned) w.__finsightMockWarned = new Set<string>();
+      const warned = w.__finsightMockWarned as Set<string>;
+      if (!warned.has(cmd)) {
+        warned.add(cmd);
+        console.info(`[mock] unimplemented command "${cmd}" → fallback`);
+      }
+      try {
+        const data = fallback(cmd);
+        return new Response(JSON.stringify(data), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      } catch (e) {
+        return new Response(JSON.stringify({ code: "mock.unimplemented", message: (e as Error).message }), {
+          status: 501,
+          headers: { "content-type": "application/json" },
+        });
+      }
     }
-    const fn = responders[cmd as CommandName];
-    if (fn) return fn(args ?? {});
-    if (!w.__finsightMockWarned) w.__finsightMockWarned = new Set<string>();
-    const warned = w.__finsightMockWarned as Set<string>;
-    if (!warned.has(cmd)) {
-      warned.add(cmd);
-      console.info(`[mock] unfixtured command "${cmd}" → default`);
+    // SSE / events — the mock has no streaming, return an empty 200 so callers don't throw.
+    if (url.includes("/api/events")) {
+      return new Response("", { status: 200, headers: { "content-type": "text/event-stream" } });
     }
-    return fallback(cmd);
+    // OpenAPI / other API — fall through to the real fetch (or 404 in plain vite without server)
+    if (url.includes("/api/")) {
+      // For auth/openapi, let the real network handle it; in plain mock vite it will 404 which is fine.
+      try {
+        return await origFetch(input as RequestInfo, init);
+      } catch {
+        return new Response(JSON.stringify({ code: "mock.no_server", message: "no server in mock mode" }), {
+          status: 404,
+          headers: { "content-type": "application/json" },
+        });
+      }
+    }
+    return origFetch(input as RequestInfo, init);
   };
 
-  w.__TAURI_INTERNALS__ = {
-    invoke,
-    transformCallback: (cb: unknown) => {
-      const id = ++cbSeq;
-      w[`_${id}`] = cb;
-      return id;
-    },
-    unregisterCallback: () => {},
-    // The event plugin's unlisten path reads these; stub them so component
-    // unmount (AgentActivityFeed / ImportProgress) doesn't throw in the console.
-    unregisterListener: () => {},
-    metadata: {
-      currentWindow: { label: "main" },
-      currentWebview: { windowLabel: "main", label: "main" },
-    },
-  };
-  // Some @tauri-apps/api/event builds route unlisten through a dedicated
-  // plugin-internals global — provide a no-op so cleanup is silent.
-  w.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener: () => {} };
-  // Marks this as the mock harness (not a real Tauri bridge) so gates like
-  // DesktopConnectGate, which otherwise key off isTauriRuntime(), don't treat
-  // the mock as a pre-navigation desktop shell — mirrors __FINSIGHT_HTTP__.
+  // Mock EventSource so SSE listeners don't throw in plain vite (they will just never fire).
+  if (!w.__finsightMockESPatched) {
+    w.__finsightMockESPatched = true;
+    const OrigES = (window as unknown as { EventSource: typeof EventSource }).EventSource;
+    (window as unknown as { EventSource: unknown }).EventSource = class MockEventSource {
+      url: string;
+      readyState = 0;
+      onmessage: ((e: MessageEvent) => void) | null = null;
+      onerror: ((e: Event) => void) | null = null;
+      onopen: ((e: Event) => void) | null = null;
+      constructor(url: string) {
+        this.url = url;
+        // Immediately "open" then stay silent — import progress / Copilot tokens have no server in mock.
+        setTimeout(() => this.onopen?.(new Event("open")), 0);
+      }
+      close() {
+        this.readyState = 2;
+      }
+      addEventListener() {}
+      removeEventListener() {}
+      dispatchEvent() { return true; }
+    } as unknown as typeof EventSource;
+    // Keep reference to original for debugging
+    (window as unknown as { __OrigEventSource: typeof EventSource }).__OrigEventSource = OrigES;
+  }
+
   w.__FINSIGHT_MOCK__ = true;
 
   console.info(
-    `%c FinSight mock backend active `,
+    `%c FinSight mock backend active (fetch) `,
     "background:#C9F950;color:#0A0F02;font-weight:700;border-radius:4px;",
     `dataset="${kind}" — switch with ?mock=rich|empty|partial|large|multi`
   );

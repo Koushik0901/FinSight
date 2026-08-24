@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { buildMetaFromMessages } from "./TauriRuntime";
-import type { ConversationMessage } from "../../api/client";
+import type { ConversationMessage } from "../../api/openapiClient";
 
 /**
  * Missing-data items ride two paths to the screen: the live `Done` frame, and

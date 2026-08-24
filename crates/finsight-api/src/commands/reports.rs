@@ -4,10 +4,12 @@ use chrono::{Datelike, Utc};
 use finsight_core::repos::run;
 use serde::Serialize;
 use specta::Type;
+use utoipa::ToSchema;
 
 /// One month's summary for the bar chart.
-#[derive(Debug, Clone, Serialize, Type)]
+#[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct MonthSummary {
     /// "YYYY-MM"
     pub month: String,
@@ -22,8 +24,9 @@ pub struct MonthSummary {
 }
 
 /// One category's 12-month total.
-#[derive(Debug, Clone, Serialize, Type)]
+#[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct CategoryTotal {
     pub category_id: String,
     pub label: String,
@@ -33,8 +36,9 @@ pub struct CategoryTotal {
 }
 
 /// One merchant's 12-month total.
-#[derive(Debug, Clone, Serialize, Type)]
+#[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct MerchantTotal {
     pub merchant_raw: String,
     pub category_label: String,
@@ -43,8 +47,9 @@ pub struct MerchantTotal {
     pub txn_count: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Type)]
+#[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct ReportData {
     pub monthly: Vec<MonthSummary>,
     pub monthly_last_year: Vec<MonthSummary>,
@@ -174,6 +179,15 @@ fn category_totals_for_window(
     Ok(rows.collect::<Result<Vec<_>, rusqlite::Error>>()?)
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct GetReportDataRequest {
+    pub scope: String,
+    pub member_id: Option<String>,
+}
+
+#[utoipa::path(post, path = "/api/rpc/get_report_data", request_body(content = GetReportDataRequest), responses((status = 200, body = ReportData)))]
 pub async fn get_report_data(
     state: &ApiState,
     scope: String,
@@ -376,8 +390,9 @@ pub async fn get_report_data(
 }
 
 /// Lightweight summary for the Today screen.
-#[derive(Debug, Clone, Serialize, Type)]
+#[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct MonthTotals {
     pub income_cents: i64,
     pub expense_cents: i64,
@@ -387,6 +402,7 @@ pub struct MonthTotals {
     pub txn_count: i64,
 }
 
+#[utoipa::path(post, path = "/api/rpc/get_month_totals", responses((status = 200, body = MonthTotals)))]
 pub async fn get_month_totals(state: &ApiState) -> AppResult<MonthTotals> {
     let db = (*state.db).clone();
     let this_month_start = Utc::now().format("%Y-%m-01").to_string();
@@ -412,8 +428,9 @@ pub async fn get_month_totals(state: &ApiState) -> AppResult<MonthTotals> {
     .map_err(AppError::from)
 }
 
-#[derive(Debug, Clone, Serialize, Type)]
+#[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct SavingsRatePoint {
     pub month: String,
     pub savings_rate_pct: i64,
@@ -421,6 +438,7 @@ pub struct SavingsRatePoint {
     pub expense_cents: i64,
 }
 
+#[utoipa::path(post, path = "/api/rpc/get_savings_rate_history", responses((status = 200, body = Vec<SavingsRatePoint>)))]
 pub async fn get_savings_rate_history(state: &ApiState) -> AppResult<Vec<SavingsRatePoint>> {
     let db = (*state.db).clone();
     run(&db, |conn| {

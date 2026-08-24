@@ -47,9 +47,9 @@ vi.mock("../api/hooks/household", () => ({
   useHouseholdMembers: () => householdMock(),
 }));
 
-vi.mock("../api/client", () => ({
+vi.mock("../api/openapiClient", () => ({
   unwrap: async (p: Promise<{ status: "ok" | "error"; data?: unknown; error?: { message: string } }>) => { const r = await p; if (r.status === "error") throw new Error(r.error?.message ?? "command failed"); return r.data; },
-  commands: {
+  api: {
     getMonthTotals: vi.fn().mockResolvedValue({ status: "error", error: { message: "no data" } }),
     getSpendingBreakdown: vi.fn().mockResolvedValue({
       status: "error",

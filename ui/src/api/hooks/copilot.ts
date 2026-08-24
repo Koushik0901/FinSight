@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { commands, type AgentActionBundle, type AgentExecutionEntry, type AgentSession } from "../client";
-import { unwrap } from "../client";
+import { api, type AgentActionBundle, type AgentExecutionEntry, type AgentSession } from "../openapiClient";
+import { unwrap } from "../openapiClient";
 import { invalidateDomains } from "../invalidation";
 import { actionBundleKeys } from "./_factory";
 // Re-export for consumers that historically imported from this module.
@@ -10,7 +10,7 @@ export function useAgentSessions() {
   return useQuery<AgentSession[]>({
     queryKey: ["agent-sessions"],
     queryFn: async () => {
-      return unwrap(commands.listAgentSessions());
+      return unwrap(api.listAgentSessions());
     },
   });
 }
@@ -19,7 +19,7 @@ export function useCreateAgentSession() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ title, taskType }: { title: string; taskType: string }) => {
-      return unwrap(commands.createAgentSession(title, taskType));
+      return unwrap(api.createAgentSession(title, taskType));
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["agent-sessions"] });
@@ -31,7 +31,7 @@ export function useCloseAgentSession() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
-      await unwrap(commands.closeAgentSession(id));
+      await unwrap(api.closeAgentSession(id));
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["agent-sessions"] });
@@ -43,7 +43,7 @@ export function useActionBundles(statusFilter?: string | null, limit?: number) {
   return useQuery<AgentActionBundle[]>({
     queryKey: actionBundleKeys.list(statusFilter, null, limit),
     queryFn: async () => {
-      return unwrap(commands.listActionBundles(statusFilter ?? null, null, limit ?? null));
+      return unwrap(api.listActionBundles(statusFilter ?? null, null, limit ?? null));
     },
   });
 }
@@ -52,7 +52,7 @@ export function useSessionActionBundles(sessionId?: string | null, statusFilter?
   return useQuery<AgentActionBundle[]>({
     queryKey: actionBundleKeys.list(statusFilter, sessionId, limit),
     queryFn: async () => {
-      return unwrap(commands.listActionBundles(statusFilter ?? null, sessionId ?? null, limit ?? null));
+      return unwrap(api.listActionBundles(statusFilter ?? null, sessionId ?? null, limit ?? null));
     },
   });
 }
@@ -62,7 +62,7 @@ export function useActionBundle(id: string | null) {
     queryKey: ["action-bundle", id],
     queryFn: async () => {
       if (!id) return null;
-      return unwrap(commands.getActionBundle(id));
+      return unwrap(api.getActionBundle(id));
     },
     enabled: id !== null,
   });
@@ -72,7 +72,7 @@ export function useApproveActionItem() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (itemId: string) => {
-      await unwrap(commands.approveActionItem(itemId));
+      await unwrap(api.approveActionItem(itemId));
     },
     onSuccess: () => {
       invalidateDomains(qc, "agentActions");
@@ -84,7 +84,7 @@ export function useRejectActionItem() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (itemId: string) => {
-      await unwrap(commands.rejectActionItem(itemId));
+      await unwrap(api.rejectActionItem(itemId));
     },
     onSuccess: () => {
       invalidateDomains(qc, "agentActions");
@@ -97,7 +97,7 @@ export function useExecutionLog(bundleId: string | null) {
     queryKey: ["execution-log", bundleId],
     queryFn: async () => {
       if (!bundleId) return [];
-      return unwrap(commands.listExecutionLog(bundleId));
+      return unwrap(api.listExecutionLog(bundleId));
     },
     enabled: bundleId !== null,
   });
@@ -107,7 +107,7 @@ export function useExecuteActionBundle() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (bundleId: string) => {
-      return unwrap(commands.executeActionBundle(bundleId));
+      return unwrap(api.executeActionBundle(bundleId));
     },
     onSuccess: () => {
       // Applying a bundle mutates the ledger (agentApply = agentActions +

@@ -7,7 +7,7 @@ import {
   useImportReviewCandidates,
 } from "../api/hooks/simplefin";
 import { useTransactions } from "../api/hooks/transactions";
-import type { ImportCandidateMatch, ImportCandidateWithMatches, Transaction } from "../api/client";
+import type { ImportCandidateMatch, ImportCandidateWithMatches, Transaction } from "../api/openapiClient";
 import { money } from "../utils/format";
 import { getAccountDisplayName } from "../utils/accounts";
 import Button from "../components/Button";

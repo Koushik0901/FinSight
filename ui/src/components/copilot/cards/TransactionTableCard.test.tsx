@@ -2,11 +2,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { TransactionTableCard } from "./TransactionTableCard";
 
-vi.mock("../../../api/client", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../../api/client")>();
+vi.mock("../../../api/openapiClient", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../../api/openapiClient")>();
   return {
     ...actual,
-    commands: {
+    api: {
       exportSearchTransactionsCsv: vi.fn().mockResolvedValue({ status: "ok", data: "date,amount\n2026-01-01,10.00\n" }),
     },
   };
@@ -16,7 +16,7 @@ vi.mock("../../../lib/downloadBlob", () => ({
   downloadBlob: vi.fn(),
 }));
 
-import { commands } from "../../../api/client";
+import { api } from "../../../api/openapiClient";
 import { downloadBlob } from "../../../lib/downloadBlob";
 
 describe("TransactionTableCard", () => {
@@ -90,7 +90,7 @@ describe("TransactionTableCard", () => {
     fireEvent.click(btn);
 
     await waitFor(() => {
-      expect(commands.exportSearchTransactionsCsv).toHaveBeenCalledWith({
+      expect(api.exportSearchTransactionsCsv).toHaveBeenCalledWith({
         merchant: null,
         account: "amex",
         startDate: "2026-01-01",

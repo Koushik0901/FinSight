@@ -3,7 +3,17 @@ use crate::ApiState;
 use finsight_agent::{context, planner};
 use finsight_core::models::{AgentRecipe, AgentRecipeRun};
 use finsight_core::repos::{recipes, run};
+use utoipa::ToSchema;
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct ListRecipesRequest {
+    pub include_paused: bool,
+}
+
+#[utoipa::path(post, path = "/api/rpc/list_recipes",
+    request_body(content = ListRecipesRequest), responses((status = 200, body = Vec<AgentRecipe>)))]
 pub async fn list_recipes(state: &ApiState, include_paused: bool) -> AppResult<Vec<AgentRecipe>> {
     let db = (*state.db).clone();
     run(&db, move |conn| recipes::list(conn, include_paused))
@@ -11,6 +21,20 @@ pub async fn list_recipes(state: &ApiState, include_paused: bool) -> AppResult<V
         .map_err(AppError::from)
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct CreateRecipeRequest {
+    pub title: String,
+    pub description: String,
+    pub recipe_kind: String,
+    pub prompt_template: String,
+    pub cadence: String,
+    pub day_of_week: Option<i64>,
+    pub day_of_month: Option<i64>,
+}
+
+#[utoipa::path(post, path = "/api/rpc/create_recipe", request_body(content = CreateRecipeRequest), responses((status = 200, body = AgentRecipe)))]
 pub async fn create_recipe(
     state: &ApiState,
     title: String,
@@ -38,6 +62,20 @@ pub async fn create_recipe(
     .map_err(AppError::from)
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct UpdateRecipeRequest {
+    pub id: String,
+    pub title: String,
+    pub description: String,
+    pub prompt_template: String,
+    pub cadence: String,
+    pub day_of_week: Option<i64>,
+    pub day_of_month: Option<i64>,
+}
+
+#[utoipa::path(post, path = "/api/rpc/update_recipe", request_body(content = UpdateRecipeRequest), responses((status = 200, body = AgentRecipe)))]
 pub async fn update_recipe(
     state: &ApiState,
     id: String,
@@ -65,6 +103,15 @@ pub async fn update_recipe(
     .map_err(AppError::from)
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct PauseRecipeRequest {
+    pub id: String,
+}
+
+#[utoipa::path(post, path = "/api/rpc/pause_recipe",
+    request_body(content = PauseRecipeRequest), responses((status = 200, description = "Success")))]
 pub async fn pause_recipe(state: &ApiState, id: String) -> AppResult<()> {
     let db = (*state.db).clone();
     run(&db, move |conn| recipes::set_status(conn, &id, "paused"))
@@ -72,6 +119,15 @@ pub async fn pause_recipe(state: &ApiState, id: String) -> AppResult<()> {
         .map_err(AppError::from)
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct ResumeRecipeRequest {
+    pub id: String,
+}
+
+#[utoipa::path(post, path = "/api/rpc/resume_recipe",
+    request_body(content = ResumeRecipeRequest), responses((status = 200, description = "Success")))]
 pub async fn resume_recipe(state: &ApiState, id: String) -> AppResult<()> {
     let db = (*state.db).clone();
     run(&db, move |conn| recipes::set_status(conn, &id, "active"))
@@ -79,6 +135,15 @@ pub async fn resume_recipe(state: &ApiState, id: String) -> AppResult<()> {
         .map_err(AppError::from)
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct DeleteRecipeRequest {
+    pub id: String,
+}
+
+#[utoipa::path(post, path = "/api/rpc/delete_recipe",
+    request_body(content = DeleteRecipeRequest), responses((status = 200, description = "Success")))]
 pub async fn delete_recipe(state: &ApiState, id: String) -> AppResult<()> {
     let db = (*state.db).clone();
     run(&db, move |conn| recipes::set_status(conn, &id, "deleted"))
@@ -86,6 +151,15 @@ pub async fn delete_recipe(state: &ApiState, id: String) -> AppResult<()> {
         .map_err(AppError::from)
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct TriggerRecipeRequest {
+    pub id: String,
+}
+
+#[utoipa::path(post, path = "/api/rpc/trigger_recipe",
+    request_body(content = TriggerRecipeRequest), responses((status = 200, content_type = "application/json", body = String)))]
 pub async fn trigger_recipe(state: &ApiState, id: String) -> AppResult<String> {
     let db = (*state.db).clone();
     let recipe_id_for_load = id.clone();
@@ -183,6 +257,15 @@ pub async fn trigger_recipe(state: &ApiState, id: String) -> AppResult<String> {
     }
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct ListRecipeRunsRequest {
+    pub recipe_id: String,
+    pub limit: Option<u32>,
+}
+
+#[utoipa::path(post, path = "/api/rpc/list_recipe_runs", request_body(content = ListRecipeRunsRequest), responses((status = 200, body = Vec<AgentRecipeRun>)))]
 pub async fn list_recipe_runs(
     state: &ApiState,
     recipe_id: String,

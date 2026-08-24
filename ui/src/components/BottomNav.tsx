@@ -4,8 +4,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { prefetchRoute } from "../api/prefetch";
 import * as I from "./Icons";
 import { useAgentStatus, useNeedsReviewCount } from "../api/hooks/agent";
-import { commands } from "../api/client";
-import { unwrap } from "../api/client";
+import { api } from "../api/openapiClient";
+import { unwrap } from "../api/openapiClient";
 import { actionBundleKeys } from "../api/hooks/_factory";
 import { isBackendAvailable } from "../utils/runtime";
 import Drawer from "./Drawer";
@@ -56,7 +56,7 @@ export function BottomNav() {
   const { data: pendingBundles = [] } = useQuery({
     queryKey: actionBundleKeys.list("pending"),
     queryFn: async () => {
-      return unwrap(commands.listActionBundles("pending", null, null));
+      return unwrap(api.listActionBundles("pending", null, null));
     },
     staleTime: 60_000,
     enabled: hasBackend,

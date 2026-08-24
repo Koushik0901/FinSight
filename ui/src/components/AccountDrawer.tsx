@@ -15,7 +15,7 @@ import {
   useSetAccountOwnerShares,
   useSetSelfMember,
 } from "../api/hooks/household";
-import type { Account } from "../api/bindings";
+import type { Account } from "../api/openapiClient";
 
 /** The fields the drawer actually edits — both the full `Account` and the
  *  list-page `AccountSummary` satisfy this, so either can open the editor. */

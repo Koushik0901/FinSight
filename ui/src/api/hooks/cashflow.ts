@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { commands, type CashflowForecast } from "../client";
-import { unwrap } from "../client";
+import { api, type CashflowForecast } from "../openapiClient";
+import { unwrap } from "../openapiClient";
 import { isBackendAvailable } from "../../utils/runtime";
 
 export interface CashflowParams {
@@ -20,7 +20,7 @@ export function useCashflowForecast(params: CashflowParams) {
   return useQuery<CashflowForecast>({
     queryKey: ["cashflow-forecast", params.horizonDays, params.bufferCents, params.extraExpenseCents],
     queryFn: async () => {
-      return unwrap(commands.getCashflowForecast(
+      return unwrap(api.getCashflowForecast(
         params.horizonDays,
         params.bufferCents,
         params.extraExpenseCents > 0 ? params.extraExpenseCents : null,

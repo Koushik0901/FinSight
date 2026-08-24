@@ -1,4 +1,4 @@
-import type { CopilotResponseBlock } from "../../../api/client";
+import type { CopilotResponseBlock } from "../../../api/openapiClient";
 import { money } from "../../../utils/format";
 import { StatLine } from "./shared";
 

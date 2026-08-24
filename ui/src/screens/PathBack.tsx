@@ -4,7 +4,7 @@ import { usePathBack, useSetSpendingAnnotation } from "../api/hooks/spending";
 import { useDebouncedValue } from "../utils/useDebouncedValue";
 import { isBackendAvailable } from "../utils/runtime";
 import { money } from "../utils/format";
-import type { Driver, PeriodClass } from "../api/client";
+import type { Driver, PeriodClass } from "../api/openapiClient";
 import Card from "../components/Card";
 import Button from "../components/Button";
 import Badge from "../components/Badge";

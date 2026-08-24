@@ -1,4 +1,4 @@
-import type { CopilotResponseBlock } from "../../../api/client";
+import type { CopilotResponseBlock } from "../../../api/openapiClient";
 import * as I from "../../Icons";
 
 type Block = Extract<CopilotResponseBlock, { kind: "affordabilityVerdict" }>;

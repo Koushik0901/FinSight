@@ -1,20 +1,20 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  commands,
+  api,
   type MonthCloseListItem,
   type MonthCloseView,
   type MonthTotals,
   type SaveMonthCloseInput,
   type SavingsRatePoint,
-} from "../client";
-import { unwrap } from "../client";
+} from "../openapiClient";
+import { unwrap } from "../openapiClient";
 import { isBackendAvailable } from "../../utils/runtime";
 
 export function useMonthTotals() {
   return useQuery<MonthTotals>({
     queryKey: ["month-totals"],
     queryFn: async () => {
-      return unwrap(commands.getMonthTotals());
+      return unwrap(api.getMonthTotals());
     },
     staleTime: 60_000,
     refetchInterval: 60_000,
@@ -26,7 +26,7 @@ export function useSavingsRateHistory() {
   return useQuery<SavingsRatePoint[]>({
     queryKey: ["savings-rate-history"],
     queryFn: async () => {
-      return unwrap(commands.getSavingsRateHistory());
+      return unwrap(api.getSavingsRateHistory());
     },
     staleTime: 60_000,
     enabled: isBackendAvailable(),
@@ -39,7 +39,7 @@ export function useMonthClose(year: number, month: number) {
   return useQuery<MonthCloseView>({
     queryKey: ["month-close", year, month],
     queryFn: async () => {
-      return unwrap(commands.getMonthClose(year, month));
+      return unwrap(api.getMonthClose(year, month));
     },
     enabled: isBackendAvailable(),
   });
@@ -50,7 +50,7 @@ export function useSaveMonthClose() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (input: SaveMonthCloseInput) => {
-      return unwrap(commands.saveMonthClose(input));
+      return unwrap(api.saveMonthClose(input));
     },
     onSuccess: (data) => {
       qc.setQueryData(["month-close", data.year, data.month], data);
@@ -65,7 +65,7 @@ export function useMonthCloses() {
   return useQuery<MonthCloseListItem[]>({
     queryKey: ["month-closes"],
     queryFn: async () => {
-      return unwrap(commands.listMonthCloses());
+      return unwrap(api.listMonthCloses());
     },
     enabled: isBackendAvailable(),
   });

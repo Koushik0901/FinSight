@@ -10,7 +10,7 @@ import { useTweaks } from "../../state/tweaks";
 import DeleteAllDataDialog from "../../components/DeleteAllDataDialog";
 import { Toggle as Tog } from "../../components/Toggle";
 import { Section } from "./Section";
-import type { CompletionProviderConfig } from "../../api/client";
+import type { CompletionProviderConfig } from "../../api/openapiClient";
 import { userErrorMessage } from "../../utils/runtime";
 
 type ProviderKind = "ollama" | "openai_compat" | "anthropic" | null;
@@ -516,7 +516,7 @@ function ProviderSection() {
     if (!config) return;
     try {
       const result = await testProvider.mutateAsync({ config, apiKey: apiKey.trim() || undefined });
-      setTestResult(result);
+      setTestResult({ ok: result.ok, latency_ms: result.latency_ms, error: result.error ?? null });
     } catch (error) {
       setTestResult({ ok: false, latency_ms: 0, error: userErrorMessage(error, "Connection failed.") });
     }

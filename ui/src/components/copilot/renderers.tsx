@@ -6,7 +6,7 @@ import {
   type GenerativeUIComponentRegistry,
   type ToolCallMessagePartProps,
 } from "@assistant-ui/react";
-import type { CopilotResponseBlock } from "../../api/client";
+import type { CopilotResponseBlock } from "../../api/openapiClient";
 import { parseFinanceArtifactEnvelope } from "./agUi/artifacts";
 import { colorForCategoryLabel } from "../../utils/categoryColor";
 import { humanizeToolName } from "./toolNames";

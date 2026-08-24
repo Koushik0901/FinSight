@@ -5,7 +5,6 @@ members = [
   "crates/finsight-providers",
   "crates/finsight-agent",
   "crates/finsight-api",
-  "crates/finsight-bindings",
   "crates/finsight-openapi",
   "crates/finsight-eval",
   "crates/finsight-server",
@@ -58,8 +57,6 @@ rand_chacha = "0.3"
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 specta = { version = "=2.0.0-rc.22" }
-specta-typescript = { version = "=0.0.9" }
-tauri-specta = { version = "=2.0.0-rc.21", features = ["derive", "typescript"] }
 rstest = "0.21"
 tempfile = "3"
 zeroize = { version = "1.8", features = ["zeroize_derive"] }

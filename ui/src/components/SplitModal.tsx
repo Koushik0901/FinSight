@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import Drawer from "./Drawer";
 import { useSetTransactionSplits, useCategories } from "../api/hooks/transactions";
-import type { TransactionSplitDto } from "../api/bindings";
+import type { TransactionSplitDto } from "../api/openapiClient";
 
 interface SplitRow {
   id: string;
