@@ -1,5 +1,6 @@
 use crate::error::CoreResult;
-use chrono::Utc;
+use crate::models::{CustomReportParams, CustomReportResult, Period, ReportRow, SplitBy};
+use chrono::{Datelike, Utc};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
 use specta::Type;
@@ -226,6 +227,102 @@ pub fn look_back_facts(conn: &mut Connection, month: &str) -> CoreResult<Vec<Loo
     }
 
     Ok(facts)
+}
+
+/// Compute the start of the period window for custom reports.
+/// Returns None for `All` (no filter). Uses wall-clock `Utc::now()` as anchor,
+/// mirroring the frontend's "last N months" notion; for YTD the anchor is Jan 1
+/// of the current year.
+fn period_start(period: &Period) -> Option<String> {
+    let now = Utc::now();
+    match period {
+        Period::All => None,
+        Period::Last1Month => Some((now - chrono::Duration::days(30)).to_rfc3339_opts(chrono::SecondsFormat::Secs, true)),
+        Period::Last3Months => Some((now - chrono::Duration::days(90)).to_rfc3339_opts(chrono::SecondsFormat::Secs, true)),
+        Period::Last6Months => Some((now - chrono::Duration::days(180)).to_rfc3339_opts(chrono::SecondsFormat::Secs, true)),
+        Period::YTD => Some(format!("{}-01-01T00:00:00Z", now.year())),
+    }
+}
+
+/// Custom report: group transactions by `split_by`, filtered by `period`,
+/// transfer/archived flags. Sums are positive cents (expenses flipped).
+/// Mirrors `metrics::spending_breakdown` transfer exclusion but is otherwise
+/// a thin grouping query — money math stays in `finsight-core`.
+pub fn custom_report(conn: &Connection, p: CustomReportParams) -> CoreResult<CustomReportResult> {
+    let start = period_start(&p.period);
+
+    let (select_label, join_clause, group_by) = match p.split_by {
+        SplitBy::Category => (
+            "COALESCE(c.label, 'Uncategorized')",
+            " LEFT JOIN categories c ON c.id = t.category_id",
+            "COALESCE(c.id, 'uncategorized'), COALESCE(c.label, 'Uncategorized')",
+        ),
+        SplitBy::Group => (
+            "COALESCE(g.label, 'Uncategorized')",
+            " LEFT JOIN categories c ON c.id = t.category_id LEFT JOIN category_groups g ON g.id = c.group_id",
+            "COALESCE(g.id, 'uncategorized'), COALESCE(g.label, 'Uncategorized')",
+        ),
+        SplitBy::Payee => ("t.merchant_raw", "", "t.merchant_raw"),
+        SplitBy::Account => (
+            "COALESCE(a.name, t.account_id)",
+            " LEFT JOIN accounts a ON a.id = t.account_id",
+            "COALESCE(a.id, t.account_id), COALESCE(a.name, t.account_id)",
+        ),
+        SplitBy::Month => (
+            "strftime('%Y-%m', t.posted_at)",
+            "",
+            "strftime('%Y-%m', t.posted_at)",
+        ),
+    };
+
+    // Build WHERE clause dynamically.
+    let mut sql = format!(
+        "SELECT {select_label} AS label, \
+                CAST(SUM(CASE WHEN t.amount_cents < 0 THEN -t.amount_cents ELSE t.amount_cents END) AS INTEGER) AS total, \
+                COUNT(*) AS cnt \
+         FROM transactions t{join_clause} WHERE 1=1"
+    );
+    let mut binds: Vec<String> = Vec::new();
+    if !p.include_transfers {
+        sql.push_str(" AND t.is_transfer = 0");
+    }
+    if !p.include_archived {
+        match p.split_by {
+            SplitBy::Category | SplitBy::Group => {
+                sql.push_str(" AND (c.archived_at IS NULL OR c.id IS NULL)");
+            }
+            SplitBy::Account => {
+                sql.push_str(" AND (a.archived_at IS NULL OR a.id IS NULL)");
+            }
+            _ => {}
+        }
+    }
+    if let Some(s) = start {
+        sql.push_str(" AND t.posted_at >= ?");
+        binds.push(s);
+    }
+    // No end bound — window is start..now; future-dated rows are naturally excluded by being > now? Not needed.
+    sql.push_str(&format!(" GROUP BY {group_by} ORDER BY total DESC, label ASC"));
+
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map(rusqlite::params_from_iter(binds.iter()), |r| {
+        Ok(ReportRow {
+            label: r.get(0)?,
+            total_cents: r.get(1)?,
+            txn_count: r.get(2)?,
+        })
+    })?;
+    let mut out_rows: Vec<ReportRow> = Vec::new();
+    let mut total_cents: i64 = 0;
+    for row in rows {
+        let r = row?;
+        total_cents += r.total_cents;
+        out_rows.push(r);
+    }
+    Ok(CustomReportResult {
+        rows: out_rows,
+        total_cents,
+    })
 }
 
 #[cfg(test)]

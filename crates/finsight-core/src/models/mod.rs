@@ -7,6 +7,7 @@ mod category_example;
 mod category_proposal;
 mod connection;
 mod copilot;
+pub mod custom_report;
 mod holding;
 mod household;
 mod import_candidate;
@@ -37,6 +38,9 @@ pub use connection::{NewSimpleFinConnection, SimpleFinConnection, SimpleFinConne
 pub use copilot::{
     AgentActionBundle, AgentActionItem, AgentExecutionEntry, AgentNavigationTarget, AgentSession,
     ConversationMessage, ConversationSummary, MissingDataItem,
+};
+pub use custom_report::{
+    CustomReportParams, CustomReportResult, Period, ReportRow, SplitBy,
 };
 pub use holding::Holding;
 pub use household::{AccountOwner, AssetOwner, HouseholdMember, OwnerShare};
