@@ -660,6 +660,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/rpc/custom_report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["custom_report"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/rpc/decline_rule_proposal": {
         parameters: {
             query?: never;
@@ -2710,8 +2726,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** RPC reconcileBases */
-        post: operations["reconcileBases"];
+        post: operations["reconcile_bases"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5293,6 +5308,22 @@ export interface components {
             /** Format: int32 */
             total_rows: number;
         };
+        /** @description Parameters for the custom report query — filters + split. */
+        CustomReportParams: {
+            includeArchived?: boolean;
+            includeTransfers?: boolean;
+            period?: components["schemas"]["Period"];
+            splitBy?: components["schemas"]["SplitBy"];
+        };
+        CustomReportRequest: {
+            params: components["schemas"]["CustomReportParams"];
+        };
+        /** @description Full result: grouped rows + grand total. */
+        CustomReportResult: {
+            rows: components["schemas"]["ReportRow"][];
+            /** Format: int64 */
+            totalCents: number;
+        };
         DataHealth: {
             backups: components["schemas"]["BackupInfo"][];
             /** Format: int64 */
@@ -5837,11 +5868,7 @@ export interface components {
          * @description Import a CSV file, running the deterministic post-import cascade
          *     (categorization, transfer pairing, anomaly refresh, net-worth refresh) and
          *     enqueuing the AI categorizer. Progress and completion are pushed through the
-         *     `sink` (`"import-progress"` / `"import-complete"`, unchanged event names and
-         *     payload shapes) — the Tauri wrapper feeds a `TauriFrameSink` that emits real
-         *     window events, and ALSO fires the desktop "check_and_fire" notification
-         *     after this returns (that notification is native-only and stays in the
-         *     wrapper, not here — see `crates/finsight-bindings/src/commands/import.rs`).
+         *     `sink` (`"import-progress"` / `"import-complete"`).
          */
         ImportCsvRequest: {
             accountId: string;
@@ -6585,6 +6612,11 @@ export interface components {
         PauseRecipeRequest: {
             id: string;
         };
+        /**
+         * @description Lookback window.
+         * @enum {string}
+         */
+        Period: "Last1Month" | "Last3Months" | "Last6Months" | "YTD" | "All";
         PeriodAssessment: {
             /** Format: int64 */
             baseline_monthly_cents: number;
@@ -6879,6 +6911,16 @@ export interface components {
             params: components["schemas"]["ScenarioParamsInput"];
             result: components["schemas"]["ScenarioResult"];
         };
+        ReconcileBasesRequest: {
+            basisA: string;
+            basisB: string;
+            scope?: string | null;
+        };
+        ReconcileResult: {
+            /** Format: int64 */
+            deltaCents: number;
+            reason: string;
+        };
         /** @description A recurring transaction detected from transaction history (Phase 6 redesign). */
         RecurringItem: {
             /** Format: double */
@@ -6976,6 +7018,14 @@ export interface components {
             monthlyLastYear: components["schemas"]["MonthSummary"][];
             topCategories: components["schemas"]["CategoryTotal"][];
             topMerchants: components["schemas"]["MerchantTotal"][];
+        };
+        /** @description One grouped row. */
+        ReportRow: {
+            label: string;
+            /** Format: int64 */
+            totalCents: number;
+            /** Format: int64 */
+            txnCount: number;
         };
         RestorationEnvelope: {
             closedAt?: string | null;
@@ -7530,6 +7580,11 @@ export interface components {
             /** Format: int64 */
             target_monthly_cents?: number | null;
         };
+        /**
+         * @description How to slice the expense pie.
+         * @enum {string}
+         */
+        SplitBy: "Category" | "Group" | "Payee" | "Account" | "Month";
         SplitInputDto: {
             /** Format: int64 */
             amountCents: number;
@@ -8766,6 +8821,29 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Transaction"];
+                };
+            };
+        };
+    };
+    custom_report: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CustomReportRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomReportResult"];
                 };
             };
         };
@@ -11377,26 +11455,25 @@ export interface operations {
             };
         };
     };
-    reconcileBases: {
+    reconcile_bases: {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["ReconcileBasesRequest"];
             };
         };
         responses: {
-            /** @description Success */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["ReconcileResult"];
                 };
             };
         };

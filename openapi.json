@@ -1108,6 +1108,36 @@
         }
       }
     },
+    "/api/rpc/custom_report": {
+      "post": {
+        "tags": [
+          "finsight_api::commands::reports"
+        ],
+        "operationId": "custom_report",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CustomReportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomReportResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/rpc/decline_rule_proposal": {
       "post": {
         "tags": [
@@ -4317,30 +4347,32 @@
     },
     "/api/rpc/reconcileBases": {
       "post": {
-        "operationId": "reconcileBases",
+        "tags": [
+          "finsight_api::commands::copilot"
+        ],
+        "operationId": "reconcile_bases",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "type": "object"
+                "$ref": "#/components/schemas/ReconcileBasesRequest"
               }
             }
           },
-          "required": false
+          "required": true
         },
         "responses": {
           "200": {
+            "description": "",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/ReconcileResult"
                 }
               }
-            },
-            "description": "Success"
+            }
           }
-        },
-        "summary": "RPC reconcileBases"
+        }
       }
     },
     "/api/rpc/record_net_worth_snapshot": {
@@ -10530,6 +10562,55 @@
           }
         }
       },
+      "CustomReportParams": {
+        "type": "object",
+        "description": "Parameters for the custom report query — filters + split.",
+        "properties": {
+          "includeArchived": {
+            "type": "boolean"
+          },
+          "includeTransfers": {
+            "type": "boolean"
+          },
+          "period": {
+            "$ref": "#/components/schemas/Period"
+          },
+          "splitBy": {
+            "$ref": "#/components/schemas/SplitBy"
+          }
+        }
+      },
+      "CustomReportRequest": {
+        "type": "object",
+        "required": [
+          "params"
+        ],
+        "properties": {
+          "params": {
+            "$ref": "#/components/schemas/CustomReportParams"
+          }
+        }
+      },
+      "CustomReportResult": {
+        "type": "object",
+        "description": "Full result: grouped rows + grand total.",
+        "required": [
+          "rows",
+          "totalCents"
+        ],
+        "properties": {
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReportRow"
+            }
+          },
+          "totalCents": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
       "DataHealth": {
         "type": "object",
         "required": [
@@ -11957,7 +12038,7 @@
       },
       "ImportCsvRequest": {
         "type": "object",
-        "description": "Import a CSV file, running the deterministic post-import cascade\n(categorization, transfer pairing, anomaly refresh, net-worth refresh) and\nenqueuing the AI categorizer. Progress and completion are pushed through the\n`sink` (`\"import-progress\"` / `\"import-complete\"`, unchanged event names and\npayload shapes) — the Tauri wrapper feeds a `TauriFrameSink` that emits real\nwindow events, and ALSO fires the desktop \"check_and_fire\" notification\nafter this returns (that notification is native-only and stays in the\nwrapper, not here — see `crates/finsight-bindings/src/commands/import.rs`).",
+        "description": "Import a CSV file, running the deterministic post-import cascade\n(categorization, transfer pairing, anomaly refresh, net-worth refresh) and\nenqueuing the AI categorizer. Progress and completion are pushed through the\n`sink` (`\"import-progress\"` / `\"import-complete\"`).",
         "required": [
           "path",
           "accountId",
@@ -13904,6 +13985,17 @@
           }
         }
       },
+      "Period": {
+        "type": "string",
+        "description": "Lookback window.",
+        "enum": [
+          "Last1Month",
+          "Last3Months",
+          "Last6Months",
+          "YTD",
+          "All"
+        ]
+      },
       "PeriodAssessment": {
         "type": "object",
         "required": [
@@ -14604,6 +14696,41 @@
           }
         }
       },
+      "ReconcileBasesRequest": {
+        "type": "object",
+        "required": [
+          "basisA",
+          "basisB"
+        ],
+        "properties": {
+          "basisA": {
+            "type": "string"
+          },
+          "basisB": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "ReconcileResult": {
+        "type": "object",
+        "required": [
+          "deltaCents",
+          "reason"
+        ],
+        "properties": {
+          "deltaCents": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
       "RecurringItem": {
         "type": "object",
         "description": "A recurring transaction detected from transaction history (Phase 6 redesign).",
@@ -14828,6 +14955,28 @@
             "items": {
               "$ref": "#/components/schemas/MerchantTotal"
             }
+          }
+        }
+      },
+      "ReportRow": {
+        "type": "object",
+        "description": "One grouped row.",
+        "required": [
+          "label",
+          "totalCents",
+          "txnCount"
+        ],
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "totalCents": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "txnCount": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       },
@@ -16392,6 +16541,17 @@
             "nullable": true
           }
         }
+      },
+      "SplitBy": {
+        "type": "string",
+        "description": "How to slice the expense pie.",
+        "enum": [
+          "Category",
+          "Group",
+          "Payee",
+          "Account",
+          "Month"
+        ]
       },
       "SplitInputDto": {
         "type": "object",

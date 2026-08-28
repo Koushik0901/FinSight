@@ -1,6 +1,7 @@
 use crate::error::{AppError, AppResult};
 use crate::ApiState;
 use chrono::{Datelike, Utc};
+use finsight_core::models::{CustomReportParams, CustomReportResult};
 use finsight_core::repos::run;
 use serde::Serialize;
 use specta::Type;
@@ -478,6 +479,21 @@ pub async fn get_savings_rate_history(state: &ApiState) -> AppResult<Vec<Savings
     })
     .await
     .map_err(AppError::from)
+}
+
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct CustomReportRequest {
+    pub params: CustomReportParams,
+}
+
+#[utoipa::path(post, path = "/api/rpc/custom_report", request_body(content = CustomReportRequest), responses((status = 200, body = CustomReportResult)))]
+pub async fn custom_report(state: &ApiState, params: CustomReportParams) -> AppResult<CustomReportResult> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| finsight_core::repos::budgets::custom_report(&*conn, params))
+        .await
+        .map_err(AppError::from)
 }
 
 #[cfg(test)]

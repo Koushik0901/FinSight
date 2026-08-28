@@ -724,6 +724,7 @@ rpc_routes!(api, events, cmd, p, c:
         },
         "get_month_totals" => ok(c::reports::get_month_totals(api).await?),
         "get_savings_rate_history" => ok(c::reports::get_savings_rate_history(api).await?),
+        "custom_report" => ok(c::reports::custom_report(api, arg(&p, "params")?).await?),
         // ── month-end close (#59) ──
         "get_month_close" => {
             ok(c::month_close::get_month_close(api, arg(&p, "year")?, arg(&p, "month")?).await?)
