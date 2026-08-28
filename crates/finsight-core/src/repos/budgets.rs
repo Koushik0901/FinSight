@@ -50,6 +50,95 @@ pub fn month_before(month: &str, n: i32) -> String {
     format!("{y:04}-{m:02}")
 }
 
+/// Get the hold for a month, if any. `month` is "YYYY-MM".
+pub fn get_hold(conn: &Connection, month: &str) -> CoreResult<Option<i64>> {
+    let v: Option<i64> = conn
+        .query_row(
+            "SELECT amount_cents FROM budget_holds WHERE month = ?1",
+            params![month],
+            |r| r.get(0),
+        )
+        .optional()?;
+    Ok(v)
+}
+
+/// Set (upsert) the hold amount for `month`. `amount_cents` must be >= 0.
+/// A hold parks unassigned money for next month: it deducts from this month's
+/// `to_budget` (`income - budgeted - hold`) and appears as income-like in
+/// `available_funds` for the following month.
+pub fn set_hold(conn: &mut Connection, month: &str, amount_cents: i64) -> CoreResult<()> {
+    if amount_cents < 0 {
+        return Err(crate::error::CoreError::Validation(
+            "hold amount must be >= 0".to_string(),
+        ));
+    }
+    conn.execute(
+        "INSERT INTO budget_holds(month, amount_cents) VALUES(?1, ?2) \
+         ON CONFLICT(month) DO UPDATE SET amount_cents = excluded.amount_cents",
+        params![month, amount_cents],
+    )?;
+    Ok(())
+}
+
+/// Total income for `month` ("YYYY-MM"): sum of positive, non-transfer,
+/// non-settle-up transactions posted in that month. Mirrors the income leg of
+/// `metrics::cashflow_since` (settle_up excluded, is_transfer excluded) but
+/// scoped to a calendar month. Currency / investment filtering is intentionally
+/// not applied here — budgeting is household-centric and the budget screen's
+/// `incomeCents` comes from the same monthly transaction sum, so the hold math
+/// must use the same denominator.
+pub fn total_income(conn: &Connection, month: &str) -> CoreResult<i64> {
+    let v: i64 = conn.query_row(
+        "SELECT COALESCE(SUM(amount_cents), 0) FROM transactions \
+         WHERE amount_cents > 0 \
+           AND is_transfer = 0 \
+           AND COALESCE(settle_up, 0) = 0 \
+           AND strftime('%Y-%m', posted_at) = ?1",
+        params![month],
+        |r| r.get(0),
+    )?;
+    Ok(v)
+}
+
+/// Total budgeted amount for `month`.
+pub fn total_budgeted(conn: &Connection, month: &str) -> CoreResult<i64> {
+    let v: i64 = conn.query_row(
+        "SELECT COALESCE(SUM(amount_cents), 0) FROM budgets WHERE month = ?1",
+        params![month],
+        |r| r.get(0),
+    )?;
+    Ok(v)
+}
+
+/// To-budget for `month`: income - budgeted - hold.
+///
+/// This is the Actual `To Budget` primitive: the unassigned remainder after
+/// funding envelopes and parking a hold for next month.
+pub fn to_budget(conn: &Connection, month: &str) -> CoreResult<i64> {
+    let income = total_income(conn, month)?;
+    let budgeted = total_budgeted(conn, month)?;
+    let hold = get_hold(conn, month)?.unwrap_or(0);
+    Ok(income - budgeted - hold)
+}
+
+/// Available funds for `month`: income - budgeted - hold_current + hold_prev.
+///
+/// A hold deducted from the prior month reappears as income-like here, so
+/// `available_funds("2026-10")` after `set_hold("2026-09", 1500)` is 1500 even
+/// when October has no income yet. For the current month this equals
+/// `to_budget` when there is no prior hold.
+///
+/// This mirrors Actual's "Hold for Next Month" rollover: the held amount is
+/// not spent, not budgeted, and not lost — it funds the next month.
+pub fn available_funds(conn: &Connection, month: &str) -> CoreResult<i64> {
+    let income = total_income(conn, month)?;
+    let budgeted = total_budgeted(conn, month)?;
+    let cur_hold = get_hold(conn, month)?.unwrap_or(0);
+    let prev = month_before(month, 1);
+    let prev_hold = get_hold(conn, &prev)?.unwrap_or(0);
+    Ok(income - budgeted - cur_hold + prev_hold)
+}
+
 /// Compute carryover *into* `month` ("YYYY-MM") for one category: the running sum
 /// of (budgeted − spent) over every month from the category's first-ever budgeted
 /// month (first `budgets` row with `amount_cents > 0`) up to (not including)

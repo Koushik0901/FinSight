@@ -2154,6 +2154,41 @@
         }
       }
     },
+    "/api/rpc/get_hold": {
+      "post": {
+        "tags": [
+          "finsight_api::commands::budget"
+        ],
+        "operationId": "get_hold",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GetHoldRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/BudgetHold"
+                    }
+                  ],
+                  "nullable": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/rpc/get_inbox_badge_count": {
       "post": {
         "tags": [
@@ -5154,6 +5189,36 @@
         "responses": {
           "200": {
             "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/rpc/set_hold": {
+      "post": {
+        "tags": [
+          "finsight_api::commands::budget"
+        ],
+        "operationId": "set_hold",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetHoldRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BudgetHold"
+                }
+              }
+            }
           }
         }
       }
@@ -8775,6 +8840,24 @@
           }
         }
       },
+      "BudgetHold": {
+        "type": "object",
+        "description": "One month's hold — amount parked for next month.\n\nMoney parked in `month` reduces that month's `to_budget` (`income - budgeted - hold`)\nand is added to `available_funds` for the following month as income-like.\nThis mirrors Actual's `Hold` primitive: an auditable, reversible store of\n\"not yet assigned\" rather than silently inflating a category.",
+        "required": [
+          "month",
+          "amountCents"
+        ],
+        "properties": {
+          "amountCents": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "month": {
+            "type": "string",
+            "description": "\"YYYY-MM\""
+          }
+        }
+      },
       "CashflowDay": {
         "type": "object",
         "description": "One projected day.",
@@ -11466,6 +11549,18 @@
           "memberId": {
             "type": "string",
             "nullable": true
+          }
+        }
+      },
+      "GetHoldRequest": {
+        "type": "object",
+        "description": "Fetch the hold for `month` (\"YYYY-MM\").",
+        "required": [
+          "month"
+        ],
+        "properties": {
+          "month": {
+            "type": "string"
           }
         }
       },
@@ -15980,6 +16075,23 @@
         "properties": {
           "input": {
             "$ref": "#/components/schemas/FinancialPhilosophyDto"
+          }
+        }
+      },
+      "SetHoldRequest": {
+        "type": "object",
+        "description": "Persist the hold for `month` (\"YYYY-MM\"). See `finsight_core::repos::budgets::set_hold`.",
+        "required": [
+          "month",
+          "amountCents"
+        ],
+        "properties": {
+          "amountCents": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "month": {
+            "type": "string"
           }
         }
       },

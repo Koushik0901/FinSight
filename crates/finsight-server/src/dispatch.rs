@@ -289,6 +289,10 @@ rpc_routes!(api, events, cmd, p, c:
         "set_budget" => {
             ok(c::budget::set_budget(api, arg(&p, "categoryId")?, arg(&p, "amountCents")?).await?)
         },
+        "get_hold" => ok(c::budget::get_hold(api, arg(&p, "month")?).await?),
+        "set_hold" => {
+            ok(c::budget::set_hold(api, arg(&p, "month")?, arg(&p, "amountCents")?).await?)
+        },
         "list_goals" => ok(c::budget::list_goals(api).await?),
         "create_goal" => ok(c::budget::create_goal(api, arg(&p, "input")?).await?),
         "update_goal_balance" => {

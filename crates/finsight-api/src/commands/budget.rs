@@ -1,6 +1,7 @@
 use crate::error::{AppError, AppResult};
 use crate::ApiState;
 use chrono::{Datelike, Utc};
+use finsight_core::models::BudgetHold;
 use finsight_core::repos::budgets::LookBackFact;
 use finsight_core::repos::{budgets, goals, run};
 use serde::{Deserialize, Serialize};
@@ -202,6 +203,54 @@ pub async fn set_budget(state: &ApiState, category_id: String, amount_cents: i64
     let month = Utc::now().format("%Y-%m").to_string();
     run(&db, move |conn| {
         budgets::set(conn, &category_id, &month, amount_cents)
+    })
+    .await
+    .map_err(AppError::from)
+}
+
+// ── Hold for Next Month (Actual) ─────────────────────────────────────────
+
+/// Persist the hold for `month` ("YYYY-MM"). See `finsight_core::repos::budgets::set_hold`.
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct SetHoldRequest {
+    pub month: String,
+    pub amount_cents: i64,
+}
+
+/// Fetch the hold for `month` ("YYYY-MM").
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct GetHoldRequest {
+    pub month: String,
+}
+
+#[utoipa::path(post, path = "/api/rpc/set_hold", request_body(content = SetHoldRequest), responses((status = 200, body = BudgetHold)))]
+pub async fn set_hold(state: &ApiState, month: String, amount_cents: i64) -> AppResult<BudgetHold> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| {
+        budgets::set_hold(conn, &month, amount_cents)?;
+        let amount = budgets::get_hold(conn, &month)?.unwrap_or(amount_cents);
+        Ok(BudgetHold {
+            month,
+            amount_cents: amount,
+        })
+    })
+    .await
+    .map_err(AppError::from)
+}
+
+#[utoipa::path(post, path = "/api/rpc/get_hold", request_body(content = GetHoldRequest), responses((status = 200, body = Option<BudgetHold>)))]
+pub async fn get_hold(state: &ApiState, month: String) -> AppResult<Option<BudgetHold>> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| {
+        let v = budgets::get_hold(conn, &month)?;
+        Ok(v.map(|amount_cents| BudgetHold {
+            month: month.clone(),
+            amount_cents,
+        }))
     })
     .await
     .map_err(AppError::from)

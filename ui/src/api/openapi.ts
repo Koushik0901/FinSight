@@ -1345,6 +1345,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/rpc/get_hold": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["get_hold"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/rpc/get_inbox_badge_count": {
         parameters: {
             query?: never;
@@ -3267,6 +3283,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/rpc/set_hold": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["set_hold"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/rpc/set_notification_prefs": {
         parameters: {
             query?: never;
@@ -4700,6 +4732,20 @@ export interface components {
             /** Format: int64 */
             txnCount: number;
         };
+        /**
+         * @description One month's hold — amount parked for next month.
+         *
+         *     Money parked in `month` reduces that month's `to_budget` (`income - budgeted - hold`)
+         *     and is added to `available_funds` for the following month as income-like.
+         *     This mirrors Actual's `Hold` primitive: an auditable, reversible store of
+         *     "not yet assigned" rather than silently inflating a category.
+         */
+        BudgetHold: {
+            /** Format: int64 */
+            amountCents: number;
+            /** @description "YYYY-MM" */
+            month: string;
+        };
         /** @description One projected day. */
         CashflowDay: {
             /** @description Whether the projected balance is below the safety buffer this day. */
@@ -5677,6 +5723,10 @@ export interface components {
         };
         GetFinancialMetricsRequest: {
             memberId?: string | null;
+        };
+        /** @description Fetch the hold for `month` ("YYYY-MM"). */
+        GetHoldRequest: {
+            month: string;
         };
         GetInvestmentSummaryRequest: {
             accountId: string;
@@ -7385,6 +7435,12 @@ export interface components {
         };
         SetFinancialPhilosophyRequest: {
             input: components["schemas"]["FinancialPhilosophyDto"];
+        };
+        /** @description Persist the hold for `month` ("YYYY-MM"). See `finsight_core::repos::budgets::set_hold`. */
+        SetHoldRequest: {
+            /** Format: int64 */
+            amountCents: number;
+            month: string;
         };
         SetNotificationPrefsRequest: {
             prefs: components["schemas"]["NotificationPrefsDto"];
@@ -9719,6 +9775,29 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FinancialPhilosophyDto"];
+                };
+            };
+        };
+    };
+    get_hold: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GetHoldRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BudgetHold"] | null;
                 };
             };
         };
@@ -12196,6 +12275,29 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    set_hold: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetHoldRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BudgetHold"];
+                };
             };
         };
     };

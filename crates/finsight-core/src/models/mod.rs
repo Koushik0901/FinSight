@@ -7,6 +7,7 @@ mod category_example;
 mod category_proposal;
 mod connection;
 mod copilot;
+pub mod budget_hold;
 pub mod custom_report;
 mod holding;
 mod household;
@@ -39,6 +40,7 @@ pub use copilot::{
     AgentActionBundle, AgentActionItem, AgentExecutionEntry, AgentNavigationTarget, AgentSession,
     ConversationMessage, ConversationSummary, MissingDataItem,
 };
+pub use budget_hold::{BudgetHold, GetHoldRequest, SetHoldRequest};
 pub use custom_report::{
     CustomReportParams, CustomReportResult, Period, ReportRow, SplitBy,
 };

@@ -4,6 +4,7 @@ import { useFocusParam } from "../api/hooks/useFocusParam";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useBudgetEnvelopes, useBudgetHistory, useSetBudget, useGoals, useContributeToGoal, useMemberBudgetEnvelopes } from "../api/hooks/budget";
+import { useHold, useSetHold } from "../api/hooks/budgetHolds";
 import { useHouseholdMembers } from "../api/hooks/household";
 import { useMonthTotals } from "../api/hooks/reports";
 import { api, type BudgetEnvelope, type SpendingBreakdown } from "../api/openapiClient";
@@ -203,6 +204,19 @@ export default function Budget() {
   const today = now.getDate();
   const monthLabel = now.toLocaleDateString("en-US", { month: "long", year: "numeric" });
   const monthPct = Math.round((today / totalDays) * 100);
+  const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const nextMonth = now.getMonth() === 11 ? `${now.getFullYear() + 1}-01` : `${now.getFullYear()}-${String(now.getMonth() + 2).padStart(2, "0")}`;
+  const nextMonthLabel = new Date(Number(nextMonth.slice(0, 4)), Number(nextMonth.slice(5, 7)) - 1, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  const { data: hold } = useHold(currentMonth);
+  const setHold = useSetHold();
+  const [holdInput, setHoldInput] = useState("");
+  const holdCents = hold?.amountCents ?? 0;
+  // Sync input when hold loads (once) — keep user's edits intact.
+  useEffect(() => {
+    if (hold && holdInput === "") {
+      setHoldInput(hold.amountCents > 0 ? String(Math.round(hold.amountCents / 100)) : "");
+    }
+  }, [hold, holdInput]);
 
   const sorted = useMemo(() => [...envelopes].sort((a, b) => {
     if (sort === "stress") return envelopeStatus(b).severity - envelopeStatus(a).severity || b.spentCents - a.spentCents;
@@ -233,7 +247,7 @@ export default function Budget() {
     dayOfMonth: today,
   });
   const remaining = totalAvailable - totalSpent;
-  const toBudget = (totals?.incomeCents ?? 0) - totalBudget;
+  const toBudget = (totals?.incomeCents ?? 0) - totalBudget - holdCents;
   const unbudgeted = sorted.filter((env) => env.budgetCents <= 0 && env.spentCents <= 0 && env.carryoverCents === 0);
   // Unbudgeted categories aren't "in trouble" (severity>=2 from "No budget
   // set" is really "unconfigured") — they get their own section below instead
@@ -524,6 +538,77 @@ export default function Budget() {
       </div>
 
       )}
+            {readiness !== "unavailable" && (
+        <div className="card tight" style={{ marginTop: 16, padding: 18 }}>
+          <div className="eyebrow"><span className="dot" />Hold for next month</div>
+          <div className="row row-sm wrap" style={{ marginTop: 8, alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            <span className="muted" style={{ fontSize: 12.5 }}>
+              Park unassigned income for {nextMonthLabel}. Held money reduces this month&apos;s To Budget and will be available in {nextMonthLabel} as income-like.
+            </span>
+            {holdCents > 0 && <span className="money" style={{ fontSize: 13, color: "var(--accent)" }}>{money(holdCents)} held</span>}
+          </div>
+          <div className="row row-sm" style={{ marginTop: 12, alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+            <input
+              className="control"
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              placeholder="Amount $"
+              value={holdInput}
+              onChange={(e) => setHoldInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  const v = Math.round(Number(holdInput || 0) * 100);
+                  if (v < 0) { toast.error("Hold must be $0 or more"); return; }
+                  void setHold.mutateAsync({ month: currentMonth, amountCents: v }).then(
+                    () => toast.success("Hold saved", { description: `${money(v)} held for ${nextMonthLabel}` }),
+                    () => toast.error("Could not save hold"),
+                  );
+                }
+                if (e.key === "Escape") setHoldInput(hold ? String(Math.round(hold.amountCents / 100)) : "");
+              }}
+              aria-label={`Hold amount for ${nextMonthLabel}`}
+              style={{ maxWidth: 160 }}
+            />
+            <button
+              className="btn primary sm"
+              type="button"
+              disabled={setHold.isPending}
+              onClick={() => {
+                const v = Math.round(Number(holdInput || 0) * 100);
+                if (v < 0) { toast.error("Hold must be $0 or more"); return; }
+                void setHold.mutateAsync({ month: currentMonth, amountCents: v }).then(
+                  () => toast.success("Hold saved", { description: `${money(v)} held for ${nextMonthLabel}` }),
+                  () => toast.error("Could not save hold"),
+                );
+              }}
+            >
+              {setHold.isPending ? "Saving…" : "Save hold"}
+            </button>
+            {holdCents > 0 && (
+              <button
+                className="btn ghost sm"
+                type="button"
+                disabled={setHold.isPending}
+                onClick={() => {
+                  void setHold.mutateAsync({ month: currentMonth, amountCents: 0 }).then(
+                    () => { setHoldInput(""); toast.success("Hold cleared"); },
+                    () => toast.error("Could not clear hold"),
+                  );
+                }}
+              >
+                Clear
+              </button>
+            )}
+          </div>
+          {holdCents > 0 && (
+            <p className="muted" style={{ marginTop: 8, fontSize: 12, marginBottom: 0 }}>
+              {money(holdCents)} will be added to {nextMonthLabel}&apos;s available funds as income-like. To Budget this month is <span className="money">{money(toBudget)}</span> after the hold.
+            </p>
+          )}
+        </div>
+      )}
+
       {breakdown && totalTagged > 0 && <div className="card tight" style={{ marginTop: 16 }}><div className="eyebrow"><span className="dot" />Spending mix</div><div className="stream" style={{ marginTop: 10, height: 16, borderRadius: 6 }}><span style={{ width: `${(breakdown.fixedCents / totalTagged) * 100}%`, background: "var(--ink-mute)" }} /><span style={{ width: `${(breakdown.investmentsCents / totalTagged) * 100}%`, background: "var(--accent)" }} /><span style={{ width: `${(breakdown.savingsCents / totalTagged) * 100}%`, background: "var(--positive)" }} /><span style={{ width: `${(breakdown.guiltFreeCents / totalTagged) * 100}%`, background: "var(--c-dining)" }} /><span style={{ width: `${(breakdown.untaggedCents / totalTagged) * 100}%`, background: "var(--ink-faint)" }} /></div></div>}
 
       {attention.length > 0 && (
