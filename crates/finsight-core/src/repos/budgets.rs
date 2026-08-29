@@ -1,7 +1,7 @@
 use crate::error::{CoreError, CoreResult};
 use crate::models::{
-    BudgetChange, CustomReportParams, CustomReportResult, FundingTemplate, Period, ReportRow,
-    SplitBy,
+    BudgetChange, BudgetTransfer, CustomReportParams, CustomReportResult, FundingTemplate,
+    Period, ReportRow, SplitBy,
 };
 use chrono::{Datelike, Utc};
 use rusqlite::{params, Connection, OptionalExtension};
@@ -140,6 +140,193 @@ pub fn available_funds(conn: &Connection, month: &str) -> CoreResult<i64> {
     let prev = month_before(month, 1);
     let prev_hold = get_hold(conn, &prev)?.unwrap_or(0);
     Ok(income - budgeted - cur_hold + prev_hold)
+}
+
+// ── Atomic Cover Ledger (Actual's Cover as auditable row) ─────────────────
+
+/// Net available for one category in `month`.
+///
+/// `available = budgeted + carryover + transfers_in - transfers_out - spent`
+/// where `carryover` is the running `budgeted - spent` from the category's
+/// first-ever budgeted month up to (not including) `month`, capped at 24 months.
+/// `spent` includes `settle_up` reimbursements as in `budget_envelopes_for_month`
+/// (a reimbursement nets against the category's outflow). Transfers are strictly
+/// within `month` — this keeps cover auditable per month and avoids smearing a
+/// one-time move across the carryover window.
+pub fn available(conn: &Connection, category_id: &str, month: &str) -> CoreResult<i64> {
+    let budgeted: i64 = conn.query_row(
+        "SELECT COALESCE(SUM(amount_cents), 0) FROM budgets WHERE category_id = ?1 AND month = ?2",
+        params![category_id, month],
+        |r| r.get(0),
+    )?;
+    let carry = carryover_for(conn, category_id, month)?;
+    let transfers_in: i64 = conn.query_row(
+        "SELECT COALESCE(SUM(amount_cents), 0) FROM budget_transfers WHERE to_category = ?1 AND month = ?2",
+        params![category_id, month],
+        |r| r.get(0),
+    )?;
+    let transfers_out: i64 = conn.query_row(
+        "SELECT COALESCE(SUM(amount_cents), 0) FROM budget_transfers WHERE from_category = ?1 AND month = ?2",
+        params![category_id, month],
+        |r| r.get(0),
+    )?;
+    let start = format!("{month}-01");
+    let next = month_before(month, -1);
+    let next_start = format!("{next}-01");
+    let spent: i64 = conn.query_row(
+        "SELECT COALESCE(SUM(CASE WHEN settle_up = 1 THEN -amount_cents WHEN amount_cents < 0 THEN -amount_cents ELSE 0 END), 0) \
+          FROM transactions WHERE category_id = ?1 AND posted_at >= ?2 AND posted_at < ?3",
+        params![category_id, start, next_start],
+        |r| r.get(0),
+    )?;
+    Ok(budgeted + carry + transfers_in - transfers_out - spent)
+}
+
+/// List all transfers for `month` ordered by `created_at` ASC.
+pub fn list_transfers(conn: &Connection, month: &str) -> CoreResult<Vec<BudgetTransfer>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, month, from_category, to_category, amount_cents, note, created_at \
+          FROM budget_transfers WHERE month = ?1 ORDER BY created_at ASC, id ASC",
+    )?;
+    let rows = stmt.query_map(params![month], |r| {
+        Ok(BudgetTransfer {
+            id: r.get(0)?,
+            month: r.get(1)?,
+            from_category: r.get(2)?,
+            to_category: r.get(3)?,
+            amount_cents: r.get(4)?,
+            note: r.get(5)?,
+            created_at: r.get(6)?,
+        })
+    })?;
+    let mut out = Vec::new();
+    for row in rows {
+        out.push(row?);
+    }
+    Ok(out)
+}
+
+/// List all transfers across every month, ordered by month DESC then created_at.
+/// Useful for audit views; `list_transfers` is the month-scoped primary API.
+pub fn list_all_transfers(conn: &Connection) -> CoreResult<Vec<BudgetTransfer>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, month, from_category, to_category, amount_cents, note, created_at \
+          FROM budget_transfers ORDER BY month DESC, created_at ASC, id ASC",
+    )?;
+    let rows = stmt.query_map([], |r| {
+        Ok(BudgetTransfer {
+            id: r.get(0)?,
+            month: r.get(1)?,
+            from_category: r.get(2)?,
+            to_category: r.get(3)?,
+            amount_cents: r.get(4)?,
+            note: r.get(5)?,
+            created_at: r.get(6)?,
+        })
+    })?;
+    let mut out = Vec::new();
+    for row in rows {
+        out.push(row?);
+    }
+    Ok(out)
+}
+
+/// Atomically move `amount_cents` from `from_category` to `to_category` within
+/// `month` and record the auditable ledger row.
+///
+/// `from_category` and `to_category` are required category ids (non-empty).
+/// `amount_cents` must be > 0 and available spare of `from_category` in that
+/// month must be >= amount, otherwise `CoreError::Validation` is returned and
+/// no row is written. The check and insert are performed in a single
+/// `BEGIN IMMEDIATE` transaction, so concurrent covers cannot overdraft the
+/// same donor.
+///
+/// `note` is free-form audit text (e.g. "cover overspend").
+pub fn transfer(
+    conn: &mut Connection,
+    from_category: &str,
+    to_category: &str,
+    amount_cents: i64,
+    month: &str,
+    note: Option<&str>,
+) -> CoreResult<BudgetTransfer> {
+    transfer_optional(conn, Some(from_category), Some(to_category), amount_cents, month, note)
+}
+
+/// Nullable variant: either side may be `None` to represent moving to/from
+/// unassigned (To Budget). At least one side must be `Some`, and when both
+/// are `Some` they must differ. Validation of spare applies only when
+/// `from_category` is `Some`.
+pub fn transfer_optional(
+    conn: &mut Connection,
+    from_category: Option<&str>,
+    to_category: Option<&str>,
+    amount_cents: i64,
+    month: &str,
+    note: Option<&str>,
+) -> CoreResult<BudgetTransfer> {
+    if amount_cents <= 0 {
+        return Err(CoreError::Validation(
+            "transfer amount must be > 0".to_string(),
+        ));
+    }
+    if from_category.is_none() && to_category.is_none() {
+        return Err(CoreError::Validation(
+            "transfer requires at least one of from_category / to_category".to_string(),
+        ));
+    }
+    if let (Some(f), Some(t)) = (from_category, to_category) {
+        if f == t {
+            return Err(CoreError::Validation(
+                "from_category and to_category must differ".to_string(),
+            ));
+        }
+        if f.trim().is_empty() || t.trim().is_empty() {
+            return Err(CoreError::Validation(
+                "category ids must be non-empty".to_string(),
+            ));
+        }
+    }
+    // Validate month shape loosely "YYYY-MM"
+    if month.len() != 7 || &month[4..5] != "-" {
+        return Err(CoreError::Validation(format!(
+            "month must be YYYY-MM, got `{month}`"
+        )));
+    }
+    crate::repos::atomic(conn, |conn| {
+        // Spare check only when moving *from* a category (donor)
+        if let Some(from) = from_category {
+            let avail = available(conn, from, month)?;
+            if avail < amount_cents {
+                return Err(CoreError::Validation(format!(
+                    "insufficient spare in `{from}` for month {month}: available {avail} < {amount_cents}"
+                )));
+            }
+        }
+        let id = Uuid::new_v4().to_string();
+        let now = Utc::now().to_rfc3339();
+        conn.execute(
+            "INSERT INTO budget_transfers(id, month, from_category, to_category, amount_cents, note, created_at) \
+              VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![id, month, from_category, to_category, amount_cents, note, now],
+        )?;
+        Ok(BudgetTransfer {
+            id,
+            month: month.to_string(),
+            from_category: from_category.map(|s| s.to_string()),
+            to_category: to_category.map(|s| s.to_string()),
+            amount_cents,
+            note: note.map(|s| s.to_string()),
+            created_at: now,
+        })
+    })
+}
+
+/// Delete a transfer by id. Primarily for undo/audit correction; returns true
+/// if a row was deleted. Does not retroactively validate spare after deletion.
+pub fn delete_transfer(conn: &mut Connection, id: &str) -> CoreResult<bool> {
+    let n = conn.execute("DELETE FROM budget_transfers WHERE id = ?1", params![id])?;
+    Ok(n > 0)
 }
 
 // ── Declarative Funding Templates (Actual's #template as a table) ─────────

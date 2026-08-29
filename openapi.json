@@ -3239,6 +3239,39 @@
         }
       }
     },
+    "/api/rpc/list_budget_transfers": {
+      "post": {
+        "tags": [
+          "finsight_api::commands::budget"
+        ],
+        "operationId": "list_budget_transfers",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ListBudgetTransfersRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/BudgetTransfer"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/rpc/list_categories": {
       "post": {
         "tags": [
@@ -5754,6 +5787,66 @@
         "responses": {
           "200": {
             "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/rpc/transfer_budget": {
+      "post": {
+        "tags": [
+          "finsight_api::commands::budget"
+        ],
+        "operationId": "transfer_budget",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransferBudgetRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BudgetTransfer"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rpc/transfer_envelope": {
+      "post": {
+        "tags": [
+          "finsight_api::commands::budget"
+        ],
+        "operationId": "transfer_envelope",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransferBudgetRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BudgetTransfer"
+                }
+              }
+            }
           }
         }
       }
@@ -9006,6 +9099,11 @@
             "format": "int64",
             "description": "Actual outflow this month (positive = spent)"
           },
+          "transferCents": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Net transfers in minus out for this month. Positive means this envelope\nreceived cover; negative means it funded another envelope. Feeds\n`available = budgeted + carryover + transfer - spent`."
+          },
           "txnCount": {
             "type": "integer",
             "format": "int64"
@@ -9027,6 +9125,43 @@
           "month": {
             "type": "string",
             "description": "\"YYYY-MM\""
+          }
+        }
+      },
+      "BudgetTransfer": {
+        "type": "object",
+        "description": "One auditable budget transfer — Actual's Cover as a ledger row.\n\nMoves `amount_cents` from `from_category` to `to_category` within `month`.\nEither `from_category` or `to_category` may be `None` to represent moving\nto/from unassigned (To Budget), but not both. At least one side is set and\n`from != to` is enforced by the SQL CHECK. Net per-category effect is\n`+transfers_in - transfers_out` and is included in\n`available = budgeted + carryover + transfers_in - transfers_out - spent`.",
+        "required": [
+          "id",
+          "month",
+          "amountCents",
+          "createdAt"
+        ],
+        "properties": {
+          "amountCents": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "fromCategory": {
+            "type": "string",
+            "nullable": true
+          },
+          "id": {
+            "type": "string"
+          },
+          "month": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string",
+            "nullable": true
+          },
+          "toCategory": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -12740,6 +12875,17 @@
             "type": "integer",
             "format": "int32",
             "minimum": 0
+          }
+        }
+      },
+      "ListBudgetTransfersRequest": {
+        "type": "object",
+        "required": [
+          "month"
+        ],
+        "properties": {
+          "month": {
+            "type": "string"
           }
         }
       },
@@ -17332,6 +17478,35 @@
           },
           "userConfirmed": {
             "type": "boolean"
+          }
+        }
+      },
+      "TransferBudgetRequest": {
+        "type": "object",
+        "description": "Move `amount_cents` from `from_category` to `to_category` within `month`.\nUses `POST /api/rpc/transfer_budget` body `TransferBudgetRequest`. Either\n`from_category` or `to_category` may be null to move to/from To Budget, but\nnot both, and `from != to` when both present. Validates available spare of\nthe donor (if present) via `budgets::available` — insufficient spare is\n`400 Validation`, not a silent overdraft. The whole operation is\n`BEGIN IMMEDIATE` atomic via `budgets::transfer`.",
+        "required": [
+          "amountCents",
+          "month"
+        ],
+        "properties": {
+          "amountCents": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "fromCategory": {
+            "type": "string",
+            "nullable": true
+          },
+          "month": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string",
+            "nullable": true
+          },
+          "toCategory": {
+            "type": "string",
+            "nullable": true
           }
         }
       },

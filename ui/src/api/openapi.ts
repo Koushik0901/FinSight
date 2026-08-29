@@ -2015,6 +2015,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/rpc/list_budget_transfers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["list_budget_transfers"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/rpc/list_categories": {
         parameters: {
             query?: never;
@@ -3635,6 +3651,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/rpc/transfer_budget": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["transfer_budget"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/rpc/transfer_envelope": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["transfer_envelope"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/rpc/trigger_categorize": {
         parameters: {
             query?: never;
@@ -4818,6 +4866,13 @@ export interface components {
              * @description Actual outflow this month (positive = spent)
              */
             spentCents: number;
+            /**
+             * Format: int64
+             * @description Net transfers in minus out for this month. Positive means this envelope
+             *     received cover; negative means it funded another envelope. Feeds
+             *     `available = budgeted + carryover + transfer - spent`.
+             */
+            transferCents?: number;
             /** Format: int64 */
             txnCount: number;
         };
@@ -4834,6 +4889,26 @@ export interface components {
             amountCents: number;
             /** @description "YYYY-MM" */
             month: string;
+        };
+        /**
+         * @description One auditable budget transfer — Actual's Cover as a ledger row.
+         *
+         *     Moves `amount_cents` from `from_category` to `to_category` within `month`.
+         *     Either `from_category` or `to_category` may be `None` to represent moving
+         *     to/from unassigned (To Budget), but not both. At least one side is set and
+         *     `from != to` is enforced by the SQL CHECK. Net per-category effect is
+         *     `+transfers_in - transfers_out` and is included in
+         *     `available = budgeted + carryover + transfers_in - transfers_out - spent`.
+         */
+        BudgetTransfer: {
+            /** Format: int64 */
+            amountCents: number;
+            createdAt: string;
+            fromCategory?: string | null;
+            id: string;
+            month: string;
+            note?: string | null;
+            toCategory?: string | null;
         };
         /** @description One projected day. */
         CashflowDay: {
@@ -6202,6 +6277,9 @@ export interface components {
         ListBudgetHistoryRequest: {
             /** Format: int32 */
             months: number;
+        };
+        ListBudgetTransfersRequest: {
+            month: string;
         };
         /**
          * @description Every exemplar for a category, oldest first.
@@ -7902,6 +7980,23 @@ export interface components {
             id: string;
             toTransactionId: string;
             userConfirmed: boolean;
+        };
+        /**
+         * @description Move `amount_cents` from `from_category` to `to_category` within `month`.
+         *     Uses `POST /api/rpc/transfer_budget` body `TransferBudgetRequest`. Either
+         *     `from_category` or `to_category` may be null to move to/from To Budget, but
+         *     not both, and `from != to` when both present. Validates available spare of
+         *     the donor (if present) via `budgets::available` — insufficient spare is
+         *     `400 Validation`, not a silent overdraft. The whole operation is
+         *     `BEGIN IMMEDIATE` atomic via `budgets::transfer`.
+         */
+        TransferBudgetRequest: {
+            /** Format: int64 */
+            amountCents: number;
+            fromCategory?: string | null;
+            month: string;
+            note?: string | null;
+            toCategory?: string | null;
         };
         TransferSuggestionInfo: {
             confidence: string;
@@ -10764,6 +10859,29 @@ export interface operations {
             };
         };
     };
+    list_budget_transfers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListBudgetTransfersRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BudgetTransfer"][];
+                };
+            };
+        };
+    };
     list_categories: {
         parameters: {
             query?: never;
@@ -12892,6 +13010,52 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    transfer_budget: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TransferBudgetRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BudgetTransfer"];
+                };
+            };
+        };
+    };
+    transfer_envelope: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TransferBudgetRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BudgetTransfer"];
+                };
             };
         };
     };

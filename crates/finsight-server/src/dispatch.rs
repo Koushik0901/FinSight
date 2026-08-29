@@ -313,6 +313,25 @@ rpc_routes!(api, events, cmd, p, c:
         .await?),
         "delete_funding_template" => ok(c::budget::delete_funding_template(api, arg(&p, "id")?).await?),
         "apply_templates" => ok(c::budget::apply_templates(api, arg(&p, "month")?).await?),
+        "list_budget_transfers" => ok(c::budget::list_budget_transfers(api, arg(&p, "month")?).await?),
+        "transfer_budget" => ok(c::budget::transfer_budget(
+            api,
+            arg(&p, "fromCategory")?,
+            arg(&p, "toCategory")?,
+            arg(&p, "amountCents")?,
+            arg(&p, "month")?,
+            arg(&p, "note")?,
+        )
+        .await?),
+        "transfer_envelope" => ok(c::budget::transfer_envelope(
+            api,
+            arg(&p, "fromCategory")?,
+            arg(&p, "toCategory")?,
+            arg(&p, "amountCents")?,
+            arg(&p, "month")?,
+            arg(&p, "note")?,
+        )
+        .await?),
         "list_goals" => ok(c::budget::list_goals(api).await?),
         "create_goal" => ok(c::budget::create_goal(api, arg(&p, "input")?).await?),
         "update_goal_balance" => {

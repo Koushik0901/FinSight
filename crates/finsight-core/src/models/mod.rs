@@ -8,6 +8,7 @@ mod category_proposal;
 mod connection;
 mod copilot;
 pub mod budget_hold;
+pub mod budget_transfer;
 pub mod custom_report;
 pub mod funding_template;
 mod holding;
@@ -42,6 +43,9 @@ pub use copilot::{
     ConversationMessage, ConversationSummary, MissingDataItem,
 };
 pub use budget_hold::{BudgetHold, GetHoldRequest, SetHoldRequest};
+pub use budget_transfer::{
+    BudgetTransfer, ListBudgetTransfersRequest, TransferBudgetRequest,
+};
 pub use custom_report::{
     CustomReportParams, CustomReportResult, Period, ReportRow, SplitBy,
 };
