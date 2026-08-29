@@ -42,6 +42,32 @@ describe("money", () => {
     // claimed — the exact failure this guards.
     expect(money(123456, { currency: "GOLD" })).toBe("GOLD 1,235");
   });
+
+  // Ingest rejects cent values outside the display-safe range, so anything
+  // reaching money() non-integer or beyond 2^51-1 cents is corrupt data.
+  // Actual Budget's `safeNumber` throws in its formatter for exactly this:
+  // rendering a float-corrupted amount reads as a real number and is the
+  // one failure money formatting must never make.
+  it("throws on fractional cents instead of rendering a guessed amount", () => {
+    expect(() => money(267.5)).toThrow();
+    expect(() => money(100.4)).toThrow();
+  });
+
+  it("throws on cents beyond the float-display-safe range", () => {
+    expect(() => money(2 ** 51)).toThrow();
+    expect(() => money(2 ** 53 + 2)).toThrow();
+    expect(money(2 ** 51 - 1)).toBeTruthy();
+  });
+
+  it("throws on non-finite cents", () => {
+    expect(() => money(Number.NaN)).toThrow();
+    expect(() => money(Infinity)).toThrow();
+  });
+
+  it("compactMoney enforces the same guard", () => {
+    expect(() => compactMoney(267.5)).toThrow();
+    expect(() => compactMoney(2 ** 53)).toThrow();
+  });
 });
 
 describe("compactMoney", () => {

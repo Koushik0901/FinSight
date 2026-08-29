@@ -1,6 +1,4 @@
 use chrono::{DateTime, Utc};
-use rust_decimal::Decimal;
-use rust_decimal::prelude::ToPrimitive;
 
 use super::client::EnableBankingClient;
 use super::models::{EnableBankingAccount, EnableBankingTransaction};
@@ -172,16 +170,15 @@ fn parse_eb_date(s: Option<&str>) -> DateTime<Utc> {
 }
 
 fn parse_amount_cents(amount: &str) -> ProviderResult<i64> {
-    let decimal = amount
-        .trim()
-        .parse::<Decimal>()
-        .map_err(|_| ProviderError::Internal(format!("invalid amount: {}", amount)))?;
-    let rounded = decimal.round_dp(2);
-    let cents = (rounded * Decimal::from(100))
-        .round_dp(0)
-        .to_i64()
-        .ok_or_else(|| ProviderError::Internal(format!("amount out of range: {}", amount)))?;
-    Ok(cents)
+    crate::amount::parse_decimal_cents(amount)
+        .map_err(|e| match e {
+            crate::amount::CentsError::Invalid => {
+                ProviderError::Internal(format!("invalid amount: {}", amount))
+            }
+            crate::amount::CentsError::OutOfRange => {
+                ProviderError::Internal(format!("amount out of range: {}", amount))
+            }
+        })
 }
 
 #[cfg(test)]
@@ -189,6 +186,12 @@ mod tests {
     use super::*;
     use wiremock::matchers::{header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    #[test]
+    fn parse_amount_rejects_beyond_display_safe_cents() {
+        assert_eq!(parse_amount_cents("22517998136852.47").unwrap(), (1 << 51) - 1);
+        assert!(parse_amount_cents("22517998136852.48").is_err());
+    }
 
     #[tokio::test]
     async fn fetch_enable_data_stub_isolates_per_user() {

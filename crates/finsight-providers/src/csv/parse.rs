@@ -19,6 +19,7 @@ pub enum ParseError {
     WrongColumnCount { got: usize, expected: usize },
     UnparseableDate(String),
     UnparseableAmount(String),
+    AmountOutOfRange(String),
     MissingRequiredField(&'static str),
 }
 
@@ -30,6 +31,7 @@ impl std::fmt::Display for ParseError {
             }
             Self::UnparseableDate(s) => write!(f, "could not parse date {s:?}"),
             Self::UnparseableAmount(s) => write!(f, "could not parse amount {s:?}"),
+            Self::AmountOutOfRange(s) => write!(f, "amount out of display-safe range: {s:?}"),
             Self::MissingRequiredField(name) => write!(f, "missing required field {name}"),
         }
     }
@@ -290,21 +292,24 @@ fn parse_amount(s: &str, decimal_separator: char) -> Result<i64, ParseError> {
         })
         .collect();
 
-    let mut f: f64 = core
-        .parse()
-        .map_err(|_| ParseError::UnparseableAmount(s.to_owned()))?;
+    let cents = crate::amount::parse_decimal_cents(&core).map_err(|e| match e {
+        crate::amount::CentsError::Invalid => ParseError::UnparseableAmount(s.to_owned()),
+        crate::amount::CentsError::OutOfRange => ParseError::AmountOutOfRange(s.to_owned()),
+    })?;
 
-    if has_parentheses || has_trailing_minus {
-        f = -f.abs();
-    }
+    let mut cents = if has_parentheses || has_trailing_minus {
+        -cents.abs()
+    } else {
+        cents
+    };
     if is_debit {
-        f = -f.abs();
+        cents = -cents.abs();
     }
     if is_credit {
-        f = f.abs();
+        cents = cents.abs();
     }
 
-    Ok((f * 100.0).round() as i64)
+    Ok(cents)
 }
 
 /// Convenience adapter — sets status to Cleared, category_id to None.
@@ -410,6 +415,30 @@ mod tests {
         );
         let p = parse_row(&["2026-05-19", "Safeway", "\u{2212}8.42"], &m).unwrap();
         assert_eq!(p.amount_cents, -842);
+    }
+
+    #[test]
+    fn sub_cent_midpoints_round_on_the_exact_decimal_value() {
+        // `(f64 * 100.0).round()` stored these below their decimal midpoint
+        // and dropped them to 267/101. The decimal path rounds to 268/102.
+        assert_eq!(parse_amount("2.675", '.').unwrap(), 268);
+        assert_eq!(parse_amount("1.015", '.').unwrap(), 102);
+        assert_eq!(parse_amount("-2.675", '.').unwrap(), -268);
+        assert_eq!(parse_amount("(1.015)", '.').unwrap(), -102);
+    }
+
+    #[test]
+    fn amounts_beyond_display_safe_cents_are_rejected() {
+        // 2^51 cents is the JS formatting ceiling (see crate::amount).
+        assert_eq!(parse_amount("22517998136852.47", '.'), Ok((1 << 51) - 1));
+        assert!(matches!(
+            parse_amount("22517998136852.48", '.'),
+            Err(ParseError::AmountOutOfRange(_))
+        ));
+        assert!(matches!(
+            parse_amount("(22517998136852.48)", '.'),
+            Err(ParseError::AmountOutOfRange(_))
+        ));
     }
 
     #[test]

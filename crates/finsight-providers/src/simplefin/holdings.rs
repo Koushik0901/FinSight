@@ -87,12 +87,7 @@ pub fn import_holdings(
 }
 
 fn parse_amount_cents(amount: &str) -> Option<i64> {
-    use rust_decimal::prelude::*;
-    use rust_decimal::Decimal;
-    let decimal = amount.trim().parse::<Decimal>().ok()?;
-    let rounded = decimal.round_dp(2);
-    let cents = (rounded * Decimal::from(100)).round_dp(0).to_i64()?;
-    Some(cents)
+    crate::amount::parse_decimal_cents(amount).ok()
 }
 
 #[cfg(test)]
@@ -162,6 +157,12 @@ mod tests {
         )
         .unwrap()
         .id
+    }
+
+    #[test]
+    fn parse_amount_rejects_beyond_display_safe_cents() {
+        assert_eq!(parse_amount_cents("22517998136852.47"), Some((1 << 51) - 1));
+        assert_eq!(parse_amount_cents("22517998136852.48"), None);
     }
 
     #[test]

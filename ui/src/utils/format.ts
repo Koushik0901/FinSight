@@ -28,6 +28,28 @@ function getNumberFormat(currency: string | null, extra: Intl.NumberFormatOption
 }
 
 /**
+ * Ingest (`finsight-providers::amount`) rejects cent values beyond this range,
+ * mirroring Actual Budget's `safeNumber`/`MAX_SAFE_NUMBER` guard: display
+ * divides cents by 100 as a float, and past 2^51 the nearest double can render
+ * a different cent amount than was stored. A non-integer or out-of-range value
+ * reaching a formatter is corrupt data — throwing is loud and fixable, while
+ * formatting it would print a confidently wrong amount. (Unlike an unusable
+ * currency code, which is benign display metadata, wrong money is never
+ * renderable "as-is".)
+ */
+const MAX_SAFE_CENTS = 2 ** 51 - 1;
+
+function assertDisplayableCents(cents: number): void {
+  if (
+    !Number.isInteger(cents) ||
+    !Number.isSafeInteger(cents) ||
+    Math.abs(cents) > MAX_SAFE_CENTS
+  ) {
+    throw new Error(`money: cent amount is not display-safe: ${cents}`);
+  }
+}
+
+/**
  * `Intl.NumberFormat` THROWS a RangeError on a currency code that is not three
  * ASCII letters, which would take down the whole screen. Account currencies can
  * come from arbitrary CSV imports, so anything unrecognised falls back to
@@ -39,6 +61,7 @@ function formatIn(
   currency: string,
   extra: Intl.NumberFormatOptions,
 ): string {
+  assertDisplayableCents(cents);
   const isIso4217 = /^[A-Za-z]{3}$/.test(currency);
   if (isIso4217) {
     return getNumberFormat(currency.toUpperCase(), extra).format(cents / 100);

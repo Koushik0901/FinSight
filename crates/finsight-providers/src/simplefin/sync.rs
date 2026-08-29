@@ -1,7 +1,5 @@
 use chrono::{DateTime, Duration, Utc};
 use rusqlite::{params, Connection};
-use rust_decimal::prelude::ToPrimitive;
-use rust_decimal::Decimal;
 use serde_json;
 
 use finsight_core::models::{NewImportCandidate, NewImportCandidateMatch};
@@ -412,17 +410,15 @@ fn update_matched_transaction(
 
 /// Parse a SimpleFin numeric string (e.g. "-33293.43" or "100.5") into integer cents.
 fn parse_amount_cents(amount: &str) -> ProviderResult<i64> {
-    let decimal = amount
-        .trim()
-        .parse::<Decimal>()
-        .map_err(|_| ProviderError::Internal(format!("invalid amount: {}", amount)))?;
-    // Round to 2 decimal places using standard half-up, then convert to cents.
-    let rounded = decimal.round_dp(2);
-    let cents = (rounded * Decimal::from(100))
-        .round_dp(0)
-        .to_i64()
-        .ok_or_else(|| ProviderError::Internal(format!("amount out of range: {}", amount)))?;
-    Ok(cents)
+    crate::amount::parse_decimal_cents(amount)
+        .map_err(|e| match e {
+            crate::amount::CentsError::Invalid => {
+                ProviderError::Internal(format!("invalid amount: {}", amount))
+            }
+            crate::amount::CentsError::OutOfRange => {
+                ProviderError::Internal(format!("amount out of range: {}", amount))
+            }
+        })
 }
 
 #[cfg(test)]
@@ -437,6 +433,12 @@ mod tests {
         assert_eq!(parse_amount_cents("100").unwrap(), 10000);
         assert_eq!(parse_amount_cents("-100.5").unwrap(), -10050);
         assert_eq!(parse_amount_cents("100.999").unwrap(), 10100);
+    }
+
+    #[test]
+    fn parse_amount_rejects_beyond_display_safe_cents() {
+        assert_eq!(parse_amount_cents("22517998136852.47").unwrap(), (1 << 51) - 1);
+        assert!(parse_amount_cents("22517998136852.48").is_err());
     }
 
     #[test]

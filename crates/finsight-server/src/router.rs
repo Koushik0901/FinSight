@@ -623,10 +623,30 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn openapi_json_is_valid_and_no_cache_and_compressed() {
         let app = build_router(test_state(), &test_ui_dir());
+        // The name promises BOTH: a br-negotiated response is actually
+        // compressed (asserted on the header — the body is brotli bytes, so
+        // it must never be JSON-parsed; see cfbe0eb), and the served spec is
+        // valid JSON with no-cache. Validity is checked on an identity
+        // request, which the per-route compressor leaves untouched.
         let res = app
+            .clone()
             .oneshot(
                 Request::get("/api/openapi.json")
                     .header("accept-encoding", "br")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        assert_eq!(header(&res, "content-encoding"), Some("br"));
+        assert_eq!(header(&res, "cache-control"), Some(REVALIDATE));
+        drop(res);
+
+        let res = app
+            .oneshot(
+                Request::get("/api/openapi.json")
+                    .header("accept-encoding", "identity")
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -638,9 +658,6 @@ pub(crate) mod tests {
             Some(true)
         );
         assert_eq!(header(&res, "cache-control"), Some(REVALIDATE));
-        // Empty spec is still JSON and compressible, but compression is valid if present; ensure not missing
-        // If client asked br, we may get br or identity — both ok, but header must be present for JSON
-        // Just check status and valid JSON body
         let bytes = axum::body::to_bytes(res.into_body(), usize::MAX)
             .await
             .unwrap();
