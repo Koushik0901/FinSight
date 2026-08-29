@@ -1,6 +1,7 @@
 use crate::error::{AppError, AppResult};
 use crate::ApiState;
 use chrono::{Datelike, Utc};
+use finsight_core::models::{BudgetChange, BudgetHold, BudgetTransfer, FundingTemplate};
 use finsight_core::repos::budgets::LookBackFact;
 use finsight_core::repos::{budgets, goals, run};
 use serde::{Deserialize, Serialize};
@@ -27,6 +28,11 @@ pub struct BudgetEnvelope {
     /// negative = accumulated overspend.
     pub carryover_cents: i64,
     pub txn_count: i64,
+    /// Net transfers in minus out for this month. Positive means this envelope
+    /// received cover; negative means it funded another envelope. Feeds
+    /// `available = budgeted + carryover + transfer - spent`.
+    #[serde(default)]
+    pub transfer_cents: i64,
 }
 
 /// Budgets joined with actual spend per category for `month`/`month_start`
@@ -81,6 +87,29 @@ fn budget_envelopes_for_month(
             continue;
         }
         let carryover_cents = budgets::carryover_into_month(conn, &cat_id, month)?;
+        // Net cover ledger for this month: +in - out. Uses the same month as the
+        // envelope, so a cover in April does not smear into May's carryover —
+        // it stays an auditable per-month move.
+        //
+        // We do two scalar queries per envelope (N < 100, months are small, and
+        // the indexes (from_category, month) / (to_category, month) keep them
+        // logarithmic). A single GROUP BY would save ~N queries but complicates
+        // the simple, auditable math that Tasks 2-4 keep in `finsight-core`.
+        let transfer_in: i64 = conn
+            .query_row(
+                "SELECT COALESCE(SUM(amount_cents), 0) FROM budget_transfers WHERE to_category = ?1 AND month = ?2",
+                rusqlite::params![cat_id, month],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        let transfer_out: i64 = conn
+            .query_row(
+                "SELECT COALESCE(SUM(amount_cents), 0) FROM budget_transfers WHERE from_category = ?1 AND month = ?2",
+                rusqlite::params![cat_id, month],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        let transfer_cents = transfer_in - transfer_out;
         // Every active budgetable category is shown, budgeted or not — a category
         // with no budget and no spend yet is exactly the one a user needs to see
         // in order to budget it for the first time.
@@ -93,6 +122,7 @@ fn budget_envelopes_for_month(
             spent_cents: spent,
             carryover_cents,
             txn_count,
+            transfer_cents,
         });
     }
     Ok(out)
@@ -205,6 +235,243 @@ pub async fn set_budget(state: &ApiState, category_id: String, amount_cents: i64
     })
     .await
     .map_err(AppError::from)
+}
+
+// ── Hold for Next Month (Actual) ─────────────────────────────────────────
+
+/// Persist the hold for `month` ("YYYY-MM"). See `finsight_core::repos::budgets::set_hold`.
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct SetHoldRequest {
+    pub month: String,
+    pub amount_cents: i64,
+}
+
+/// Fetch the hold for `month` ("YYYY-MM").
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct GetHoldRequest {
+    pub month: String,
+}
+
+#[utoipa::path(post, path = "/api/rpc/set_hold", request_body(content = SetHoldRequest), responses((status = 200, body = BudgetHold)))]
+pub async fn set_hold(state: &ApiState, month: String, amount_cents: i64) -> AppResult<BudgetHold> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| {
+        budgets::set_hold(conn, &month, amount_cents)?;
+        let amount = budgets::get_hold(conn, &month)?.unwrap_or(amount_cents);
+        Ok(BudgetHold {
+            month,
+            amount_cents: amount,
+        })
+    })
+    .await
+    .map_err(AppError::from)
+}
+
+#[utoipa::path(post, path = "/api/rpc/get_hold", request_body(content = GetHoldRequest), responses((status = 200, body = Option<BudgetHold>)))]
+pub async fn get_hold(state: &ApiState, month: String) -> AppResult<Option<BudgetHold>> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| {
+        let v = budgets::get_hold(conn, &month)?;
+        Ok(v.map(|amount_cents| BudgetHold {
+            month: month.clone(),
+            amount_cents,
+        }))
+    })
+    .await
+    .map_err(AppError::from)
+}
+
+// ── Declarative Funding Templates (Actual's #template as a table) ──────────
+
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct CreateFundingTemplateRequest {
+    pub category_id: String,
+    pub kind: String,
+    pub params_json: Option<String>,
+    pub priority: Option<i64>,
+}
+
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct UpdateFundingTemplateRequest {
+    pub id: String,
+    pub category_id: Option<String>,
+    pub kind: Option<String>,
+    pub params_json: Option<String>,
+    pub priority: Option<i64>,
+}
+
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct DeleteFundingTemplateRequest {
+    pub id: String,
+}
+
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct ApplyTemplatesRequest {
+    pub month: String,
+}
+
+#[utoipa::path(post, path = "/api/rpc/list_funding_templates", responses((status = 200, body = Vec<FundingTemplate>)))]
+pub async fn list_funding_templates(state: &ApiState) -> AppResult<Vec<FundingTemplate>> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| budgets::list_funding_templates(conn))
+        .await
+        .map_err(AppError::from)
+}
+
+#[utoipa::path(post, path = "/api/rpc/create_funding_template", request_body(content = CreateFundingTemplateRequest), responses((status = 200, body = FundingTemplate)))]
+pub async fn create_funding_template(
+    state: &ApiState,
+    category_id: String,
+    kind: String,
+    params_json: Option<String>,
+    priority: Option<i64>,
+) -> AppResult<FundingTemplate> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| {
+        budgets::create_funding_template(
+            conn,
+            &category_id,
+            &kind,
+            params_json.as_deref().unwrap_or("{}"),
+            priority.unwrap_or(0),
+        )
+    })
+    .await
+    .map_err(AppError::from)
+}
+
+#[utoipa::path(post, path = "/api/rpc/update_funding_template", request_body(content = UpdateFundingTemplateRequest), responses((status = 200, body = Option<FundingTemplate>)))]
+pub async fn update_funding_template(
+    state: &ApiState,
+    id: String,
+    category_id: Option<String>,
+    kind: Option<String>,
+    params_json: Option<String>,
+    priority: Option<i64>,
+) -> AppResult<Option<FundingTemplate>> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| {
+        budgets::update_funding_template(
+            conn,
+            &id,
+            category_id.as_deref(),
+            kind.as_deref(),
+            params_json.as_deref(),
+            priority,
+        )
+    })
+    .await
+    .map_err(AppError::from)
+}
+
+#[utoipa::path(post, path = "/api/rpc/delete_funding_template", request_body(content = DeleteFundingTemplateRequest), responses((status = 200, description = "Success")))]
+pub async fn delete_funding_template(state: &ApiState, id: String) -> AppResult<()> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| {
+        budgets::delete_funding_template(conn, &id)?;
+        Ok(())
+    })
+    .await
+    .map_err(AppError::from)
+}
+
+#[utoipa::path(post, path = "/api/rpc/apply_templates", request_body(content = ApplyTemplatesRequest), responses((status = 200, body = Vec<BudgetChange>)))]
+pub async fn apply_templates(state: &ApiState, month: String) -> AppResult<Vec<BudgetChange>> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| budgets::apply_templates(conn, &month))
+        .await
+        .map_err(AppError::from)
+}
+
+// ── Atomic Cover Ledger (Actual's Cover as auditable row) ─────────────────
+
+/// Move `amount_cents` from `from_category` to `to_category` within `month`.
+/// Uses `POST /api/rpc/transfer_budget` body `TransferBudgetRequest`. Either
+/// `from_category` or `to_category` may be null to move to/from To Budget, but
+/// not both, and `from != to` when both present. Validates available spare of
+/// the donor (if present) via `budgets::available` — insufficient spare is
+/// `400 Validation`, not a silent overdraft. The whole operation is
+/// `BEGIN IMMEDIATE` atomic via `budgets::transfer`.
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct TransferBudgetRequest {
+    pub from_category: Option<String>,
+    pub to_category: Option<String>,
+    pub amount_cents: i64,
+    pub month: String,
+    pub note: Option<String>,
+}
+
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct ListBudgetTransfersRequest {
+    pub month: String,
+}
+
+#[utoipa::path(post, path = "/api/rpc/transfer_budget", request_body(content = TransferBudgetRequest), responses((status = 200, body = BudgetTransfer)))]
+pub async fn transfer_budget(
+    state: &ApiState,
+    from_category: Option<String>,
+    to_category: Option<String>,
+    amount_cents: i64,
+    month: String,
+    note: Option<String>,
+) -> AppResult<BudgetTransfer> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| {
+        budgets::transfer_optional(
+            conn,
+            from_category.as_deref(),
+            to_category.as_deref(),
+            amount_cents,
+            &month,
+            note.as_deref(),
+        )
+    })
+    .await
+    .map_err(AppError::from)
+}
+
+#[utoipa::path(post, path = "/api/rpc/list_budget_transfers", request_body(content = ListBudgetTransfersRequest), responses((status = 200, body = Vec<BudgetTransfer>)))]
+pub async fn list_budget_transfers(state: &ApiState, month: String) -> AppResult<Vec<BudgetTransfer>> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| budgets::list_transfers(conn, &month))
+        .await
+        .map_err(AppError::from)
+}
+
+// Transfer envelope alias — older UI / plan name for the same ledger primitive.
+// The plan calls this `POST /api/rpc/transfer_envelope`; we keep it as a
+// thin alias that routes to the same `transfer_budget` logic so parity tests
+// that seed `COMMANDS` with either name stay flexible. The OpenAPI `paths`
+// entry for it is intentionally absent: the typed contract prefers
+// `transfer_budget`, but the dispatcher below routes `transfer_envelope` to
+// the same handler so an older generated client that still sends that command
+// does not 404 after an upgrade.
+#[utoipa::path(post, path = "/api/rpc/transfer_envelope", request_body(content = TransferBudgetRequest), responses((status = 200, body = BudgetTransfer)))]
+pub async fn transfer_envelope(
+    state: &ApiState,
+    from_category: Option<String>,
+    to_category: Option<String>,
+    amount_cents: i64,
+    month: String,
+    note: Option<String>,
+) -> AppResult<BudgetTransfer> {
+    transfer_budget(state, from_category, to_category, amount_cents, month, note).await
 }
 
 // ── Goals ──────────────────────────────────────────────────────────────────

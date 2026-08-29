@@ -289,6 +289,49 @@ rpc_routes!(api, events, cmd, p, c:
         "set_budget" => {
             ok(c::budget::set_budget(api, arg(&p, "categoryId")?, arg(&p, "amountCents")?).await?)
         },
+        "get_hold" => ok(c::budget::get_hold(api, arg(&p, "month")?).await?),
+        "set_hold" => {
+            ok(c::budget::set_hold(api, arg(&p, "month")?, arg(&p, "amountCents")?).await?)
+        },
+        "list_funding_templates" => ok(c::budget::list_funding_templates(api).await?),
+        "create_funding_template" => ok(c::budget::create_funding_template(
+            api,
+            arg(&p, "categoryId")?,
+            arg(&p, "kind")?,
+            arg(&p, "paramsJson")?,
+            arg(&p, "priority")?,
+        )
+        .await?),
+        "update_funding_template" => ok(c::budget::update_funding_template(
+            api,
+            arg(&p, "id")?,
+            arg(&p, "categoryId")?,
+            arg(&p, "kind")?,
+            arg(&p, "paramsJson")?,
+            arg(&p, "priority")?,
+        )
+        .await?),
+        "delete_funding_template" => ok(c::budget::delete_funding_template(api, arg(&p, "id")?).await?),
+        "apply_templates" => ok(c::budget::apply_templates(api, arg(&p, "month")?).await?),
+        "list_budget_transfers" => ok(c::budget::list_budget_transfers(api, arg(&p, "month")?).await?),
+        "transfer_budget" => ok(c::budget::transfer_budget(
+            api,
+            arg(&p, "fromCategory")?,
+            arg(&p, "toCategory")?,
+            arg(&p, "amountCents")?,
+            arg(&p, "month")?,
+            arg(&p, "note")?,
+        )
+        .await?),
+        "transfer_envelope" => ok(c::budget::transfer_envelope(
+            api,
+            arg(&p, "fromCategory")?,
+            arg(&p, "toCategory")?,
+            arg(&p, "amountCents")?,
+            arg(&p, "month")?,
+            arg(&p, "note")?,
+        )
+        .await?),
         "list_goals" => ok(c::budget::list_goals(api).await?),
         "create_goal" => ok(c::budget::create_goal(api, arg(&p, "input")?).await?),
         "update_goal_balance" => {
@@ -724,6 +767,7 @@ rpc_routes!(api, events, cmd, p, c:
         },
         "get_month_totals" => ok(c::reports::get_month_totals(api).await?),
         "get_savings_rate_history" => ok(c::reports::get_savings_rate_history(api).await?),
+        "custom_report" => ok(c::reports::custom_report(api, arg(&p, "params")?).await?),
         // ── month-end close (#59) ──
         "get_month_close" => {
             ok(c::month_close::get_month_close(api, arg(&p, "year")?, arg(&p, "month")?).await?)

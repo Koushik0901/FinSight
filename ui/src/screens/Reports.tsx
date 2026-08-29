@@ -13,6 +13,7 @@ import { UnconvertedCurrencies } from "../components/UnconvertedCurrencies";
 import PageHeader from "../components/PageHeader";
 import EmptyState from "../components/EmptyState";
 import { getReportReadiness } from "../utils/dataReadiness";
+import ReportBuilder from "./ReportBuilder";
 
 type Scope = "month" | "quarter" | "year" | "all";
 type Tab = "overview" | "networth" | "spending";
@@ -56,6 +57,7 @@ export default function Reports() {
   const [scope, setScope] = useState<Scope>("year");
   const [tab, setTab] = useState<Tab>("overview");
   const [memberId, setMemberId] = useState<string | null>(null);
+  const [showBuilder, setShowBuilder] = useState(false);
   const { data, isLoading, error, refetch } = useReportData(scope, memberId);
   const netWorth = useNetWorth();
   const { data: metrics } = useFinancialMetrics();
@@ -161,6 +163,7 @@ export default function Reports() {
             <button className={scope === "year" ? "on" : ""} type="button" onClick={() => setScope("year")}>Year</button>
             <button className={scope === "all" ? "on" : ""} type="button" onClick={() => setScope("all")}>All time</button>
           </div>
+          <button className="btn outline sm" type="button" onClick={() => setShowBuilder((v) => !v)}>{showBuilder ? "Hide Builder" : "Custom Builder"}</button>
           <button className="btn outline sm" type="button" onClick={handleExport}>Export</button>
         </div>}
       />
@@ -286,6 +289,11 @@ export default function Reports() {
           </div>
         </div>
       </div>
+      {showBuilder && (
+        <div style={{ marginTop: 18 }}>
+          <ReportBuilder />
+        </div>
+      )}
     </div>
   );
 }

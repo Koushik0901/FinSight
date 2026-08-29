@@ -278,12 +278,14 @@ pub async fn explain_basis(_state: &ApiState, basis: metrics::ExpenseBasis) -> A
 #[serde(rename_all = "camelCase")]
 #[schema(rename_all = "camelCase")]
 pub struct ReconcileBasesRequest {
+    #[schema(value_type = String)]
     pub basis_a: metrics::ExpenseBasis,
+    #[schema(value_type = String)]
     pub basis_b: metrics::ExpenseBasis,
     pub scope: Option<String>,
 }
 
-#[utoipa::path(post, path = "/api/rpc/reconcile_bases", request_body(content = ReconcileBasesRequest), responses((status = 200, body = ReconcileResult)))]
+#[utoipa::path(post, path = "/api/rpc/reconcileBases", request_body(content = ReconcileBasesRequest), responses((status = 200, body = ReconcileResult)))]
 pub async fn reconcile_bases(
     state: &ApiState,
     basis_a: metrics::ExpenseBasis,

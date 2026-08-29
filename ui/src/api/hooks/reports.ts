@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   api,
+  type CustomReportParams,
+  type CustomReportResult,
   type MonthCloseListItem,
   type MonthCloseView,
   type MonthTotals,
@@ -67,6 +69,17 @@ export function useMonthCloses() {
     queryFn: async () => {
       return unwrap(api.listMonthCloses());
     },
+    enabled: isBackendAvailable(),
+  });
+}
+
+export function useCustomReport(params: CustomReportParams) {
+  return useQuery<CustomReportResult>({
+    queryKey: ["custom-report", params],
+    queryFn: async () => {
+      return unwrap(api.customReport(params));
+    },
+    staleTime: 60_000,
     enabled: isBackendAvailable(),
   });
 }

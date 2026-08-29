@@ -7,6 +7,10 @@ mod category_example;
 mod category_proposal;
 mod connection;
 mod copilot;
+pub mod budget_hold;
+pub mod budget_transfer;
+pub mod custom_report;
+pub mod funding_template;
 mod holding;
 mod household;
 mod import_candidate;
@@ -37,6 +41,17 @@ pub use connection::{NewSimpleFinConnection, SimpleFinConnection, SimpleFinConne
 pub use copilot::{
     AgentActionBundle, AgentActionItem, AgentExecutionEntry, AgentNavigationTarget, AgentSession,
     ConversationMessage, ConversationSummary, MissingDataItem,
+};
+pub use budget_hold::{BudgetHold, GetHoldRequest, SetHoldRequest};
+pub use budget_transfer::{
+    BudgetTransfer, ListBudgetTransfersRequest, TransferBudgetRequest,
+};
+pub use custom_report::{
+    CustomReportParams, CustomReportResult, Period, ReportRow, SplitBy,
+};
+pub use funding_template::{
+    ApplyTemplatesRequest, BudgetChange, CreateFundingTemplateRequest, DeleteFundingTemplateRequest,
+    FundingTemplate, UpdateFundingTemplateRequest,
 };
 pub use holding::Holding;
 pub use household::{AccountOwner, AssetOwner, HouseholdMember, OwnerShare};

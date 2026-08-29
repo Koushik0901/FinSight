@@ -4,6 +4,8 @@ import { useFocusParam } from "../api/hooks/useFocusParam";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useBudgetEnvelopes, useBudgetHistory, useSetBudget, useGoals, useContributeToGoal, useMemberBudgetEnvelopes } from "../api/hooks/budget";
+import { useHold, useSetHold } from "../api/hooks/budgetHolds";
+import { useBudgetTransfers, useTransferBudget } from "../api/hooks/budgetTransfers";
 import { useHouseholdMembers } from "../api/hooks/household";
 import { useMonthTotals } from "../api/hooks/reports";
 import { api, type BudgetEnvelope, type SpendingBreakdown } from "../api/openapiClient";
@@ -16,7 +18,8 @@ import { getBudgetReadiness } from "../utils/dataReadiness";
 type SortKey = "group" | "stress" | "size" | "activity";
 
 function envelopeStatus(env: BudgetEnvelope) {
-  const available = env.budgetCents + env.carryoverCents;
+  const transfer = (env as { transferCents?: number }).transferCents ?? 0;
+  const available = env.budgetCents + env.carryoverCents + transfer;
   if (available <= 0 && env.budgetCents <= 0) return { label: "No budget set", tone: "warning" as const, severity: 2 };
   const pct = available > 0 ? (env.spentCents / available) * 100 : 100;
   if (env.spentCents > available) {
@@ -67,9 +70,10 @@ function BudgetInput({ envelope, onClose }: { envelope: BudgetEnvelope; onClose:
   );
 }
 
-function EnvelopeCard({ env, editing, onEdit, donor, memberShareCents, memberName }: { env: BudgetEnvelope; editing: boolean; onEdit: () => void; donor: BudgetEnvelope | null; memberShareCents?: number; memberName?: string }) {
+function EnvelopeCard({ env, editing, onEdit, donor, memberShareCents, memberName, onCover }: { env: BudgetEnvelope; editing: boolean; onEdit: () => void; donor: BudgetEnvelope | null; memberShareCents?: number; memberName?: string; onCover?: (from: BudgetEnvelope, to: BudgetEnvelope, amount: number) => void }) {
   const status = envelopeStatus(env);
-  const available = env.budgetCents + env.carryoverCents;
+  const transfer = (env as { transferCents?: number }).transferCents ?? 0;
+  const available = env.budgetCents + env.carryoverCents + transfer;
   const remaining = available - env.spentCents;
   const pct = available > 0 ? Math.min(100, (env.spentCents / available) * 100) : 0;
   const toneClass = status.tone === "negative" ? "negative" : status.tone === "warning" ? "warning" : status.tone === "positive" ? "positive" : "accent";
@@ -132,6 +136,15 @@ function EnvelopeCard({ env, editing, onEdit, donor, memberShareCents, memberNam
         </div>
       )}
 
+      {transfer !== 0 && (
+        <div style={{ marginTop: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span className="muted" style={{ fontSize: 12 }}>{transfer > 0 ? "Cover received" : "Cover sent"}</span>
+          <span className="money" style={{ fontSize: 12.5, color: transfer > 0 ? "var(--positive)" : "var(--negative)" }}>
+            {transfer > 0 ? "+" : ""}{money(transfer)}
+          </span>
+        </div>
+      )}
+
       {status.tone === "negative" && (
         <button
           className="btn outline sm"
@@ -142,10 +155,16 @@ function EnvelopeCard({ env, editing, onEdit, donor, memberShareCents, memberNam
               toast("No envelope has spare room to cover this right now.");
               return;
             }
-            const donorRemaining = donor.budgetCents - donor.spentCents;
-            toast(`${donor.categoryLabel} has ${money(donorRemaining)} unspent — often the best donor.`, {
-              description: "Adjust each envelope's budget below to move the amount over.",
-            });
+            const donorTransfer = (donor as { transferCents?: number }).transferCents ?? 0;
+            const donorRemaining = donor.budgetCents + donor.carryoverCents + donorTransfer - donor.spentCents;
+            const overspend = env.spentCents - available;
+            if (onCover && overspend > 0 && donorRemaining >= overspend) {
+              onCover(donor, env, overspend);
+            } else {
+              toast(`${donor.categoryLabel} has ${money(donorRemaining)} unspent — often the best donor.`, {
+                description: overspend > 0 ? `Needs ${money(overspend)} to cover.` : "Adjust each envelope's budget below to move the amount over.",
+              });
+            }
           }}
         >
           Cover from another envelope
@@ -203,6 +222,78 @@ export default function Budget() {
   const today = now.getDate();
   const monthLabel = now.toLocaleDateString("en-US", { month: "long", year: "numeric" });
   const monthPct = Math.round((today / totalDays) * 100);
+  const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const nextMonth = now.getMonth() === 11 ? `${now.getFullYear() + 1}-01` : `${now.getFullYear()}-${String(now.getMonth() + 2).padStart(2, "0")}`;
+  const nextMonthLabel = new Date(Number(nextMonth.slice(0, 4)), Number(nextMonth.slice(5, 7)) - 1, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  const { data: hold } = useHold(currentMonth);
+  const setHold = useSetHold();
+  const [holdInput, setHoldInput] = useState("");
+  const holdCents = hold?.amountCents ?? 0;
+  // Sync input when hold loads (once) — keep user's edits intact.
+  useEffect(() => {
+    if (hold && holdInput === "") {
+      setHoldInput(hold.amountCents > 0 ? String(Math.round(hold.amountCents / 100)) : "");
+    }
+  }, [hold, holdInput]);
+
+  // Cover ledger — auditable per-month transfers
+  const { data: transfers = [] } = useBudgetTransfers(currentMonth);
+  const transferBudget = useTransferBudget();
+  const [coverFrom, setCoverFrom] = useState<string>("");
+  const [coverTo, setCoverTo] = useState<string>("");
+  const [coverAmount, setCoverAmount] = useState<string>("");
+  const [coverNote, setCoverNote] = useState<string>("");
+
+  const handleCover = useCallback(
+    async (from: BudgetEnvelope | string, to: BudgetEnvelope | string, amountCents: number, note?: string) => {
+      const fromId = typeof from === "string" ? from : from.categoryId;
+      const toId = typeof to === "string" ? to : to.categoryId;
+      const amt = Math.round(amountCents);
+      if (!fromId || !toId) {
+        toast.error("Pick both a donor and a recipient");
+        return;
+      }
+      if (fromId === toId) {
+        toast.error("Donor and recipient must differ");
+        return;
+      }
+      if (amt <= 0) {
+        toast.error("Amount must be greater than $0");
+        return;
+      }
+      try {
+        await transferBudget.mutateAsync({
+          fromCategory: fromId,
+          toCategory: toId,
+          amountCents: amt,
+          month: currentMonth,
+          note: note ?? coverNote ?? null,
+        });
+        toast.success("Cover moved", {
+          description: `${money(amt)} from ${(typeof from === "string" ? envelopes.find((e) => e.categoryId === fromId)?.categoryLabel : from.categoryLabel) ?? fromId} → ${(typeof to === "string" ? envelopes.find((e) => e.categoryId === toId)?.categoryLabel : to.categoryLabel) ?? toId}`,
+        });
+        setCoverAmount("");
+        setCoverNote("");
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        toast.error("Could not move cover", { description: msg });
+      }
+    },
+    [transferBudget, currentMonth, coverNote, envelopes],
+  );
+
+  const handleCoverFromCard = useCallback(
+    (donor: BudgetEnvelope, recipient: BudgetEnvelope, amountCents: number) => {
+      setCoverFrom(donor.categoryId);
+      setCoverTo(recipient.categoryId);
+      setCoverAmount(String(Math.round(amountCents / 100)));
+      // Scroll cover ledger into view
+      document.getElementById("budget-cover-ledger")?.scrollIntoView({ block: "center" });
+      // Auto-execute the exact overspend if the donor has spare (the button's pre-check already did)
+      void handleCover(donor, recipient, amountCents, "cover overspend");
+    },
+    [handleCover],
+  );
 
   const sorted = useMemo(() => [...envelopes].sort((a, b) => {
     if (sort === "stress") return envelopeStatus(b).severity - envelopeStatus(a).severity || b.spentCents - a.spentCents;
@@ -211,9 +302,12 @@ export default function Budget() {
     return (a.groupLabel || "").localeCompare(b.groupLabel || "") || a.categoryLabel.localeCompare(b.categoryLabel);
   }), [envelopes, sort]);
 
+
+
   const totalBudget = sorted.reduce((sum, env) => sum + env.budgetCents, 0);
   const totalCarryover = sorted.reduce((sum, env) => sum + env.carryoverCents, 0);
-  const totalAvailable = totalBudget + totalCarryover;
+  const totalTransfer = sorted.reduce((sum, env) => sum + ((env as { transferCents?: number }).transferCents ?? 0), 0);
+  const totalAvailable = totalBudget + totalCarryover + totalTransfer;
   const totalSpent = sorted.reduce((sum, env) => sum + env.spentCents, 0);
   const fixedSpent = Math.min(totalSpent, breakdown?.fixedCents ?? 0);
   const variableSpent = Math.max(0, totalSpent - fixedSpent);
@@ -233,7 +327,7 @@ export default function Budget() {
     dayOfMonth: today,
   });
   const remaining = totalAvailable - totalSpent;
-  const toBudget = (totals?.incomeCents ?? 0) - totalBudget;
+  const toBudget = (totals?.incomeCents ?? 0) - totalBudget - holdCents;
   const unbudgeted = sorted.filter((env) => env.budgetCents <= 0 && env.spentCents <= 0 && env.carryoverCents === 0);
   // Unbudgeted categories aren't "in trouble" (severity>=2 from "No budget
   // set" is really "unconfigured") — they get their own section below instead
@@ -290,9 +384,11 @@ export default function Budget() {
   });
 
   const donorFor = (categoryId: string): BudgetEnvelope | null => {
-    const candidates = sorted.filter((env) => env.categoryId !== categoryId && env.budgetCents - env.spentCents > 0);
+    const availableFor = (env: BudgetEnvelope) =>
+      env.budgetCents + env.carryoverCents + ((env as { transferCents?: number }).transferCents ?? 0) - env.spentCents;
+    const candidates = sorted.filter((env) => env.categoryId !== categoryId && availableFor(env) > 0);
     if (candidates.length === 0) return null;
-    return candidates.reduce((best, env) => (env.budgetCents - env.spentCents > best.budgetCents - best.spentCents ? env : best));
+    return candidates.reduce((best, env) => (availableFor(env) > availableFor(best) ? env : best));
   };
 
   // Only manual (non-account-linked) goals accept recorded progress: a linked
@@ -524,6 +620,194 @@ export default function Budget() {
       </div>
 
       )}
+            {readiness !== "unavailable" && (
+        <div className="card tight" style={{ marginTop: 16, padding: 18 }}>
+          <div className="eyebrow"><span className="dot" />Hold for next month</div>
+          <div className="row row-sm wrap" style={{ marginTop: 8, alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            <span className="muted" style={{ fontSize: 12.5 }}>
+              Park unassigned income for {nextMonthLabel}. Held money reduces this month&apos;s To Budget and will be available in {nextMonthLabel} as income-like.
+            </span>
+            {holdCents > 0 && <span className="money" style={{ fontSize: 13, color: "var(--accent)" }}>{money(holdCents)} held</span>}
+          </div>
+          <div className="row row-sm" style={{ marginTop: 12, alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+            <input
+              className="control"
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              placeholder="Amount $"
+              value={holdInput}
+              onChange={(e) => setHoldInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  const v = Math.round(Number(holdInput || 0) * 100);
+                  if (v < 0) { toast.error("Hold must be $0 or more"); return; }
+                  void setHold.mutateAsync({ month: currentMonth, amountCents: v }).then(
+                    () => toast.success("Hold saved", { description: `${money(v)} held for ${nextMonthLabel}` }),
+                    () => toast.error("Could not save hold"),
+                  );
+                }
+                if (e.key === "Escape") setHoldInput(hold ? String(Math.round(hold.amountCents / 100)) : "");
+              }}
+              aria-label={`Hold amount for ${nextMonthLabel}`}
+              style={{ maxWidth: 160 }}
+            />
+            <button
+              className="btn primary sm"
+              type="button"
+              disabled={setHold.isPending}
+              onClick={() => {
+                const v = Math.round(Number(holdInput || 0) * 100);
+                if (v < 0) { toast.error("Hold must be $0 or more"); return; }
+                void setHold.mutateAsync({ month: currentMonth, amountCents: v }).then(
+                  () => toast.success("Hold saved", { description: `${money(v)} held for ${nextMonthLabel}` }),
+                  () => toast.error("Could not save hold"),
+                );
+              }}
+            >
+              {setHold.isPending ? "Saving…" : "Save hold"}
+            </button>
+            {holdCents > 0 && (
+              <button
+                className="btn ghost sm"
+                type="button"
+                disabled={setHold.isPending}
+                onClick={() => {
+                  void setHold.mutateAsync({ month: currentMonth, amountCents: 0 }).then(
+                    () => { setHoldInput(""); toast.success("Hold cleared"); },
+                    () => toast.error("Could not clear hold"),
+                  );
+                }}
+              >
+                Clear
+              </button>
+            )}
+          </div>
+          {holdCents > 0 && (
+            <p className="muted" style={{ marginTop: 8, fontSize: 12, marginBottom: 0 }}>
+              {money(holdCents)} will be added to {nextMonthLabel}&apos;s available funds as income-like. To Budget this month is <span className="money">{money(toBudget)}</span> after the hold.
+            </p>
+          )}
+        </div>
+      )}
+
+      {readiness !== "unavailable" && (
+        <div id="budget-cover-ledger" className="card tight" style={{ marginTop: 16, padding: 18 }}>
+          <div className="eyebrow"><span className="dot" />Cover ledger · {currentMonth}</div>
+          <p className="muted" style={{ fontSize: 12.5, marginTop: 6, marginBottom: 0 }}>
+            Move leftover money between envelopes to cover overspend.
+          </p>
+
+          {transfers.length > 0 ? (
+            <div className="tbl-scroll" style={{ marginTop: 14 }}>
+              <table className="tbl" style={{ fontSize: 13 }}>
+                <thead>
+                  <tr>
+                    <th>From</th>
+                    <th>To</th>
+                    <th className="right">Amount</th>
+                    <th>Note</th>
+                    <th className="right">Date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {transfers.map((t) => {
+                    const fromLabel = t.fromCategory ? (envelopes.find((e) => e.categoryId === t.fromCategory)?.categoryLabel ?? t.fromCategory) : "To Budget";
+                    const toLabel = t.toCategory ? (envelopes.find((e) => e.categoryId === t.toCategory)?.categoryLabel ?? t.toCategory) : "To Budget";
+                    return (
+                      <tr key={t.id}>
+                        <td>{fromLabel}</td>
+                        <td>{toLabel}</td>
+                        <td className="right money">{money(t.amountCents)}</td>
+                        <td className="muted" style={{ maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.note ?? "—"}</td>
+                        <td className="right muted" style={{ fontSize: 11 }}>{new Date(t.createdAt).toLocaleString()}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="muted" style={{ fontSize: 12.5, marginTop: 12, marginBottom: 0 }}>No covers this month. When you move money, it appears here for audit.</p>
+          )}
+
+          {sorted.length >= 2 ? (
+            <div className="card" style={{ marginTop: 16, padding: 14, background: "var(--surface-2)" }}>
+              <div className="eyebrow" style={{ marginBottom: 10 }}>Move cover</div>
+              <div className="row row-sm wrap" style={{ gap: 8, alignItems: "flex-end" }}>
+                <label style={{ display: "flex", flexDirection: "column", gap: 4, flex: "1 1 140px" }}>
+                  <span className="muted" style={{ fontSize: 11 }}>From</span>
+                  <select className="control" value={coverFrom} onChange={(e) => setCoverFrom(e.target.value)}>
+                    <option value="">Donor…</option>
+                    {sorted.map((e) => (
+                      <option key={e.categoryId} value={e.categoryId}>{e.categoryLabel}</option>
+                    ))}
+                  </select>
+                </label>
+                <label style={{ display: "flex", flexDirection: "column", gap: 4, flex: "1 1 140px" }}>
+                  <span className="muted" style={{ fontSize: 11 }}>To</span>
+                  <select className="control" value={coverTo} onChange={(e) => setCoverTo(e.target.value)}>
+                    <option value="">Recipient…</option>
+                    {sorted.map((e) => (
+                      <option key={e.categoryId} value={e.categoryId}>{e.categoryLabel}</option>
+                    ))}
+                  </select>
+                </label>
+              <label style={{ display: "flex", flexDirection: "column", gap: 4, flex: "0 0 120px" }}>
+                <span className="muted" style={{ fontSize: 11 }}>Amount $</span>
+                <input
+                  className="control"
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="0.00"
+                  value={coverAmount}
+                  onChange={(e) => setCoverAmount(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      const amt = Math.round(Number(coverAmount || 0) * 100);
+                      void handleCover(coverFrom, coverTo, amt);
+                    }
+                  }}
+                />
+              </label>
+              <label style={{ display: "flex", flexDirection: "column", gap: 4, flex: "1 1 160px" }}>
+                <span className="muted" style={{ fontSize: 11 }}>Note</span>
+                <input className="control" type="text" placeholder="cover" value={coverNote} onChange={(e) => setCoverNote(e.target.value)} />
+              </label>
+              <button
+                className="btn primary sm"
+                type="button"
+                disabled={transferBudget.isPending || !coverFrom || !coverTo || !coverAmount}
+                onClick={() => {
+                  const amt = Math.round(Number(coverAmount || 0) * 100);
+                  void handleCover(coverFrom, coverTo, amt);
+                }}
+              >
+                {transferBudget.isPending ? "Moving…" : "Move"}
+              </button>
+            </div>
+            {coverFrom && coverTo && (() => {
+              const fromEnv = sorted.find((e) => e.categoryId === coverFrom);
+              const toEnv = sorted.find((e) => e.categoryId === coverTo);
+              if (!fromEnv || !toEnv) return null;
+              const fromAvail = fromEnv!.budgetCents + fromEnv!.carryoverCents + ((fromEnv! as { transferCents?: number }).transferCents ?? 0) - fromEnv!.spentCents;
+              const toAvail = toEnv!.budgetCents + toEnv!.carryoverCents + ((toEnv! as { transferCents?: number }).transferCents ?? 0) - toEnv!.spentCents;
+              return (
+                <p className="muted" style={{ fontSize: 11, marginTop: 8, marginBottom: 0 }}>
+                  {fromEnv!.categoryLabel} has <span className="money">{money(fromAvail)}</span> spare ·{" "}
+                  {toEnv!.categoryLabel} is <span className="money" style={{ color: toAvail < 0 ? "var(--negative)" : "var(--ink)" }}>{toAvail < 0 ? `${money(Math.abs(toAvail))} over` : `${money(toAvail)} left`}</span>.
+                </p>
+              );
+            })()}
+          </div>
+          ) : (
+            <p className="muted" style={{ fontSize: 11, marginTop: 16, marginBottom: 0 }}>
+              Add at least two budgeted categories to use cover.
+            </p>
+          )}
+        </div>
+      )}
+
       {breakdown && totalTagged > 0 && <div className="card tight" style={{ marginTop: 16 }}><div className="eyebrow"><span className="dot" />Spending mix</div><div className="stream" style={{ marginTop: 10, height: 16, borderRadius: 6 }}><span style={{ width: `${(breakdown.fixedCents / totalTagged) * 100}%`, background: "var(--ink-mute)" }} /><span style={{ width: `${(breakdown.investmentsCents / totalTagged) * 100}%`, background: "var(--accent)" }} /><span style={{ width: `${(breakdown.savingsCents / totalTagged) * 100}%`, background: "var(--positive)" }} /><span style={{ width: `${(breakdown.guiltFreeCents / totalTagged) * 100}%`, background: "var(--c-dining)" }} /><span style={{ width: `${(breakdown.untaggedCents / totalTagged) * 100}%`, background: "var(--ink-faint)" }} /></div></div>}
 
       {attention.length > 0 && (
@@ -542,7 +826,7 @@ export default function Budget() {
           <div className="budget-grid">
             {visibleAttention.map((env) => (
               <div key={env.categoryId} data-envelope-id={env.categoryId}>
-                <EnvelopeCard env={env} editing={editingId === env.categoryId} onEdit={() => setEditingId(env.categoryId)} donor={donorFor(env.categoryId)} memberShareCents={scopeMemberId !== null ? (memberSpendById.get(env.categoryId) ?? 0) : undefined} memberName={members.find((m) => m.id === scopeMemberId)?.name} />
+                <EnvelopeCard env={env} editing={editingId === env.categoryId} onEdit={() => setEditingId(env.categoryId)} donor={donorFor(env.categoryId)} memberShareCents={scopeMemberId !== null ? (memberSpendById.get(env.categoryId) ?? 0) : undefined} memberName={members.find((m) => m.id === scopeMemberId)?.name} onCover={handleCoverFromCard} />
                 {editingId === env.categoryId && <BudgetInput envelope={env} onClose={() => setEditingId(null)} />}
               </div>
             ))}
@@ -575,7 +859,7 @@ export default function Budget() {
                 <div className="eyebrow">{label}</div>
                 {sort === "group" && <span className="muted mono blurable" style={{ fontSize: 12.5 }}>{money(groupSpent)} / {money(groupBudget)}</span>}
               </div>
-              <div className="budget-grid">{items.map((env) => <div key={env.categoryId} data-envelope-id={env.categoryId}><EnvelopeCard env={env} editing={editingId === env.categoryId} onEdit={() => setEditingId(env.categoryId)} donor={donorFor(env.categoryId)} memberShareCents={scopeMemberId !== null ? (memberSpendById.get(env.categoryId) ?? 0) : undefined} memberName={members.find((m) => m.id === scopeMemberId)?.name} />{editingId === env.categoryId && <BudgetInput envelope={env} onClose={() => setEditingId(null)} />}</div>)}</div>
+              <div className="budget-grid">{items.map((env) => <div key={env.categoryId} data-envelope-id={env.categoryId}><EnvelopeCard env={env} editing={editingId === env.categoryId} onEdit={() => setEditingId(env.categoryId)} donor={donorFor(env.categoryId)} memberShareCents={scopeMemberId !== null ? (memberSpendById.get(env.categoryId) ?? 0) : undefined} memberName={members.find((m) => m.id === scopeMemberId)?.name} onCover={handleCoverFromCard} />{editingId === env.categoryId && <BudgetInput envelope={env} onClose={() => setEditingId(null)} />}</div>)}</div>
             </div>
           );
         })}</div>

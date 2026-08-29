@@ -273,6 +273,39 @@
         }
       }
     },
+    "/api/rpc/apply_templates": {
+      "post": {
+        "tags": [
+          "finsight_api::commands::budget"
+        ],
+        "operationId": "apply_templates",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplyTemplatesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/BudgetChange"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/rpc/apply_transfer_verdict_to_similar": {
       "post": {
         "tags": [
@@ -818,6 +851,36 @@
         }
       }
     },
+    "/api/rpc/create_funding_template": {
+      "post": {
+        "tags": [
+          "finsight_api::commands::budget"
+        ],
+        "operationId": "create_funding_template",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateFundingTemplateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FundingTemplate"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/rpc/create_goal": {
       "post": {
         "tags": [
@@ -1108,6 +1171,36 @@
         }
       }
     },
+    "/api/rpc/custom_report": {
+      "post": {
+        "tags": [
+          "finsight_api::commands::reports"
+        ],
+        "operationId": "custom_report",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CustomReportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomReportResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/rpc/decline_rule_proposal": {
       "post": {
         "tags": [
@@ -1195,6 +1288,29 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/rpc/delete_funding_template": {
+      "post": {
+        "tags": [
+          "finsight_api::commands::budget"
+        ],
+        "operationId": "delete_funding_template",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeleteFundingTemplateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
           }
         }
       }
@@ -2117,6 +2233,41 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/FinancialPhilosophyDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rpc/get_hold": {
+      "post": {
+        "tags": [
+          "finsight_api::commands::budget"
+        ],
+        "operationId": "get_hold",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GetHoldRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/BudgetHold"
+                    }
+                  ],
+                  "nullable": true
                 }
               }
             }
@@ -3088,6 +3239,39 @@
         }
       }
     },
+    "/api/rpc/list_budget_transfers": {
+      "post": {
+        "tags": [
+          "finsight_api::commands::budget"
+        ],
+        "operationId": "list_budget_transfers",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ListBudgetTransfersRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/BudgetTransfer"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/rpc/list_categories": {
       "post": {
         "tags": [
@@ -3262,6 +3446,29 @@
                   "type": "array",
                   "items": {
                     "$ref": "#/components/schemas/AgentExecutionEntry"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rpc/list_funding_templates": {
+      "post": {
+        "tags": [
+          "finsight_api::commands::budget"
+        ],
+        "operationId": "list_funding_templates",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FundingTemplate"
                   }
                 }
               }
@@ -4317,30 +4524,32 @@
     },
     "/api/rpc/reconcileBases": {
       "post": {
-        "operationId": "reconcileBases",
+        "tags": [
+          "finsight_api::commands::copilot"
+        ],
+        "operationId": "reconcile_bases",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "type": "object"
+                "$ref": "#/components/schemas/ReconcileBasesRequest"
               }
             }
           },
-          "required": false
+          "required": true
         },
         "responses": {
           "200": {
+            "description": "",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/ReconcileResult"
                 }
               }
-            },
-            "description": "Success"
+            }
           }
-        },
-        "summary": "RPC reconcileBases"
+        }
       }
     },
     "/api/rpc/record_net_worth_snapshot": {
@@ -5126,6 +5335,36 @@
         }
       }
     },
+    "/api/rpc/set_hold": {
+      "post": {
+        "tags": [
+          "finsight_api::commands::budget"
+        ],
+        "operationId": "set_hold",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetHoldRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BudgetHold"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/rpc/set_notification_prefs": {
       "post": {
         "tags": [
@@ -5552,6 +5791,66 @@
         }
       }
     },
+    "/api/rpc/transfer_budget": {
+      "post": {
+        "tags": [
+          "finsight_api::commands::budget"
+        ],
+        "operationId": "transfer_budget",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransferBudgetRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BudgetTransfer"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rpc/transfer_envelope": {
+      "post": {
+        "tags": [
+          "finsight_api::commands::budget"
+        ],
+        "operationId": "transfer_envelope",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransferBudgetRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BudgetTransfer"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/rpc/trigger_categorize": {
       "post": {
         "tags": [
@@ -5657,6 +5956,41 @@
         "responses": {
           "200": {
             "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/rpc/update_funding_template": {
+      "post": {
+        "tags": [
+          "finsight_api::commands::budget"
+        ],
+        "operationId": "update_funding_template",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateFundingTemplateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/FundingTemplate"
+                    }
+                  ],
+                  "nullable": true
+                }
+              }
+            }
           }
         }
       }
@@ -8523,6 +8857,17 @@
           }
         }
       },
+      "ApplyTemplatesRequest": {
+        "type": "object",
+        "required": [
+          "month"
+        ],
+        "properties": {
+          "month": {
+            "type": "string"
+          }
+        }
+      },
       "ApplyTransferVerdictToSimilarRequest": {
         "type": "object",
         "required": [
@@ -8696,6 +9041,23 @@
           }
         }
       },
+      "BudgetChange": {
+        "type": "object",
+        "description": "One budget change produced by `apply_templates`.",
+        "required": [
+          "categoryId",
+          "amountCents"
+        ],
+        "properties": {
+          "amountCents": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "categoryId": {
+            "type": "string"
+          }
+        }
+      },
       "BudgetEnvelope": {
         "type": "object",
         "description": "One category's budget + actual for a month.",
@@ -8737,9 +9099,69 @@
             "format": "int64",
             "description": "Actual outflow this month (positive = spent)"
           },
+          "transferCents": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Net transfers in minus out for this month. Positive means this envelope\nreceived cover; negative means it funded another envelope. Feeds\n`available = budgeted + carryover + transfer - spent`."
+          },
           "txnCount": {
             "type": "integer",
             "format": "int64"
+          }
+        }
+      },
+      "BudgetHold": {
+        "type": "object",
+        "description": "One month's hold — amount parked for next month.\n\nMoney parked in `month` reduces that month's `to_budget` (`income - budgeted - hold`)\nand is added to `available_funds` for the following month as income-like.\nThis mirrors Actual's `Hold` primitive: an auditable, reversible store of\n\"not yet assigned\" rather than silently inflating a category.",
+        "required": [
+          "month",
+          "amountCents"
+        ],
+        "properties": {
+          "amountCents": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "month": {
+            "type": "string",
+            "description": "\"YYYY-MM\""
+          }
+        }
+      },
+      "BudgetTransfer": {
+        "type": "object",
+        "description": "One auditable budget transfer — Actual's Cover as a ledger row.\n\nMoves `amount_cents` from `from_category` to `to_category` within `month`.\nEither `from_category` or `to_category` may be `None` to represent moving\nto/from unassigned (To Budget), but not both. At least one side is set and\n`from != to` is enforced by the SQL CHECK. Net per-category effect is\n`+transfers_in - transfers_out` and is included in\n`available = budgeted + carryover + transfers_in - transfers_out - spent`.",
+        "required": [
+          "id",
+          "month",
+          "amountCents",
+          "createdAt"
+        ],
+        "properties": {
+          "amountCents": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "fromCategory": {
+            "type": "string",
+            "nullable": true
+          },
+          "id": {
+            "type": "string"
+          },
+          "month": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string",
+            "nullable": true
+          },
+          "toCategory": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -10324,6 +10746,30 @@
           }
         }
       },
+      "CreateFundingTemplateRequest": {
+        "type": "object",
+        "required": [
+          "categoryId",
+          "kind"
+        ],
+        "properties": {
+          "categoryId": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "paramsJson": {
+            "type": "string",
+            "nullable": true
+          },
+          "priority": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          }
+        }
+      },
       "CreateGoalRequest": {
         "type": "object",
         "required": [
@@ -10530,6 +10976,55 @@
           }
         }
       },
+      "CustomReportParams": {
+        "type": "object",
+        "description": "Parameters for the custom report query — filters + split.",
+        "properties": {
+          "includeArchived": {
+            "type": "boolean"
+          },
+          "includeTransfers": {
+            "type": "boolean"
+          },
+          "period": {
+            "$ref": "#/components/schemas/Period"
+          },
+          "splitBy": {
+            "$ref": "#/components/schemas/SplitBy"
+          }
+        }
+      },
+      "CustomReportRequest": {
+        "type": "object",
+        "required": [
+          "params"
+        ],
+        "properties": {
+          "params": {
+            "$ref": "#/components/schemas/CustomReportParams"
+          }
+        }
+      },
+      "CustomReportResult": {
+        "type": "object",
+        "description": "Full result: grouped rows + grand total.",
+        "required": [
+          "rows",
+          "totalCents"
+        ],
+        "properties": {
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReportRow"
+            }
+          },
+          "totalCents": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
       "DataHealth": {
         "type": "object",
         "required": [
@@ -10729,6 +11224,17 @@
         }
       },
       "DeleteConversationRequest": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        }
+      },
+      "DeleteFundingTemplateRequest": {
         "type": "object",
         "required": [
           "id"
@@ -11316,6 +11822,42 @@
           }
         }
       },
+      "FundingTemplate": {
+        "type": "object",
+        "description": "One funding template — declarative rule for how to fund a category.\n\nMirrors Actual's `#template` comment syntax as a table: ordered by\n`priority` ASC then `id` ASC, evaluated as `need.min(available)` where\n`available = to_budget(month)` (respects holds). Each kind's `params_json`\nholds variant-specific fields, e.g. `{\"amount\":7299}` for `fixed` or\n`{\"cap\":30000}` for `up_to`.",
+        "required": [
+          "id",
+          "categoryId",
+          "kind",
+          "paramsJson",
+          "priority",
+          "createdAt"
+        ],
+        "properties": {
+          "categoryId": {
+            "type": "string",
+            "description": "Category to fund."
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "description": "'fixed','up_to','by','average','percent','remainder','schedule'"
+          },
+          "paramsJson": {
+            "type": "string",
+            "description": "JSON object with variant params, e.g. `{\"amount\":7299}` for fixed,\n`{\"cap\":30000}` for up_to, `{\"pct\":0.5}` for percent."
+          },
+          "priority": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
       "GetAccountBalanceTimelineRequest": {
         "type": "object",
         "description": "Reconstruct an account's balance curve from its ledger, with the peak and\ntrough over the requested window. `since` is an ISO `YYYY-MM-DD` date; omit\nit for all-time.\n\nUnlike [`list_account_balance_history`], which reads the sparse stored\nsnapshots, this derives every point — so it can answer \"when was this account\nat its highest\" rather than \"which recorded day was highest\".",
@@ -11385,6 +11927,18 @@
           "memberId": {
             "type": "string",
             "nullable": true
+          }
+        }
+      },
+      "GetHoldRequest": {
+        "type": "object",
+        "description": "Fetch the hold for `month` (\"YYYY-MM\").",
+        "required": [
+          "month"
+        ],
+        "properties": {
+          "month": {
+            "type": "string"
           }
         }
       },
@@ -11957,7 +12511,7 @@
       },
       "ImportCsvRequest": {
         "type": "object",
-        "description": "Import a CSV file, running the deterministic post-import cascade\n(categorization, transfer pairing, anomaly refresh, net-worth refresh) and\nenqueuing the AI categorizer. Progress and completion are pushed through the\n`sink` (`\"import-progress\"` / `\"import-complete\"`, unchanged event names and\npayload shapes) — the Tauri wrapper feeds a `TauriFrameSink` that emits real\nwindow events, and ALSO fires the desktop \"check_and_fire\" notification\nafter this returns (that notification is native-only and stays in the\nwrapper, not here — see `crates/finsight-bindings/src/commands/import.rs`).",
+        "description": "Import a CSV file, running the deterministic post-import cascade\n(categorization, transfer pairing, anomaly refresh, net-worth refresh) and\nenqueuing the AI categorizer. Progress and completion are pushed through the\n`sink` (`\"import-progress\"` / `\"import-complete\"`).",
         "required": [
           "path",
           "accountId",
@@ -12321,6 +12875,17 @@
             "type": "integer",
             "format": "int32",
             "minimum": 0
+          }
+        }
+      },
+      "ListBudgetTransfersRequest": {
+        "type": "object",
+        "required": [
+          "month"
+        ],
+        "properties": {
+          "month": {
+            "type": "string"
           }
         }
       },
@@ -13904,6 +14469,17 @@
           }
         }
       },
+      "Period": {
+        "type": "string",
+        "description": "Lookback window.",
+        "enum": [
+          "Last1Month",
+          "Last3Months",
+          "Last6Months",
+          "YTD",
+          "All"
+        ]
+      },
       "PeriodAssessment": {
         "type": "object",
         "required": [
@@ -14604,6 +15180,41 @@
           }
         }
       },
+      "ReconcileBasesRequest": {
+        "type": "object",
+        "required": [
+          "basisA",
+          "basisB"
+        ],
+        "properties": {
+          "basisA": {
+            "type": "string"
+          },
+          "basisB": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "ReconcileResult": {
+        "type": "object",
+        "required": [
+          "deltaCents",
+          "reason"
+        ],
+        "properties": {
+          "deltaCents": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
       "RecurringItem": {
         "type": "object",
         "description": "A recurring transaction detected from transaction history (Phase 6 redesign).",
@@ -14828,6 +15439,28 @@
             "items": {
               "$ref": "#/components/schemas/MerchantTotal"
             }
+          }
+        }
+      },
+      "ReportRow": {
+        "type": "object",
+        "description": "One grouped row.",
+        "required": [
+          "label",
+          "totalCents",
+          "txnCount"
+        ],
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "totalCents": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "txnCount": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       },
@@ -15834,6 +16467,23 @@
           }
         }
       },
+      "SetHoldRequest": {
+        "type": "object",
+        "description": "Persist the hold for `month` (\"YYYY-MM\"). See `finsight_core::repos::budgets::set_hold`.",
+        "required": [
+          "month",
+          "amountCents"
+        ],
+        "properties": {
+          "amountCents": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "month": {
+            "type": "string"
+          }
+        }
+      },
       "SetNotificationPrefsRequest": {
         "type": "object",
         "required": [
@@ -16393,6 +17043,17 @@
           }
         }
       },
+      "SplitBy": {
+        "type": "string",
+        "description": "How to slice the expense pie.",
+        "enum": [
+          "Category",
+          "Group",
+          "Payee",
+          "Account",
+          "Month"
+        ]
+      },
       "SplitInputDto": {
         "type": "object",
         "required": [
@@ -16820,6 +17481,35 @@
           }
         }
       },
+      "TransferBudgetRequest": {
+        "type": "object",
+        "description": "Move `amount_cents` from `from_category` to `to_category` within `month`.\nUses `POST /api/rpc/transfer_budget` body `TransferBudgetRequest`. Either\n`from_category` or `to_category` may be null to move to/from To Budget, but\nnot both, and `from != to` when both present. Validates available spare of\nthe donor (if present) via `budgets::available` — insufficient spare is\n`400 Validation`, not a silent overdraft. The whole operation is\n`BEGIN IMMEDIATE` atomic via `budgets::transfer`.",
+        "required": [
+          "amountCents",
+          "month"
+        ],
+        "properties": {
+          "amountCents": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "fromCategory": {
+            "type": "string",
+            "nullable": true
+          },
+          "month": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string",
+            "nullable": true
+          },
+          "toCategory": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
       "TransferSuggestionInfo": {
         "type": "object",
         "required": [
@@ -17105,6 +17795,34 @@
           },
           "id": {
             "type": "string"
+          }
+        }
+      },
+      "UpdateFundingTemplateRequest": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "categoryId": {
+            "type": "string",
+            "nullable": true
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "nullable": true
+          },
+          "paramsJson": {
+            "type": "string",
+            "nullable": true
+          },
+          "priority": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
           }
         }
       },
