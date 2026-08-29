@@ -5,7 +5,6 @@ use finsight_core::models::{
     AccountSummary, NewAccount,
 };
 use finsight_core::repos::{accounts, run};
-use utoipa::ToSchema;
 
 #[utoipa::path(post, path = "/api/rpc/list_accounts", responses((status = 200, body = Vec<AccountSummary>)))]
 pub async fn list_accounts(state: &ApiState) -> AppResult<Vec<AccountSummary>> {

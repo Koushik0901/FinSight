@@ -19,7 +19,6 @@ use finsight_core::models::{CategoryProposal, TxnPatch};
 use finsight_core::repos::{category_proposals, run, transactions};
 use finsight_core::CoreError;
 use rusqlite::OptionalExtension;
-use utoipa::ToSchema;
 
 /// The current review queue — proposals still awaiting a human decision.
 #[utoipa::path(post, path = "/api/rpc/list_category_proposals", responses((status = 200, body = Vec<CategoryProposal>)))]

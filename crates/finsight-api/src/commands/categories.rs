@@ -2,7 +2,6 @@ use crate::error::{AppError, AppResult};
 use crate::ApiState;
 use finsight_core::models::{Category, CategoryGroup};
 use finsight_core::repos::{categories, run};
-use utoipa::ToSchema;
 
 #[derive(serde::Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]

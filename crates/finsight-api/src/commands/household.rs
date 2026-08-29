@@ -2,7 +2,6 @@ use crate::error::{AppError, AppResult};
 use crate::ApiState;
 use finsight_core::models::{AccountOwner, AssetOwner, HouseholdMember, OwnerShare};
 use finsight_core::repos::{household, run};
-use utoipa::ToSchema;
 
 #[utoipa::path(post, path = "/api/rpc/list_household_members", responses((status = 200, body = Vec<HouseholdMember>)))]
 pub async fn list_household_members(state: &ApiState) -> AppResult<Vec<HouseholdMember>> {

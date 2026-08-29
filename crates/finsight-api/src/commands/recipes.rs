@@ -3,7 +3,6 @@ use crate::ApiState;
 use finsight_agent::{context, planner};
 use finsight_core::models::{AgentRecipe, AgentRecipeRun};
 use finsight_core::repos::{recipes, run};
-use utoipa::ToSchema;
 
 #[derive(serde::Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]

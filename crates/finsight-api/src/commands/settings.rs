@@ -1,7 +1,6 @@
 use crate::error::{AppError, AppResult};
 use crate::ApiState;
 use finsight_core::{repos::run, settings};
-use utoipa::ToSchema;
 
 const CURRENCY_KEY: &str = "display_currency";
 /// `pub` (not `pub(crate)`): `crates/finsight-bindings/src/lib.rs`'s startup cascade

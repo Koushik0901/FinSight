@@ -8,7 +8,6 @@ use crate::error::{AppError, AppResult};
 use crate::ApiState;
 use finsight_core::models::CategoryExample;
 use finsight_core::repos::{category_examples, run};
-use utoipa::ToSchema;
 
 /// Attach an exemplar description to a category, keyed by the category's
 /// stable id (so it rides through renames). Idempotent per (category, text).

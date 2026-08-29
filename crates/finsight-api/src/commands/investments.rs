@@ -7,7 +7,6 @@ use crate::error::{AppError, AppResult};
 use crate::ApiState;
 use finsight_core::investments::{self, InvestmentSummary, Position};
 use finsight_core::repos::run;
-use utoipa::ToSchema;
 
 #[derive(serde::Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]

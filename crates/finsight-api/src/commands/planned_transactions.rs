@@ -4,7 +4,6 @@ use finsight_core::models::{
     NewPlannedTransaction, PlannedTransaction, PlannedTransactionPatch, PlannedTxnFilter,
 };
 use finsight_core::repos::{planned_transactions, run};
-use utoipa::ToSchema;
 
 #[derive(serde::Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]

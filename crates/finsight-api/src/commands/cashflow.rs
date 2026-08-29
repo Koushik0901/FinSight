@@ -7,7 +7,6 @@ use crate::error::{AppError, AppResult};
 use crate::ApiState;
 use finsight_core::cashflow::{self, CashflowForecast, WhatIf};
 use finsight_core::repos::run;
-use utoipa::ToSchema;
 
 /// Project the liquid balance forward `horizon_days` (default 30, clamped
 /// 7–90), optionally against a safety `buffer_cents` and a hypothetical one-off
