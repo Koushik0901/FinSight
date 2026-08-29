@@ -173,12 +173,7 @@ pub fn available(conn: &Connection, category_id: &str, month: &str) -> CoreResul
     let start = format!("{month}-01");
     let next = month_before(month, -1);
     let next_start = format!("{next}-01");
-    let spent: i64 = conn.query_row(
-        "SELECT COALESCE(SUM(CASE WHEN settle_up = 1 THEN -amount_cents WHEN amount_cents < 0 THEN -amount_cents ELSE 0 END), 0) \
-          FROM transactions WHERE category_id = ?1 AND posted_at >= ?2 AND posted_at < ?3",
-        params![category_id, start, next_start],
-        |r| r.get(0),
-    )?;
+    let spent = category_spent(conn, category_id, &start, &next_start)?;
     Ok(budgeted + carry + transfers_in - transfers_out - spent)
 }
 
@@ -384,6 +379,41 @@ fn parse_pct_from_json(params_json: &str) -> CoreResult<f64> {
     Ok(0.0)
 }
 
+pub fn category_spent(conn: &Connection, category_id: &str, from: &str, to: &str) -> CoreResult<i64> {
+    let v: i64 = conn.query_row(
+        "SELECT COALESCE(SUM(CASE WHEN t.settle_up=1 THEN -t.amount_cents \
+         WHEN t.amount_cents < 0 THEN -t.amount_cents ELSE 0 END),0) \
+         FROM transactions t \
+         WHERE t.category_id=?1 AND t.posted_at >= ?2 AND t.posted_at < ?3 AND t.is_transfer=0",
+        params![category_id, from, to], |r| r.get(0))?;
+    Ok(v)
+}
+
+pub fn period_bounds(conn: &Connection, period: Period) -> CoreResult<(Option<String>, String)> {
+    let anchor: Option<String> = conn.query_row("SELECT MAX(date(posted_at)) FROM transactions", [], |r| r.get(0))?;
+    let mut anchor_date = anchor.as_deref()
+        .and_then(|s| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok())
+        .unwrap_or_else(|| Utc::now().date_naive());
+    // Future guard (I8): if the data's max is in the future relative to wall-clock,
+    // clamp to today so future-dated rows are excluded by the end bound. This keeps
+    // the anchor data-driven for historical imports but prevents a single future
+    // row from sliding the window forward and hiding current-month spend.
+    let today = Utc::now().date_naive();
+    if anchor_date > today {
+        anchor_date = today;
+    }
+    let end = (anchor_date + chrono::Duration::days(1)).format("%Y-%m-%d").to_string();
+    let start = match period {
+        Period::All => None,
+        Period::Last1Month => Some((anchor_date - chrono::Months::new(1)).format("%Y-%m-%d").to_string()),
+        Period::Last3Months => Some((anchor_date - chrono::Months::new(3)).format("%Y-%m-%d").to_string()),
+        Period::Last6Months => Some((anchor_date - chrono::Months::new(6)).format("%Y-%m-%d").to_string()),
+        Period::YTD => Some(format!("{}-01-01", anchor_date.year())),
+    };
+    let start_rfc = start.map(|s| format!("{s}T00:00:00Z"));
+    Ok((start_rfc, format!("{end}T00:00:00Z")))
+}
+
 /// Carryover helper that works on `&Connection` (read-only). Mirrors
 /// `carryover_into_month(&mut Connection)` but without requiring mut.
 fn carryover_for(conn: &Connection, category_id: &str, month: &str) -> CoreResult<i64> {
@@ -412,12 +442,7 @@ fn carryover_for(conn: &Connection, category_id: &str, month: &str) -> CoreResul
     )?;
     let start_date = format!("{start}-01");
     let month_date = format!("{month}-01");
-    let spent: i64 = conn.query_row(
-        "SELECT COALESCE(SUM(-amount_cents), 0) FROM transactions \
-          WHERE category_id = ?1 AND amount_cents < 0 AND posted_at >= ?2 AND posted_at < ?3",
-        params![category_id, start_date, month_date],
-        |r| r.get(0),
-    )?;
+    let spent = category_spent(conn, category_id, &start_date, &month_date)?;
     Ok(budgeted - spent)
 }
 
@@ -434,12 +459,7 @@ fn category_available(conn: &Connection, category_id: &str, month: &str) -> Core
     let start = format!("{month}-01");
     let next = month_before(month, -1);
     let next_start = format!("{next}-01");
-    let spent: i64 = conn.query_row(
-        "SELECT COALESCE(SUM(-amount_cents), 0) FROM transactions \
-          WHERE category_id = ?1 AND amount_cents < 0 AND posted_at >= ?2 AND posted_at < ?3",
-        params![category_id, start, next_start],
-        |r| r.get(0),
-    )?;
+    let spent = category_spent(conn, category_id, &start, &next_start)?;
     Ok(budgeted + carry - spent)
 }
 
@@ -462,12 +482,7 @@ fn average_spending(conn: &Connection, category_id: &str, month: &str, months: u
         let start = format!("{m}-01");
         let next = month_before(&m, -1);
         let next_start = format!("{next}-01");
-        let spent: i64 = conn.query_row(
-            "SELECT COALESCE(SUM(-amount_cents), 0) FROM transactions \
-              WHERE category_id = ?1 AND amount_cents < 0 AND posted_at >= ?2 AND posted_at < ?3",
-            params![category_id, start, next_start],
-            |r| r.get(0),
-        )?;
+        let spent = category_spent(conn, category_id, &start, &next_start)?;
         total += spent;
     }
     Ok(total / months as i64)
@@ -737,15 +752,7 @@ pub fn carryover_into_month(
     )?;
     let start_date = format!("{start}-01");
     let month_date = format!("{month}-01");
-    // Mirrors the existing spend calculation in list_budget_envelopes (no
-    // is_transfer filter there either) — kept consistent rather than silently
-    // fixing an unrelated, pre-existing question about transfer handling.
-    let spent: i64 = conn.query_row(
-        "SELECT COALESCE(SUM(-amount_cents), 0) FROM transactions \
-         WHERE category_id = ?1 AND amount_cents < 0 AND posted_at >= ?2 AND posted_at < ?3",
-        params![category_id, start_date, month_date],
-        |r| r.get(0),
-    )?;
+    let spent = category_spent(conn, category_id, &start_date, &month_date)?;
     Ok(budgeted - spent)
 }
 
@@ -778,10 +785,10 @@ pub fn look_back_facts(conn: &mut Connection, month: &str) -> CoreResult<Vec<Loo
 
     let mut stmt = conn.prepare(
         "SELECT c.id, c.label, COALESCE(b.amount_cents, 0),
-                COALESCE(SUM(CASE WHEN t.amount_cents < 0 THEN -t.amount_cents ELSE 0 END), 0)
+                COALESCE(SUM(CASE WHEN t.settle_up=1 THEN -t.amount_cents WHEN t.amount_cents < 0 THEN -t.amount_cents ELSE 0 END), 0)
          FROM categories c
          LEFT JOIN budgets b ON b.category_id = c.id AND b.month = ?1
-         LEFT JOIN transactions t ON t.category_id = c.id AND t.posted_at >= ?2 AND t.posted_at < ?3
+         LEFT JOIN transactions t ON t.category_id = c.id AND t.posted_at >= ?2 AND t.posted_at < ?3 AND t.is_transfer=0
          WHERE c.archived_at IS NULL
          GROUP BY c.id, c.label, b.amount_cents",
     )?;
@@ -848,12 +855,7 @@ pub fn look_back_facts(conn: &mut Connection, month: &str) -> CoreResult<Vec<Loo
             let m_start = format!("{m}-01");
             let m_next = month_before(month, back - 1);
             let m_next_start = format!("{m_next}-01");
-            let spent_that_month: i64 = conn.query_row(
-                "SELECT COALESCE(SUM(-amount_cents), 0) FROM transactions \
-                 WHERE category_id = ?1 AND amount_cents < 0 AND posted_at >= ?2 AND posted_at < ?3",
-                params![id, m_start, m_next_start],
-                |r| r.get(0),
-            )?;
+            let spent_that_month = category_spent(conn, id, &m_start, &m_next_start)?;
             if spent_that_month == 0 {
                 streak += 1;
             } else {
@@ -877,27 +879,12 @@ pub fn look_back_facts(conn: &mut Connection, month: &str) -> CoreResult<Vec<Loo
     Ok(facts)
 }
 
-/// Compute the start of the period window for custom reports.
-/// Returns None for `All` (no filter). Uses wall-clock `Utc::now()` as anchor,
-/// mirroring the frontend's "last N months" notion; for YTD the anchor is Jan 1
-/// of the current year.
-fn period_start(period: &Period) -> Option<String> {
-    let now = Utc::now();
-    match period {
-        Period::All => None,
-        Period::Last1Month => Some((now - chrono::Duration::days(30)).to_rfc3339_opts(chrono::SecondsFormat::Secs, true)),
-        Period::Last3Months => Some((now - chrono::Duration::days(90)).to_rfc3339_opts(chrono::SecondsFormat::Secs, true)),
-        Period::Last6Months => Some((now - chrono::Duration::days(180)).to_rfc3339_opts(chrono::SecondsFormat::Secs, true)),
-        Period::YTD => Some(format!("{}-01-01T00:00:00Z", now.year())),
-    }
-}
-
 /// Custom report: group transactions by `split_by`, filtered by `period`,
 /// transfer/archived flags. Sums are positive cents (expenses flipped).
 /// Mirrors `metrics::spending_breakdown` transfer exclusion but is otherwise
 /// a thin grouping query — money math stays in `finsight-core`.
 pub fn custom_report(conn: &Connection, p: CustomReportParams) -> CoreResult<CustomReportResult> {
-    let start = period_start(&p.period);
+    let (start, end) = period_bounds(conn, p.period)?;
 
     let (select_label, join_clause, group_by) = match p.split_by {
         SplitBy::Category => (
@@ -926,7 +913,7 @@ pub fn custom_report(conn: &Connection, p: CustomReportParams) -> CoreResult<Cus
     // Build WHERE clause dynamically.
     let mut sql = format!(
         "SELECT {select_label} AS label, \
-                CAST(SUM(CASE WHEN t.amount_cents < 0 THEN -t.amount_cents ELSE t.amount_cents END) AS INTEGER) AS total, \
+                CAST(SUM(CASE WHEN t.settle_up=1 THEN -t.amount_cents WHEN t.amount_cents < 0 THEN -t.amount_cents ELSE 0 END) AS INTEGER) AS total, \
                 COUNT(*) AS cnt \
          FROM transactions t{join_clause} WHERE 1=1"
     );
@@ -945,11 +932,12 @@ pub fn custom_report(conn: &Connection, p: CustomReportParams) -> CoreResult<Cus
             _ => {}
         }
     }
-    if let Some(s) = start {
+    if let Some(s) = &start {
         sql.push_str(" AND t.posted_at >= ?");
-        binds.push(s);
+        binds.push(s.clone());
     }
-    // No end bound — window is start..now; future-dated rows are naturally excluded by being > now? Not needed.
+    sql.push_str(" AND t.posted_at < ?");
+    binds.push(end);
     sql.push_str(&format!(" GROUP BY {group_by} ORDER BY total DESC, label ASC"));
 
     let mut stmt = conn.prepare(&sql)?;
@@ -976,7 +964,9 @@ pub fn custom_report(conn: &Connection, p: CustomReportParams) -> CoreResult<Cus
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::{CustomReportParams, Period, SplitBy};
     use crate::Db;
+    use chrono::Utc;
     use tempfile::TempDir;
 
     fn fresh_db() -> (TempDir, Db) {
@@ -1156,5 +1146,88 @@ mod tests {
         spend(&mut conn, "food", "2026-05-10T00:00:00Z", 5_000);
         let facts = look_back_facts(&mut conn, "2026-05").unwrap();
         assert!(facts.iter().all(|f| f.category_id != "food"));
+    }
+
+    fn insert_tx(conn: &rusqlite::Connection, category_id: &str, amount_cents: i64, date: &str, settle_up: i64) {
+        let posted_at = if date.len() == 10 {
+            format!("{date}T00:00:00Z")
+        } else {
+            date.to_string()
+        };
+        conn.execute(
+            "INSERT INTO transactions(id, account_id, posted_at, amount_cents, merchant_raw, category_id, status, is_anomaly, is_transfer, settle_up, created_at) \
+             VALUES(?1, 'acc1', ?2, ?3, 'Test', ?4, 'cleared', 0, 0, ?5, ?2)",
+            params![Uuid::new_v4().to_string(), posted_at, amount_cents, category_id, settle_up],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn custom_report_expense_only() {
+        let (_d, db) = fresh_db();
+        let conn = db.get().unwrap();
+        // seed category acc1 + group
+        {
+            let mut c = db.get().unwrap();
+            seed_category(&mut c, "groceries");
+        }
+        // -5000 expense
+        insert_tx(&conn, "groceries", -5000, "2026-08-10", 0);
+        // +8000 income (should be ignored)
+        insert_tx(&conn, "groceries", 8000, "2026-08-11", 0);
+        // +2000 reimbursement settle_up=1 (nets as -2000 expense)
+        insert_tx(&conn, "groceries", 2000, "2026-08-12", 1);
+        let params = CustomReportParams {
+            period: Period::All,
+            split_by: SplitBy::Category,
+            include_archived: true,
+            include_transfers: false,
+        };
+        let res = custom_report(&conn, params).unwrap();
+        assert_eq!(res.total_cents, 3000, "expense - reimbursement, income ignored");
+        assert_eq!(res.rows[0].total_cents, 3000);
+    }
+
+    #[test]
+    fn custom_report_anchors_on_max_posted_at() {
+        let (_d, db) = fresh_db();
+        let conn = db.get().unwrap();
+        {
+            let mut c = db.get().unwrap();
+            seed_category(&mut c, "food");
+        }
+        insert_tx(&conn, "food", -1000, "2025-01-15", 0);
+        // Use wall-clock now is 2026-08-29, but anchor is 2025-01-15
+        // Last1Month from anchor should include Jan row; from wall-clock would be empty
+        let params = CustomReportParams {
+            period: Period::Last1Month,
+            split_by: SplitBy::Category,
+            include_archived: true,
+            include_transfers: false,
+        };
+        let res = custom_report(&conn, params).unwrap();
+        assert_eq!(res.total_cents, 1000);
+    }
+
+    #[test]
+    fn custom_report_excludes_future_rows() {
+        let (_d, db) = fresh_db();
+        let conn = db.get().unwrap();
+        {
+            let mut c = db.get().unwrap();
+            seed_category(&mut c, "misc");
+        }
+        let today = Utc::now().format("%Y-%m-%d").to_string();
+        insert_tx(&conn, "misc", -1000, &today, 0);
+        let future = (Utc::now() + chrono::Duration::days(2)).format("%Y-%m-%d").to_string();
+        insert_tx(&conn, "misc", -9999, &future, 0);
+        let params = CustomReportParams {
+            period: Period::Last1Month,
+            split_by: SplitBy::Category,
+            include_archived: true,
+            include_transfers: false,
+        };
+        let res = custom_report(&conn, params).unwrap();
+        assert_eq!(res.total_cents, 1000, "future row excluded by end bound");
     }
 }

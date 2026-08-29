@@ -214,25 +214,25 @@ pub async fn get_report_data(
         };
         let wmul: &str = if member.is_some() { "* w.weight" } else { "" };
 
-        // Anchor the report windows on the most recent MONTH WITH ACTIVITY, not
-        // wall-clock now. Imported statements are often historical, so anchoring
-        // on "now" makes the default month/quarter/year charts empty even though
-        // the data is there. Anchoring on the data makes every scope populate.
-        let anchor_ym: Option<String> = conn
-            .query_row(
-                "SELECT strftime('%Y-%m', MAX(posted_at)) FROM transactions",
-                [],
-                |r| r.get(0),
+        // Anchor the report windows on the most recent activity via the shared
+        // canonical helper, not wall-clock. Imported statements are often
+        // historical, so anchoring on "now" makes the default month/quarter/year
+        // charts empty even though the data is there. Using `period_bounds`
+        // guarantees Custom Reports and fixed Reports share the same MAX(posted_at)
+        // anchor (C1/I3).
+        let anchor_date = {
+            let (_, end_rfc) = finsight_core::repos::budgets::period_bounds(
+                conn,
+                finsight_core::models::Period::All,
             )
-            .unwrap_or(None);
-        let (anchor_y, anchor_m): (i32, i32) = anchor_ym
-            .as_deref()
-            .and_then(|s| {
-                let y = s.get(0..4)?.parse().ok()?;
-                let m = s.get(5..7)?.parse().ok()?;
-                Some((y, m))
-            })
-            .unwrap_or((now.year(), now.month() as i32));
+            .unwrap_or((None, now.format("%Y-%m-%dT00:00:00Z").to_string()));
+            // end = anchor + 1 day, so anchor = end - 1
+            chrono::NaiveDate::parse_from_str(&end_rfc[..10], "%Y-%m-%d")
+                .unwrap_or_else(|_| now.date_naive())
+                .checked_sub_signed(chrono::Duration::days(1))
+                .unwrap_or_else(|| now.date_naive())
+        };
+        let (anchor_y, anchor_m) = (anchor_date.year(), anchor_date.month() as i32);
 
         let oldest: Option<String> = conn
             .query_row(
