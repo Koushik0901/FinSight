@@ -9,6 +9,7 @@ mod connection;
 mod copilot;
 pub mod budget_hold;
 pub mod custom_report;
+pub mod funding_template;
 mod holding;
 mod household;
 mod import_candidate;
@@ -43,6 +44,10 @@ pub use copilot::{
 pub use budget_hold::{BudgetHold, GetHoldRequest, SetHoldRequest};
 pub use custom_report::{
     CustomReportParams, CustomReportResult, Period, ReportRow, SplitBy,
+};
+pub use funding_template::{
+    ApplyTemplatesRequest, BudgetChange, CreateFundingTemplateRequest, DeleteFundingTemplateRequest,
+    FundingTemplate, UpdateFundingTemplateRequest,
 };
 pub use holding::Holding;
 pub use household::{AccountOwner, AssetOwner, HouseholdMember, OwnerShare};

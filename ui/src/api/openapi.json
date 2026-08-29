@@ -273,6 +273,39 @@
         }
       }
     },
+    "/api/rpc/apply_templates": {
+      "post": {
+        "tags": [
+          "finsight_api::commands::budget"
+        ],
+        "operationId": "apply_templates",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplyTemplatesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/BudgetChange"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/rpc/apply_transfer_verdict_to_similar": {
       "post": {
         "tags": [
@@ -818,6 +851,36 @@
         }
       }
     },
+    "/api/rpc/create_funding_template": {
+      "post": {
+        "tags": [
+          "finsight_api::commands::budget"
+        ],
+        "operationId": "create_funding_template",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateFundingTemplateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FundingTemplate"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/rpc/create_goal": {
       "post": {
         "tags": [
@@ -1225,6 +1288,29 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/rpc/delete_funding_template": {
+      "post": {
+        "tags": [
+          "finsight_api::commands::budget"
+        ],
+        "operationId": "delete_funding_template",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeleteFundingTemplateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
           }
         }
       }
@@ -3327,6 +3413,29 @@
                   "type": "array",
                   "items": {
                     "$ref": "#/components/schemas/AgentExecutionEntry"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rpc/list_funding_templates": {
+      "post": {
+        "tags": [
+          "finsight_api::commands::budget"
+        ],
+        "operationId": "list_funding_templates",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FundingTemplate"
                   }
                 }
               }
@@ -5754,6 +5863,41 @@
         "responses": {
           "200": {
             "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/rpc/update_funding_template": {
+      "post": {
+        "tags": [
+          "finsight_api::commands::budget"
+        ],
+        "operationId": "update_funding_template",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateFundingTemplateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/FundingTemplate"
+                    }
+                  ],
+                  "nullable": true
+                }
+              }
+            }
           }
         }
       }
@@ -8620,6 +8764,17 @@
           }
         }
       },
+      "ApplyTemplatesRequest": {
+        "type": "object",
+        "required": [
+          "month"
+        ],
+        "properties": {
+          "month": {
+            "type": "string"
+          }
+        }
+      },
       "ApplyTransferVerdictToSimilarRequest": {
         "type": "object",
         "required": [
@@ -8790,6 +8945,23 @@
           "goalCount": {
             "type": "integer",
             "format": "int64"
+          }
+        }
+      },
+      "BudgetChange": {
+        "type": "object",
+        "description": "One budget change produced by `apply_templates`.",
+        "required": [
+          "categoryId",
+          "amountCents"
+        ],
+        "properties": {
+          "amountCents": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "categoryId": {
+            "type": "string"
           }
         }
       },
@@ -10439,6 +10611,30 @@
           }
         }
       },
+      "CreateFundingTemplateRequest": {
+        "type": "object",
+        "required": [
+          "categoryId",
+          "kind"
+        ],
+        "properties": {
+          "categoryId": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "paramsJson": {
+            "type": "string",
+            "nullable": true
+          },
+          "priority": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          }
+        }
+      },
       "CreateGoalRequest": {
         "type": "object",
         "required": [
@@ -10893,6 +11089,17 @@
         }
       },
       "DeleteConversationRequest": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        }
+      },
+      "DeleteFundingTemplateRequest": {
         "type": "object",
         "required": [
           "id"
@@ -11477,6 +11684,42 @@
         "properties": {
           "id": {
             "type": "string"
+          }
+        }
+      },
+      "FundingTemplate": {
+        "type": "object",
+        "description": "One funding template — declarative rule for how to fund a category.\n\nMirrors Actual's `#template` comment syntax as a table: ordered by\n`priority` ASC then `id` ASC, evaluated as `need.min(available)` where\n`available = to_budget(month)` (respects holds). Each kind's `params_json`\nholds variant-specific fields, e.g. `{\"amount\":7299}` for `fixed` or\n`{\"cap\":30000}` for `up_to`.",
+        "required": [
+          "id",
+          "categoryId",
+          "kind",
+          "paramsJson",
+          "priority",
+          "createdAt"
+        ],
+        "properties": {
+          "categoryId": {
+            "type": "string",
+            "description": "Category to fund."
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "description": "'fixed','up_to','by','average','percent','remainder','schedule'"
+          },
+          "paramsJson": {
+            "type": "string",
+            "description": "JSON object with variant params, e.g. `{\"amount\":7299}` for fixed,\n`{\"cap\":30000}` for up_to, `{\"pct\":0.5}` for percent."
+          },
+          "priority": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       },
@@ -17377,6 +17620,34 @@
           },
           "id": {
             "type": "string"
+          }
+        }
+      },
+      "UpdateFundingTemplateRequest": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "categoryId": {
+            "type": "string",
+            "nullable": true
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "nullable": true
+          },
+          "paramsJson": {
+            "type": "string",
+            "nullable": true
+          },
+          "priority": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
           }
         }
       },

@@ -1,5 +1,8 @@
-use crate::error::CoreResult;
-use crate::models::{CustomReportParams, CustomReportResult, Period, ReportRow, SplitBy};
+use crate::error::{CoreError, CoreResult};
+use crate::models::{
+    BudgetChange, CustomReportParams, CustomReportResult, FundingTemplate, Period, ReportRow,
+    SplitBy,
+};
 use chrono::{Datelike, Utc};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
@@ -137,6 +140,375 @@ pub fn available_funds(conn: &Connection, month: &str) -> CoreResult<i64> {
     let prev = month_before(month, 1);
     let prev_hold = get_hold(conn, &prev)?.unwrap_or(0);
     Ok(income - budgeted - cur_hold + prev_hold)
+}
+
+// ── Declarative Funding Templates (Actual's #template as a table) ─────────
+
+const FUNDING_KINDS: &[&str] = &[
+    "fixed", "up_to", "by", "average", "percent", "remainder", "schedule",
+];
+
+fn validate_funding_kind(kind: &str) -> CoreResult<()> {
+    if FUNDING_KINDS.contains(&kind) {
+        Ok(())
+    } else {
+        Err(CoreError::Validation(format!(
+            "invalid funding template kind `{kind}` — expected one of {}",
+            FUNDING_KINDS.join(", ")
+        )))
+    }
+}
+
+fn parse_amount_from_json(params_json: &str, keys: &[&str]) -> CoreResult<i64> {
+    let v: serde_json::Value =
+        serde_json::from_str(params_json).unwrap_or(serde_json::Value::Object(Default::default()));
+    for k in keys {
+        if let Some(n) = v.get(*k).and_then(|x| x.as_i64()) {
+            return Ok(n);
+        }
+        // allow floating pct? for amount we expect integer cents
+        if let Some(n) = v.get(*k).and_then(|x| x.as_f64()) {
+            return Ok(n.round() as i64);
+        }
+    }
+    Ok(0)
+}
+
+fn parse_pct_from_json(params_json: &str) -> CoreResult<f64> {
+    let v: serde_json::Value =
+        serde_json::from_str(params_json).unwrap_or(serde_json::Value::Object(Default::default()));
+    for k in ["pct", "percent", "pct_f32", "percent_f32"] {
+        if let Some(n) = v.get(k).and_then(|x| x.as_f64()) {
+            // Accept 0..1 as fraction or 0..100 as percent — values >1 are treated as percent/100
+            if n > 1.0 {
+                return Ok(n / 100.0);
+            }
+            return Ok(n);
+        }
+        if let Some(n) = v.get(k).and_then(|x| x.as_i64()) {
+            let f = n as f64;
+            if f > 1.0 {
+                return Ok(f / 100.0);
+            }
+            return Ok(f);
+        }
+    }
+    // also try "amount" as alias for percent? not needed
+    Ok(0.0)
+}
+
+/// Carryover helper that works on `&Connection` (read-only). Mirrors
+/// `carryover_into_month(&mut Connection)` but without requiring mut.
+fn carryover_for(conn: &Connection, category_id: &str, month: &str) -> CoreResult<i64> {
+    let first_budgeted: Option<String> = conn.query_row(
+        "SELECT MIN(month) FROM budgets WHERE category_id = ?1 AND amount_cents > 0",
+        params![category_id],
+        |r| r.get(0),
+    )?;
+    let Some(first_budgeted) = first_budgeted else {
+        return Ok(0);
+    };
+    if first_budgeted.as_str() >= month {
+        return Ok(0);
+    }
+    let earliest_allowed = month_before(month, 24);
+    let start = if first_budgeted.as_str() > earliest_allowed.as_str() {
+        first_budgeted
+    } else {
+        earliest_allowed
+    };
+    let budgeted: i64 = conn.query_row(
+        "SELECT COALESCE(SUM(amount_cents), 0) FROM budgets \
+          WHERE category_id = ?1 AND month >= ?2 AND month < ?3",
+        params![category_id, start, month],
+        |r| r.get(0),
+    )?;
+    let start_date = format!("{start}-01");
+    let month_date = format!("{month}-01");
+    let spent: i64 = conn.query_row(
+        "SELECT COALESCE(SUM(-amount_cents), 0) FROM transactions \
+          WHERE category_id = ?1 AND amount_cents < 0 AND posted_at >= ?2 AND posted_at < ?3",
+        params![category_id, start_date, month_date],
+        |r| r.get(0),
+    )?;
+    Ok(budgeted - spent)
+}
+
+/// Current available balance for a category in `month` (budgeted + carryover - spent).
+/// Mirrors the envelope `available = budgeted + carryover - spent_in_month`
+/// without transfer ledger (transfers are Task 4). For templates, `UpTo` needs this.
+fn category_available(conn: &Connection, category_id: &str, month: &str) -> CoreResult<i64> {
+    let budgeted: i64 = conn.query_row(
+        "SELECT COALESCE(SUM(amount_cents), 0) FROM budgets WHERE category_id = ?1 AND month = ?2",
+        params![category_id, month],
+        |r| r.get(0),
+    )?;
+    let carry = carryover_for(conn, category_id, month)?;
+    let start = format!("{month}-01");
+    let next = month_before(month, -1);
+    let next_start = format!("{next}-01");
+    let spent: i64 = conn.query_row(
+        "SELECT COALESCE(SUM(-amount_cents), 0) FROM transactions \
+          WHERE category_id = ?1 AND amount_cents < 0 AND posted_at >= ?2 AND posted_at < ?3",
+        params![category_id, start, next_start],
+        |r| r.get(0),
+    )?;
+    Ok(budgeted + carry - spent)
+}
+
+fn months_between(from_month: &str, to_month: &str) -> i64 {
+    // Parse YYYY-MM
+    let fy: i32 = from_month[0..4].parse().unwrap_or(1970);
+    let fm: i32 = from_month[5..7].parse().unwrap_or(1);
+    let ty: i32 = to_month[0..4].parse().unwrap_or(1970);
+    let tm: i32 = to_month[5..7].parse().unwrap_or(1);
+    ((ty - fy) * 12 + (tm - fm)) as i64
+}
+
+fn average_spending(conn: &Connection, category_id: &str, month: &str, months: u32) -> CoreResult<i64> {
+    if months == 0 {
+        return Ok(0);
+    }
+    let mut total: i64 = 0;
+    for i in 1..=months as i32 {
+        let m = month_before(month, i);
+        let start = format!("{m}-01");
+        let next = month_before(&m, -1);
+        let next_start = format!("{next}-01");
+        let spent: i64 = conn.query_row(
+            "SELECT COALESCE(SUM(-amount_cents), 0) FROM transactions \
+              WHERE category_id = ?1 AND amount_cents < 0 AND posted_at >= ?2 AND posted_at < ?3",
+            params![category_id, start, next_start],
+            |r| r.get(0),
+        )?;
+        total += spent;
+    }
+    Ok(total / months as i64)
+}
+
+/// List all funding templates ordered by priority ASC, id ASC.
+pub fn list_funding_templates(conn: &Connection) -> CoreResult<Vec<FundingTemplate>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, category_id, kind, params_json, priority, created_at \
+          FROM funding_templates ORDER BY priority ASC, id ASC",
+    )?;
+    let rows = stmt.query_map([], |r| {
+        Ok(FundingTemplate {
+            id: r.get(0)?,
+            category_id: r.get(1)?,
+            kind: r.get(2)?,
+            params_json: r.get(3)?,
+            priority: r.get(4)?,
+            created_at: r.get(5)?,
+        })
+    })?;
+    let mut out = Vec::new();
+    for row in rows {
+        out.push(row?);
+    }
+    Ok(out)
+}
+
+/// Get a single template by id.
+pub fn get_funding_template(conn: &Connection, id: &str) -> CoreResult<Option<FundingTemplate>> {
+    let v = conn
+        .query_row(
+            "SELECT id, category_id, kind, params_json, priority, created_at \
+              FROM funding_templates WHERE id = ?1",
+            params![id],
+            |r| {
+                Ok(FundingTemplate {
+                    id: r.get(0)?,
+                    category_id: r.get(1)?,
+                    kind: r.get(2)?,
+                    params_json: r.get(3)?,
+                    priority: r.get(4)?,
+                    created_at: r.get(5)?,
+                })
+            },
+        )
+        .optional()?;
+    Ok(v)
+}
+
+/// Create a funding template. Validates `kind` and that `category_id` exists.
+/// `params_json` defaults to `{}` when empty; `priority` defaults to 0.
+pub fn create_funding_template(
+    conn: &mut Connection,
+    category_id: &str,
+    kind: &str,
+    params_json: &str,
+    priority: i64,
+) -> CoreResult<FundingTemplate> {
+    validate_funding_kind(kind)?;
+    let pj = if params_json.trim().is_empty() {
+        "{}".to_string()
+    } else {
+        // Validate it is valid JSON; fallback to {} if parse fails but keep original for debug?
+        if serde_json::from_str::<serde_json::Value>(params_json).is_err() {
+            return Err(CoreError::Validation(format!(
+                "params_json must be valid JSON, got `{params_json}`"
+            )));
+        }
+        params_json.to_string()
+    };
+    let id = Uuid::new_v4().to_string();
+    let now = Utc::now().to_rfc3339();
+    conn.execute(
+        "INSERT INTO funding_templates(id, category_id, kind, params_json, priority, created_at) \
+          VALUES(?1, ?2, ?3, ?4, ?5, ?6)",
+        params![id, category_id, kind, pj, priority, now],
+    )?;
+    Ok(FundingTemplate {
+        id,
+        category_id: category_id.to_string(),
+        kind: kind.to_string(),
+        params_json: pj,
+        priority,
+        created_at: now,
+    })
+}
+
+/// Update a template's fields patch-wise. Returns `None` if not found.
+pub fn update_funding_template(
+    conn: &mut Connection,
+    id: &str,
+    category_id: Option<&str>,
+    kind: Option<&str>,
+    params_json: Option<&str>,
+    priority: Option<i64>,
+) -> CoreResult<Option<FundingTemplate>> {
+    let existing = get_funding_template(conn, id)?;
+    let Some(cur) = existing else {
+        return Ok(None);
+    };
+    let new_category = category_id.unwrap_or(&cur.category_id).to_string();
+    let new_kind = kind.unwrap_or(&cur.kind).to_string();
+    if let Some(k) = kind {
+        validate_funding_kind(k)?;
+    }
+    let new_params = if let Some(pj) = params_json {
+        if pj.trim().is_empty() {
+            "{}".to_string()
+        } else {
+            if serde_json::from_str::<serde_json::Value>(pj).is_err() {
+                return Err(CoreError::Validation(format!(
+                    "params_json must be valid JSON, got `{pj}`"
+                )));
+            }
+            pj.to_string()
+        }
+    } else {
+        cur.params_json.clone()
+    };
+    let new_priority = priority.unwrap_or(cur.priority);
+    conn.execute(
+        "UPDATE funding_templates SET category_id=?1, kind=?2, params_json=?3, priority=?4 WHERE id=?5",
+        params![new_category, new_kind, new_params, new_priority, id],
+    )?;
+    Ok(Some(FundingTemplate {
+        id: id.to_string(),
+        category_id: new_category,
+        kind: new_kind,
+        params_json: new_params,
+        priority: new_priority,
+        created_at: cur.created_at,
+    }))
+}
+
+/// Delete a template by id. Returns true if a row was deleted.
+pub fn delete_funding_template(conn: &mut Connection, id: &str) -> CoreResult<bool> {
+    let n = conn.execute("DELETE FROM funding_templates WHERE id = ?1", params![id])?;
+    Ok(n > 0)
+}
+
+/// Apply templates for `month` ("YYYY-MM") ordered by priority.
+/// Each template computes `need` from its kind + params, capped by remaining `available`.
+///
+/// `available` starts as `to_budget(month)` (income - budgeted - hold, respects holds).
+/// For each template: `take = need.min(available).max(0)`, then `available -= take`.
+///
+/// Kind handling:
+/// - `fixed`: `{"amount":7299}` or `{"amount_cents":7299}` → need = amount
+/// - `up_to`: `{"cap":30000}` or `{"amount":30000}` → need = max(0, cap - category_available)
+/// - `by`: `{"target":10000,"by":"2026-12"}` → need = ceil((target - balance)/months_remaining)
+/// - `average`: `{"months":3}` → need = average spend over N prior months
+/// - `percent`: `{"pct":0.5}` or `{"percent":50}` → need = round(available * pct)
+/// - `remainder`: `{"":}` → need = available (takes all remaining)
+/// - `schedule`: `{"amount":5000}` or pattern → need = amount or 0 if unparseable
+pub fn apply_templates(conn: &Connection, month: &str) -> CoreResult<Vec<BudgetChange>> {
+    let templates = list_funding_templates(conn)?;
+    let mut available = to_budget(conn, month)?;
+    if available < 0 {
+        available = 0;
+    }
+    let mut out = Vec::with_capacity(templates.len());
+    for t in templates {
+        let need: i64 = match t.kind.as_str() {
+            "fixed" => parse_amount_from_json(&t.params_json, &["amount", "amount_cents", "amountCents", "cap"])?,
+            "up_to" => {
+                let cap = parse_amount_from_json(&t.params_json, &["cap", "amount", "amount_cents", "amountCents", "target"])?;
+                let balance = category_available(conn, &t.category_id, month)?;
+                (cap - balance).max(0)
+            }
+            "by" => {
+                // Expect {"target":X, "by":"YYYY-MM"}
+                let v: serde_json::Value = serde_json::from_str(&t.params_json)
+                    .unwrap_or(serde_json::Value::Object(Default::default()));
+                let target = v
+                    .get("target")
+                    .or_else(|| v.get("amount"))
+                    .or_else(|| v.get("cap"))
+                    .and_then(|x| x.as_i64().or_else(|| x.as_f64().map(|f| f.round() as i64)))
+                    .unwrap_or(0);
+                let by = v
+                    .get("by")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or(month);
+                let balance = category_available(conn, &t.category_id, month)?;
+                let remaining = target.saturating_sub(balance).max(0);
+                let months_left = months_between(month, by).max(1);
+                // ceil division
+                (remaining + months_left - 1) / months_left
+            }
+            "average" => {
+                let v: serde_json::Value = serde_json::from_str(&t.params_json)
+                    .unwrap_or(serde_json::Value::Object(Default::default()));
+                let months = v
+                    .get("months")
+                    .and_then(|x| x.as_u64())
+                    .or_else(|| v.get("months").and_then(|x| x.as_i64().map(|i| i as u64)))
+                    .unwrap_or(3) as u32;
+                average_spending(conn, &t.category_id, month, months)?
+            }
+            "percent" => {
+                let pct = parse_pct_from_json(&t.params_json)?;
+                (available as f64 * pct).round() as i64
+            }
+            "remainder" => available,
+            "schedule" => {
+                // For schedule, params may be {"amount":X} or {"schedule":"X"} with amount inside
+                let amt = parse_amount_from_json(&t.params_json, &["amount", "amount_cents", "amountCents"])?;
+                if amt != 0 {
+                    amt
+                } else {
+                    // try to parse schedule string as amount? fallback 0
+                    0
+                }
+            }
+            _ => 0,
+        };
+        let take = need.min(available).max(0);
+        out.push(BudgetChange {
+            category_id: t.category_id.clone(),
+            amount_cents: take,
+        });
+        available -= take;
+        if available < 0 {
+            available = 0;
+        }
+    }
+    Ok(out)
 }
 
 /// Compute carryover *into* `month` ("YYYY-MM") for one category: the running sum

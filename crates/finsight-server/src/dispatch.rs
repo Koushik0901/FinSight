@@ -293,6 +293,26 @@ rpc_routes!(api, events, cmd, p, c:
         "set_hold" => {
             ok(c::budget::set_hold(api, arg(&p, "month")?, arg(&p, "amountCents")?).await?)
         },
+        "list_funding_templates" => ok(c::budget::list_funding_templates(api).await?),
+        "create_funding_template" => ok(c::budget::create_funding_template(
+            api,
+            arg(&p, "categoryId")?,
+            arg(&p, "kind")?,
+            arg(&p, "paramsJson")?,
+            arg(&p, "priority")?,
+        )
+        .await?),
+        "update_funding_template" => ok(c::budget::update_funding_template(
+            api,
+            arg(&p, "id")?,
+            arg(&p, "categoryId")?,
+            arg(&p, "kind")?,
+            arg(&p, "paramsJson")?,
+            arg(&p, "priority")?,
+        )
+        .await?),
+        "delete_funding_template" => ok(c::budget::delete_funding_template(api, arg(&p, "id")?).await?),
+        "apply_templates" => ok(c::budget::apply_templates(api, arg(&p, "month")?).await?),
         "list_goals" => ok(c::budget::list_goals(api).await?),
         "create_goal" => ok(c::budget::create_goal(api, arg(&p, "input")?).await?),
         "update_goal_balance" => {

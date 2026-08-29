@@ -1,7 +1,7 @@
 use crate::error::{AppError, AppResult};
 use crate::ApiState;
 use chrono::{Datelike, Utc};
-use finsight_core::models::BudgetHold;
+use finsight_core::models::{BudgetChange, BudgetHold, FundingTemplate};
 use finsight_core::repos::budgets::LookBackFact;
 use finsight_core::repos::{budgets, goals, run};
 use serde::{Deserialize, Serialize};
@@ -254,6 +254,116 @@ pub async fn get_hold(state: &ApiState, month: String) -> AppResult<Option<Budge
     })
     .await
     .map_err(AppError::from)
+}
+
+// ── Declarative Funding Templates (Actual's #template as a table) ──────────
+
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct CreateFundingTemplateRequest {
+    pub category_id: String,
+    pub kind: String,
+    pub params_json: Option<String>,
+    pub priority: Option<i64>,
+}
+
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct UpdateFundingTemplateRequest {
+    pub id: String,
+    pub category_id: Option<String>,
+    pub kind: Option<String>,
+    pub params_json: Option<String>,
+    pub priority: Option<i64>,
+}
+
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct DeleteFundingTemplateRequest {
+    pub id: String,
+}
+
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct ApplyTemplatesRequest {
+    pub month: String,
+}
+
+#[utoipa::path(post, path = "/api/rpc/list_funding_templates", responses((status = 200, body = Vec<FundingTemplate>)))]
+pub async fn list_funding_templates(state: &ApiState) -> AppResult<Vec<FundingTemplate>> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| budgets::list_funding_templates(conn))
+        .await
+        .map_err(AppError::from)
+}
+
+#[utoipa::path(post, path = "/api/rpc/create_funding_template", request_body(content = CreateFundingTemplateRequest), responses((status = 200, body = FundingTemplate)))]
+pub async fn create_funding_template(
+    state: &ApiState,
+    category_id: String,
+    kind: String,
+    params_json: Option<String>,
+    priority: Option<i64>,
+) -> AppResult<FundingTemplate> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| {
+        budgets::create_funding_template(
+            conn,
+            &category_id,
+            &kind,
+            params_json.as_deref().unwrap_or("{}"),
+            priority.unwrap_or(0),
+        )
+    })
+    .await
+    .map_err(AppError::from)
+}
+
+#[utoipa::path(post, path = "/api/rpc/update_funding_template", request_body(content = UpdateFundingTemplateRequest), responses((status = 200, body = Option<FundingTemplate>)))]
+pub async fn update_funding_template(
+    state: &ApiState,
+    id: String,
+    category_id: Option<String>,
+    kind: Option<String>,
+    params_json: Option<String>,
+    priority: Option<i64>,
+) -> AppResult<Option<FundingTemplate>> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| {
+        budgets::update_funding_template(
+            conn,
+            &id,
+            category_id.as_deref(),
+            kind.as_deref(),
+            params_json.as_deref(),
+            priority,
+        )
+    })
+    .await
+    .map_err(AppError::from)
+}
+
+#[utoipa::path(post, path = "/api/rpc/delete_funding_template", request_body(content = DeleteFundingTemplateRequest), responses((status = 200, description = "Success")))]
+pub async fn delete_funding_template(state: &ApiState, id: String) -> AppResult<()> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| {
+        budgets::delete_funding_template(conn, &id)?;
+        Ok(())
+    })
+    .await
+    .map_err(AppError::from)
+}
+
+#[utoipa::path(post, path = "/api/rpc/apply_templates", request_body(content = ApplyTemplatesRequest), responses((status = 200, body = Vec<BudgetChange>)))]
+pub async fn apply_templates(state: &ApiState, month: String) -> AppResult<Vec<BudgetChange>> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| budgets::apply_templates(conn, &month))
+        .await
+        .map_err(AppError::from)
 }
 
 // ── Goals ──────────────────────────────────────────────────────────────────

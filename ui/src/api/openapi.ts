@@ -164,6 +164,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/rpc/apply_templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["apply_templates"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/rpc/apply_transfer_verdict_to_similar": {
         parameters: {
             query?: never;
@@ -500,6 +516,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/rpc/create_funding_template": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["create_funding_template"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/rpc/create_goal": {
         parameters: {
             query?: never;
@@ -734,6 +766,22 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["delete_conversation_messages_after"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/rpc/delete_funding_template": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["delete_funding_template"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2074,6 +2122,22 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["list_execution_log"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/rpc/list_funding_templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["list_funding_templates"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3651,6 +3715,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/rpc/update_funding_template": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["update_funding_template"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/rpc/update_goal_balance": {
         parameters: {
             query?: never;
@@ -4641,6 +4721,9 @@ export interface components {
             /** @description Approved-but-not-written changes, with why (unsupported, or already applied). */
             skipped: components["schemas"]["SkippedChange"][];
         };
+        ApplyTemplatesRequest: {
+            month: string;
+        };
         ApplyTransferVerdictToSimilarRequest: {
             isTransfer: boolean;
             pattern: string;
@@ -4705,6 +4788,12 @@ export interface components {
             balanceCents: number;
             /** Format: int64 */
             goalCount: number;
+        };
+        /** @description One budget change produced by `apply_templates`. */
+        BudgetChange: {
+            /** Format: int64 */
+            amountCents: number;
+            categoryId: string;
         };
         /** @description One category's budget + actual for a month. */
         BudgetEnvelope: {
@@ -5300,6 +5389,13 @@ export interface components {
             groupId?: string | null;
             label: string;
         };
+        CreateFundingTemplateRequest: {
+            categoryId: string;
+            kind: string;
+            paramsJson?: string | null;
+            /** Format: int64 */
+            priority?: number | null;
+        };
         CreateGoalRequest: {
             input: components["schemas"]["NewGoalInput"];
         };
@@ -5436,6 +5532,9 @@ export interface components {
             messageId: string;
         };
         DeleteConversationRequest: {
+            id: string;
+        };
+        DeleteFundingTemplateRequest: {
             id: string;
         };
         DeleteHouseholdMemberRequest: {
@@ -5685,6 +5784,30 @@ export interface components {
         };
         ForgetAgentMemoryRequest: {
             id: string;
+        };
+        /**
+         * @description One funding template — declarative rule for how to fund a category.
+         *
+         *     Mirrors Actual's `#template` comment syntax as a table: ordered by
+         *     `priority` ASC then `id` ASC, evaluated as `need.min(available)` where
+         *     `available = to_budget(month)` (respects holds). Each kind's `params_json`
+         *     holds variant-specific fields, e.g. `{"amount":7299}` for `fixed` or
+         *     `{"cap":30000}` for `up_to`.
+         */
+        FundingTemplate: {
+            /** @description Category to fund. */
+            categoryId: string;
+            createdAt: string;
+            id: string;
+            /** @description 'fixed','up_to','by','average','percent','remainder','schedule' */
+            kind: string;
+            /**
+             * @description JSON object with variant params, e.g. `{"amount":7299}` for fixed,
+             *     `{"cap":30000}` for up_to, `{"pct":0.5}` for percent.
+             */
+            paramsJson: string;
+            /** Format: int64 */
+            priority: number;
         };
         /**
          * @description Reconstruct an account's balance curve from its ledger, with the peak and
@@ -7898,6 +8021,14 @@ export interface components {
             color: string;
             id: string;
         };
+        UpdateFundingTemplateRequest: {
+            categoryId?: string | null;
+            id: string;
+            kind?: string | null;
+            paramsJson?: string | null;
+            /** Format: int64 */
+            priority?: number | null;
+        };
         UpdateGoalBalanceRequest: {
             /** Format: int64 */
             currentCents: number;
@@ -8186,6 +8317,29 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApplyScenarioResult"];
+                };
+            };
+        };
+    };
+    apply_templates: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApplyTemplatesRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BudgetChange"][];
                 };
             };
         };
@@ -8655,6 +8809,29 @@ export interface operations {
             };
         };
     };
+    create_funding_template: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateFundingTemplateRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FundingTemplate"];
+                };
+            };
+        };
+    };
     create_goal: {
         parameters: {
             query?: never;
@@ -8986,6 +9163,28 @@ export interface operations {
                 content: {
                     "application/json": number;
                 };
+            };
+        };
+    };
+    delete_funding_template: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeleteFundingTemplateRequest"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -10702,6 +10901,25 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AgentExecutionEntry"][];
+                };
+            };
+        };
+    };
+    list_funding_templates: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FundingTemplate"][];
                 };
             };
         };
@@ -12778,6 +12996,29 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    update_funding_template: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateFundingTemplateRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FundingTemplate"] | null;
+                };
             };
         };
     };
