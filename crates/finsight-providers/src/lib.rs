@@ -1,6 +1,7 @@
 //! finsight-providers — pluggable transaction sources.
 
 pub mod csv;
+pub mod enable_banking;
 pub mod error;
 pub mod provider;
 pub mod simplefin;

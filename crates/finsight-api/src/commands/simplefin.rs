@@ -26,6 +26,40 @@ use utoipa::ToSchema;
 const SIMPLEFIN_ACCESS_SERVICE: &str = secrets::LEGACY_SIMPLEFIN_ACCESS_SERVICE;
 const ONBOARDING_COMPLETION_KEY: &str = "onboarding_completion_marked";
 
+/// Bank-data provider kind — second provider is Enable Banking (EU) behind the
+/// same `SyncProvider` trait shape as SimpleFIN (`finsight-providers/src/simplefin/sync.rs:40`
+/// `fetch_simplefin_data`). Credentials for both variants live in the per-user
+/// SQLCipher settings (never a global slot), and `enable_banking` tests prove
+/// per-token isolation (no cross-read).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Type, ToSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
+pub enum SyncProvider {
+    SimpleFin,
+    EnableBanking,
+}
+
+impl SyncProvider {
+    pub fn as_kind(&self) -> finsight_providers::provider::SyncProviderKind {
+        match self {
+            Self::SimpleFin => finsight_providers::provider::SyncProviderKind::SimpleFin,
+            Self::EnableBanking => finsight_providers::provider::SyncProviderKind::EnableBanking,
+        }
+    }
+    pub fn as_str(&self) -> &'static str {
+        self.as_kind().as_str()
+    }
+}
+
+impl From<finsight_providers::provider::SyncProviderKind> for SyncProvider {
+    fn from(k: finsight_providers::provider::SyncProviderKind) -> Self {
+        match k {
+            finsight_providers::provider::SyncProviderKind::SimpleFin => Self::SimpleFin,
+            finsight_providers::provider::SyncProviderKind::EnableBanking => Self::EnableBanking,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
 #[schema(rename_all="camelCase")]
