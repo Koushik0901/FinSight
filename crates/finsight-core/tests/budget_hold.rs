@@ -53,7 +53,10 @@ fn hold_deducts_from_to_budget_and_appears_next_month() {
     {
         let conn = db.get().unwrap();
         let tb = to_budget(&conn, "2026-09").unwrap();
-        assert_eq!(tb, 2500, "to_budget = income 10000 - budget 6000 - hold 1500 = 2500, got {tb}");
+        assert_eq!(
+            tb, 2500,
+            "to_budget = income 10000 - budget 6000 - hold 1500 = 2500, got {tb}"
+        );
         let av = available_funds(&conn, "2026-10").unwrap();
         assert_eq!(
             av, 1500,

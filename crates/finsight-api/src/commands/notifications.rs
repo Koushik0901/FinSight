@@ -15,7 +15,7 @@ use utoipa::ToSchema;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct NotificationCategoryPref {
     /// Stable key (e.g. "cashflow_risk").
     pub key: String,
@@ -25,7 +25,7 @@ pub struct NotificationCategoryPref {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct QuietHours {
     /// Local hour 0–23 the quiet window starts.
     pub start: u8,
@@ -35,7 +35,7 @@ pub struct QuietHours {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct NotificationPrefsDto {
     pub master_enabled: bool,
     /// Every category with its current enabled state, in a stable order for the UI.

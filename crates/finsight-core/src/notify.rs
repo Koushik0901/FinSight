@@ -26,8 +26,8 @@ use chrono::{DateTime, Timelike, Utc};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use specta::Type;
-use utoipa::ToSchema;
 use std::collections::BTreeSet;
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 /// What a notification is about. Drives the per-category user preference and how

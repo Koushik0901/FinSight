@@ -166,7 +166,7 @@ pub enum CopilotStreamFrame {
 /// A single prior turn from the conversation history for multi-turn awareness.
 #[derive(Debug, Clone, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct ChatHistoryEntry {
     pub role: String, // "user" | "assistant"
     pub content: String,
@@ -174,7 +174,7 @@ pub struct ChatHistoryEntry {
 
 #[derive(Debug, Clone, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct EditConversationMessageInput {
     pub conversation_id: String,
     pub message_id: String,

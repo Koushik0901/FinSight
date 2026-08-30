@@ -13,7 +13,7 @@ use utoipa::ToSchema;
 
 #[derive(Debug, Clone, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct RestorationEnvelopeInput {
     pub label: String,
     pub source_account_id: Option<String>,

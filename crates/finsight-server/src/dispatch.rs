@@ -93,7 +93,9 @@ pub async fn rpc(
     Path(cmd): Path<String>,
     p: Option<Json<serde_json::Value>>,
 ) -> Response {
-    let p = p.map(|Json(v)| v).unwrap_or(serde_json::Value::Object(Default::default()));
+    let p = p
+        .map(|Json(v)| v)
+        .unwrap_or(serde_json::Value::Object(Default::default()));
     if UNSUPPORTED.contains(&cmd.as_str()) {
         return (
             StatusCode::NOT_IMPLEMENTED,

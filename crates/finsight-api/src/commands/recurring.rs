@@ -10,7 +10,7 @@ use utoipa::ToSchema;
 /// A detected material change in a fixed-price recurring charge's amount (#58).
 #[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct PriceChangeDto {
     pub from_cents: i64,
     pub to_cents: i64,
@@ -35,7 +35,7 @@ impl From<&PriceChange> for PriceChangeDto {
 /// A recurring transaction detected from transaction history (Phase 6 redesign).
 #[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct RecurringItem {
     /// The canonical grouping key — the handle the confirm/dismiss verdict is
     /// keyed on (`set_subscription_verdict`).

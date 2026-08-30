@@ -1,17 +1,16 @@
 mod account;
 mod agent_memory;
 mod alert;
+pub mod budget_hold;
+pub mod budget_transfer;
 mod categorization;
 mod category;
 mod category_example;
 mod category_proposal;
 mod connection;
 mod copilot;
-pub mod budget_hold;
-pub mod budget_transfer;
 pub mod custom_report;
 pub mod funding_template;
-pub mod report_widget;
 mod holding;
 mod household;
 mod import_candidate;
@@ -20,6 +19,7 @@ mod manual_asset;
 mod net_worth;
 pub mod planned_transaction;
 mod recipes;
+pub mod report_widget;
 mod rule;
 mod rule_proposal;
 mod security;
@@ -33,6 +33,8 @@ pub use account::{
 };
 pub use agent_memory::AgentMemory;
 pub use alert::SimpleFinAlert;
+pub use budget_hold::{BudgetHold, GetHoldRequest, SetHoldRequest};
+pub use budget_transfer::{BudgetTransfer, ListBudgetTransfersRequest, TransferBudgetRequest};
 pub use categorization::{Categorization, NewCategorization};
 pub use category::{Category, CategoryGroup};
 pub use category_example::CategoryExample;
@@ -42,16 +44,10 @@ pub use copilot::{
     AgentActionBundle, AgentActionItem, AgentExecutionEntry, AgentNavigationTarget, AgentSession,
     ConversationMessage, ConversationSummary, MissingDataItem,
 };
-pub use budget_hold::{BudgetHold, GetHoldRequest, SetHoldRequest};
-pub use budget_transfer::{
-    BudgetTransfer, ListBudgetTransfersRequest, TransferBudgetRequest,
-};
-pub use custom_report::{
-    CustomReportParams, CustomReportResult, Period, ReportRow, SplitBy,
-};
+pub use custom_report::{CustomReportParams, CustomReportResult, Period, ReportRow, SplitBy};
 pub use funding_template::{
-    ApplyTemplatesRequest, BudgetChange, CreateFundingTemplateRequest, DeleteFundingTemplateRequest,
-    FundingTemplate, UpdateFundingTemplateRequest,
+    ApplyTemplatesRequest, BudgetChange, CreateFundingTemplateRequest,
+    DeleteFundingTemplateRequest, FundingTemplate, UpdateFundingTemplateRequest,
 };
 pub use holding::Holding;
 pub use household::{AccountOwner, AssetOwner, HouseholdMember, OwnerShare};
@@ -67,9 +63,8 @@ pub use planned_transaction::{
 };
 pub use recipes::{AgentRecipe, AgentRecipeRun};
 pub use report_widget::{
-    CreateReportWidgetRequest, DeleteReportWidgetRequest, ReportWidget,
-    ReorderReportWidgetsRequest, UpdateReportWidgetRequest, CHART_TYPES, PERIODS, SPLIT_BYS,
-    WidgetFilters,
+    CreateReportWidgetRequest, DeleteReportWidgetRequest, ReorderReportWidgetsRequest,
+    ReportWidget, UpdateReportWidgetRequest, WidgetFilters, CHART_TYPES, PERIODS, SPLIT_BYS,
 };
 pub use rule::{NewRule, Rule};
 pub use rule_proposal::RuleProposal;

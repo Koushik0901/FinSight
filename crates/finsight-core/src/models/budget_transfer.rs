@@ -12,7 +12,7 @@ use utoipa::ToSchema;
 /// `available = budgeted + carryover + transfers_in - transfers_out - spent`.
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct BudgetTransfer {
     pub id: String,
     pub month: String,
@@ -26,7 +26,7 @@ pub struct BudgetTransfer {
 /// Request body for `POST /api/rpc/transfer_budget`.
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct TransferBudgetRequest {
     /// Category to move from. `None` means unassigned / To Budget.
     pub from_category: Option<String>,
@@ -43,7 +43,7 @@ pub struct TransferBudgetRequest {
 /// Request body for `POST /api/rpc/list_budget_transfers`.
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct ListBudgetTransfersRequest {
     /// "YYYY-MM"
     pub month: String,

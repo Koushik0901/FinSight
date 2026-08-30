@@ -31,7 +31,7 @@ pub async fn forget_agent_memory(state: &ApiState, id: String) -> AppResult<()> 
 
 #[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct HealthScoreBreakdown {
     pub savings_rate_pts: u8,
     pub emergency_fund_pts: u8,
@@ -47,7 +47,7 @@ pub struct HealthScoreBreakdown {
 
 #[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct HealthScore {
     pub total: u8,
     pub grade: String,

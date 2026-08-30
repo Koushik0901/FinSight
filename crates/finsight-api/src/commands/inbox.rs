@@ -17,7 +17,7 @@ use utoipa::ToSchema;
 /// A single prioritized action item in the Financial Inbox.
 #[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct ActionItem {
     /// Stable ID for this item — used as React key and for deduplication.
     pub id: String,
@@ -624,7 +624,7 @@ pub async fn get_action_items(state: &ApiState) -> AppResult<Vec<ActionItem>> {
 /// came from without re-running five queries by hand.
 #[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct InboxBadgeCount {
     pub total: i64,
     pub action_items: i64,

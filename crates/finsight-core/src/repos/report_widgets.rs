@@ -111,7 +111,9 @@ fn seed_default_widgets(conn: &Connection) -> CoreResult<()> {
             r#"{"includeTransfers":false,"includeArchived":false}"#,
         ),
     ];
-    for (idx, (title, chart_type, split_by, period, filters_json)) in defaults.into_iter().enumerate() {
+    for (idx, (title, chart_type, split_by, period, filters_json)) in
+        defaults.into_iter().enumerate()
+    {
         let id = Uuid::new_v4().to_string();
         let _ = conn.execute(
             "INSERT OR IGNORE INTO report_widgets(id, position, title, chart_type, split_by, period, filters_json, created_at, updated_at) \
@@ -152,7 +154,9 @@ pub fn create_widget(
         )));
     }
     if !validate_split_by(split_by) {
-        return Err(CoreError::Validation(format!("invalid split_by `{split_by}`")));
+        return Err(CoreError::Validation(format!(
+            "invalid split_by `{split_by}`"
+        )));
     }
     if !validate_period(period) {
         return Err(CoreError::Validation(format!("invalid period `{period}`")));
@@ -219,11 +223,15 @@ pub fn update_widget(
     }
     let new_split = split_by.unwrap_or(&cur.split_by);
     if !validate_split_by(new_split) {
-        return Err(CoreError::Validation(format!("invalid split_by `{new_split}`")));
+        return Err(CoreError::Validation(format!(
+            "invalid split_by `{new_split}`"
+        )));
     }
     let new_period = period.unwrap_or(&cur.period);
     if !validate_period(new_period) {
-        return Err(CoreError::Validation(format!("invalid period `{new_period}`")));
+        return Err(CoreError::Validation(format!(
+            "invalid period `{new_period}`"
+        )));
     }
     let new_filters = if let Some(fj) = filters_json {
         normalize_filters(Some(fj))?
@@ -271,7 +279,10 @@ pub fn delete_widget(conn: &mut Connection, id: &str) -> CoreResult<bool> {
 /// Reorder widgets to exactly the order of `ordered_ids`. The caller must
 /// supply *all* existing ids exactly once, in desired order.
 /// Idempotent and transactional.
-pub fn reorder_widgets(conn: &mut Connection, ordered_ids: &[String]) -> CoreResult<Vec<ReportWidget>> {
+pub fn reorder_widgets(
+    conn: &mut Connection,
+    ordered_ids: &[String],
+) -> CoreResult<Vec<ReportWidget>> {
     if ordered_ids.is_empty() {
         return Err(CoreError::Validation(
             "ordered_ids must be non-empty".to_string(),
@@ -373,9 +384,17 @@ mod tests {
         let mut conn = db.get().unwrap();
         let widgets = list_widgets(&conn).unwrap();
         let id = widgets[0].id.clone();
-        let updated = update_widget(&mut conn, &id, Some("Renamed"), Some("donut"), None, None, None)
-            .unwrap()
-            .unwrap();
+        let updated = update_widget(
+            &mut conn,
+            &id,
+            Some("Renamed"),
+            Some("donut"),
+            None,
+            None,
+            None,
+        )
+        .unwrap()
+        .unwrap();
         assert_eq!(updated.title, "Renamed");
         assert_eq!(updated.chart_type, "donut");
         // invalid
@@ -426,9 +445,19 @@ mod tests {
         assert!(format!("{err}").contains("chart_type"));
         let err = create_widget(&mut conn, "x", "table", "bad", "All", None, None).unwrap_err();
         assert!(format!("{err}").contains("split_by"));
-        let err = create_widget(&mut conn, "x", "table", "category", "Bad", None, None).unwrap_err();
+        let err =
+            create_widget(&mut conn, "x", "table", "category", "Bad", None, None).unwrap_err();
         assert!(format!("{err}").contains("period"));
-        let err = create_widget(&mut conn, "x", "table", "category", "All", Some("not json"), None).unwrap_err();
+        let err = create_widget(
+            &mut conn,
+            "x",
+            "table",
+            "category",
+            "All",
+            Some("not json"),
+            None,
+        )
+        .unwrap_err();
         assert!(format!("{err}").contains("valid JSON"));
     }
 }

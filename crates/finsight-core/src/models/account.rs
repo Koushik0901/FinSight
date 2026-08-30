@@ -5,7 +5,7 @@ use utoipa::ToSchema;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Type, ToSchema, PartialEq, Eq)]
 #[serde(rename_all = "PascalCase")]
-#[schema(rename_all="PascalCase")]
+#[schema(rename_all = "PascalCase")]
 pub enum AccountType {
     Checking,
     Savings,
@@ -179,7 +179,7 @@ fn default_import_pending() -> bool {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct AccountBalancePoint {
     pub date: String,
     pub balance_cents: i64,
@@ -187,7 +187,7 @@ pub struct AccountBalancePoint {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct AccountSparkline {
     pub account_id: String,
     pub points: Vec<AccountBalancePoint>,
@@ -200,7 +200,7 @@ pub struct AccountSparkline {
 /// the anchor. Its LEVEL is only as good as that opening figure.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Type, ToSchema, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub enum BalanceAnchorQuality {
     /// A real balance was confirmed for this account — bank-reported, or pinned
     /// by the user — so the curve is calibrated to a known value.
@@ -219,7 +219,7 @@ pub enum BalanceAnchorQuality {
 /// anchor plus cleared transaction activity.
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct AccountBalanceTimeline {
     pub account_id: String,
     pub account_name: String,

@@ -201,29 +201,37 @@ impl<'de> Deserialize<'de> for EnableBankingTransaction {
             .or_else(|| v.get("valueDate").and_then(|x| x.as_str()))
             .map(|s| s.to_string());
         // description: prefer remittance_information[0], then note, then description, then payee
-        let description = if let Some(arr) = v.get("remittance_information").and_then(|x| x.as_array()) {
-            arr.iter()
-                .filter_map(|x| x.as_str())
-                .collect::<Vec<_>>()
-                .join(" ")
-        } else if let Some(s) = v.get("note").and_then(|x| x.as_str()) {
-            s.to_string()
-        } else if let Some(s) = v.get("description").and_then(|x| x.as_str()) {
-            s.to_string()
-        } else if let Some(s) = v.get("remittanceInformationUnstructured").and_then(|x| x.as_str()) {
-            s.to_string()
-        } else {
-            v.get("payee")
+        let description =
+            if let Some(arr) = v.get("remittance_information").and_then(|x| x.as_array()) {
+                arr.iter()
+                    .filter_map(|x| x.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            } else if let Some(s) = v.get("note").and_then(|x| x.as_str()) {
+                s.to_string()
+            } else if let Some(s) = v.get("description").and_then(|x| x.as_str()) {
+                s.to_string()
+            } else if let Some(s) = v
+                .get("remittanceInformationUnstructured")
                 .and_then(|x| x.as_str())
-                .unwrap_or("")
-                .to_string()
-        };
+            {
+                s.to_string()
+            } else {
+                v.get("payee")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_string()
+            };
         let description = if description.is_empty() {
             // fallback to creditor/debtor name
             v.get("creditor")
                 .and_then(|x| x.get("name"))
                 .and_then(|x| x.as_str())
-                .or_else(|| v.get("debtor").and_then(|x| x.get("name")).and_then(|x| x.as_str()))
+                .or_else(|| {
+                    v.get("debtor")
+                        .and_then(|x| x.get("name"))
+                        .and_then(|x| x.as_str())
+                })
                 .unwrap_or("")
                 .to_string()
         } else {

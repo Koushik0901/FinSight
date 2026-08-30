@@ -21,8 +21,8 @@ use finsight_core::repos::run;
 use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
 use specta::Type;
-use uuid::Uuid;
 use utoipa::ToSchema;
+use uuid::Uuid;
 
 /// A metric drifts from what was recorded once it moves this far (relative),
 /// matching the scenario-staleness threshold so "materially changed" means one
@@ -61,7 +61,7 @@ fn month_label(year: i32, month: i32) -> String {
 /// is kept for the UI's progress list.
 #[derive(Debug, Clone, Serialize, Deserialize, Type, Default, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct MonthCloseSnapshot {
     pub income_cents: i64,
     pub expense_cents: i64,
@@ -89,7 +89,7 @@ struct CloseBaseline {
 /// screen that resolves it — the close never resolves it inline.
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct CloseFlag {
     pub id: String,
     pub category: String,
@@ -105,7 +105,7 @@ pub struct CloseFlag {
 /// One "recorded then vs recomputed now" line for a completed close.
 #[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct DriftLine {
     pub label: String,
     pub recorded_cents: i64,
@@ -115,7 +115,7 @@ pub struct DriftLine {
 
 #[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct MonthCloseView {
     pub year: i32,
     pub month: i32,
@@ -134,7 +134,7 @@ pub struct MonthCloseView {
 
 #[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct MonthCloseListItem {
     pub year: i32,
     pub month: i32,
@@ -147,7 +147,7 @@ pub struct MonthCloseListItem {
 
 #[derive(Debug, Clone, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct SaveMonthCloseInput {
     pub year: i32,
     pub month: i32,

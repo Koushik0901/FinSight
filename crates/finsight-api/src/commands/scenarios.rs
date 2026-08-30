@@ -1,7 +1,7 @@
 use crate::error::{AppError, AppResult};
 use crate::ApiState;
-use finsight_core::provenance::MetricExplanation;
 use finsight_core::forecast::{self, ScenarioParams, Snapshot};
+use finsight_core::provenance::MetricExplanation;
 use finsight_core::repos::{run, scenarios as scenarios_repo};
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -9,7 +9,7 @@ use utoipa::ToSchema;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct ScenarioResult {
     pub verdict: bool,
     pub runway_change_days: i64,
@@ -24,7 +24,7 @@ pub struct ScenarioResult {
 // (so a free-text scenario can be saved) and are persisted with the scenario.
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct ScenarioParamsInput {
     pub income_delta_pct: i32,
     pub monthly_expense_delta_cents: i64,
@@ -37,7 +37,7 @@ pub struct ScenarioParamsInput {
 /// scenario it ran from free text (where the params were resolved server-side).
 #[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct RanScenario {
     pub result: ScenarioResult,
     pub params: ScenarioParamsInput,
@@ -48,7 +48,7 @@ pub struct RanScenario {
 /// and for showing the user what moved when a scenario goes stale.
 #[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct BaselineSummary {
     pub balance_cents: i64,
     pub avg_monthly_income_cents: i64,
@@ -62,7 +62,7 @@ pub struct BaselineSummary {
 /// baseline (consistent by construction) while the original stays distinct.
 #[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct SavedScenarioDetail {
     pub id: String,
     pub description: String,
@@ -92,7 +92,7 @@ pub struct SavedScenarioDetail {
 /// can be written to the plan on explicit approval (#72).
 #[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct PlanChange {
     /// Stable key the apply step approves by (e.g. "one_time").
     pub id: String,
@@ -113,7 +113,7 @@ pub struct PlanChange {
 /// change live budgets, goals, or debt plans.
 #[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct ScenarioPlanProposal {
     pub scenario_id: String,
     pub description: String,
@@ -504,10 +504,7 @@ pub struct ExplainScenarioRequest {
 
 #[utoipa::path(post, path = "/api/rpc/explain_scenario",
     request_body(content = ExplainScenarioRequest), responses((status = 200, body = MetricExplanation)))]
-pub async fn explain_scenario(
-    state: &ApiState,
-    id: String,
-) -> AppResult<MetricExplanation> {
+pub async fn explain_scenario(state: &ApiState, id: String) -> AppResult<MetricExplanation> {
     let current = build_snapshot(state).await?;
     let db = (*state.db).clone();
     let row = run(&db, move |conn| scenarios_repo::get(conn, &id))
@@ -728,7 +725,7 @@ pub async fn promote_scenario(state: &ApiState, id: String) -> AppResult<Scenari
 /// The outcome of applying approved scenario changes to the plan (#72).
 #[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct ApplyScenarioResult {
     /// Changes written to the plan (a planned transaction was created).
     pub applied: Vec<String>,
@@ -740,7 +737,7 @@ pub struct ApplyScenarioResult {
 
 #[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct SkippedChange {
     pub id: String,
     pub reason: String,
@@ -915,8 +912,8 @@ pub async fn delete_scenario(state: &ApiState, id: String) -> AppResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use finsight_core::forecast::Snapshot;
     use finsight_core::provenance::MetricExplanation;
-use finsight_core::forecast::Snapshot;
 
     fn snap(income: i64, expense: i64) -> Snapshot {
         Snapshot {

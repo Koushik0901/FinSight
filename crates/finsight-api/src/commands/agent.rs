@@ -21,7 +21,7 @@ use utoipa::ToSchema;
 
 #[derive(Debug, Clone, serde::Serialize, specta::Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct AgentActivity {
     pub text: String,
     pub sub: String,
@@ -429,7 +429,7 @@ pub async fn list_recent_agent_activity(
 
 #[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct AgentStatus {
     pub uncategorized_count: u32,
     pub anomaly_count: u32,
@@ -535,7 +535,7 @@ pub async fn get_agent_status(state: &ApiState) -> AppResult<AgentStatus> {
 
 #[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct AgentChange {
     pub kind: String,
     pub description: String,
@@ -543,7 +543,7 @@ pub struct AgentChange {
 
 #[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct AgentScenarioAlternative {
     pub name: String,
     pub summary: String,
@@ -552,7 +552,7 @@ pub struct AgentScenarioAlternative {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct AgentTableBlock {
     pub title: Option<String>,
     pub columns: Vec<String>,
@@ -561,7 +561,7 @@ pub struct AgentTableBlock {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct AgentChartPoint {
     pub label: String,
     pub value: f64,
@@ -569,7 +569,7 @@ pub struct AgentChartPoint {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct AgentChartBlock {
     pub title: Option<String>,
     pub series_label: Option<String>,
@@ -578,7 +578,7 @@ pub struct AgentChartBlock {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct AgentMetricBlock {
     pub label: String,
     pub value: String,
@@ -588,7 +588,7 @@ pub struct AgentMetricBlock {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct AgentTxRow {
     pub date: String,
     pub merchant: String,
@@ -604,7 +604,7 @@ pub struct AgentTxRow {
 /// self-describing and the export never depends on message structure.
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct AgentTxnSearchQuery {
     pub merchant: Option<String>,
     pub account: Option<String>,
@@ -616,7 +616,7 @@ pub struct AgentTxnSearchQuery {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct AgentTransactionTableBlock {
     pub count: i64,
     pub total_cents: i64,
@@ -631,7 +631,7 @@ pub struct AgentTransactionTableBlock {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct AgentFundingSource {
     pub label: String,
     pub detail: String,
@@ -639,7 +639,7 @@ pub struct AgentFundingSource {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct AgentAffordabilityVerdictBlock {
     pub can_afford: bool,
     pub headline: String,
@@ -650,7 +650,7 @@ pub struct AgentAffordabilityVerdictBlock {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct AgentCategoryRow {
     pub category_key: String,
     pub amount_cents: i64,
@@ -660,7 +660,7 @@ pub struct AgentCategoryRow {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct AgentCategoryBreakdownBlock {
     pub period_label: String,
     pub rows: Vec<AgentCategoryRow>,
@@ -668,7 +668,7 @@ pub struct AgentCategoryBreakdownBlock {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct AgentAllocationSegment {
     pub label: String,
     pub amount_cents: i64,
@@ -678,7 +678,7 @@ pub struct AgentAllocationSegment {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct AgentAllocationSplitBlock {
     pub total_cents: i64,
     pub segments: Vec<AgentAllocationSegment>,
@@ -686,7 +686,7 @@ pub struct AgentAllocationSplitBlock {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct AgentRankedOption {
     pub rank_tone: String,
     pub label: String,
@@ -696,7 +696,7 @@ pub struct AgentRankedOption {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct AgentRankedOptionsBlock {
     pub title: String,
     pub options: Vec<AgentRankedOption>,
@@ -704,7 +704,7 @@ pub struct AgentRankedOptionsBlock {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct AgentMoneyPoint {
     pub label: String,
     pub amount_cents: i64,
@@ -712,7 +712,7 @@ pub struct AgentMoneyPoint {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct AgentComparisonBarsBlock {
     pub title: String,
     pub current: AgentMoneyPoint,
@@ -721,7 +721,7 @@ pub struct AgentComparisonBarsBlock {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct AgentRecatRow {
     pub merchant: String,
     pub category_key: String,
@@ -730,7 +730,7 @@ pub struct AgentRecatRow {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct AgentRecategorizationPreviewBlock {
     pub count: i64,
     pub rows: Vec<AgentRecatRow>,
@@ -740,7 +740,7 @@ pub struct AgentRecategorizationPreviewBlock {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct AgentReviewCategory {
     pub label: String,
     pub amount_cents: i64,
@@ -759,7 +759,7 @@ pub struct AgentReviewCategory {
 /// the exact inversion server synthesis exists to prevent.
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct AgentReviewMonth {
     #[serde(default)]
     pub label: String,
@@ -779,14 +779,14 @@ pub struct AgentReviewMonth {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct AgentSpendingReviewBlock {
     pub months: Vec<AgentReviewMonth>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct AgentAccountRow {
     pub name: String,
     pub subtitle: Option<String>,
@@ -806,7 +806,7 @@ pub struct AgentAccountRow {
 /// the default it died on `missing field "rows"` before hydration could run.
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct AgentAccountsOverviewBlock {
     pub title: Option<String>,
     pub subtitle: Option<String>,
@@ -816,7 +816,7 @@ pub struct AgentAccountsOverviewBlock {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct AgentTimelinePoint {
     pub label: String,
     pub amount_cents: i64,
@@ -829,7 +829,7 @@ pub struct AgentTimelinePoint {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct AgentSpendTimelineBlock {
     pub title: Option<String>,
     pub subtitle: Option<String>,
@@ -838,7 +838,7 @@ pub struct AgentSpendTimelineBlock {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct AgentDriver {
     pub label: String,
     /// "planned" | "trend" | "prices" | "anomaly" | "creep" | "mixed"
@@ -850,7 +850,7 @@ pub struct AgentDriver {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct AgentSpendingDriversBlock {
     pub title: String,
     pub subtitle: Option<String>,
@@ -859,7 +859,7 @@ pub struct AgentSpendingDriversBlock {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct AgentWatchItem {
     pub label: String,
     pub detail: String,
@@ -868,7 +868,7 @@ pub struct AgentWatchItem {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct AgentWatchListBlock {
     pub title: String,
     pub items: Vec<AgentWatchItem>,
@@ -876,7 +876,7 @@ pub struct AgentWatchListBlock {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct AgentActionPlanBlock {
     pub title: Option<String>,
     pub items: Vec<String>,
@@ -885,7 +885,7 @@ pub struct AgentActionPlanBlock {
 /// One outstanding categorization suggestion, as shown in the Copilot.
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct AgentReviewQueueItem {
     pub merchant: String,
     pub proposed_category: String,
@@ -910,7 +910,7 @@ pub struct AgentReviewQueueItem {
 /// block would be dropped before it ever got its data.
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct AgentCategoryReviewQueueBlock {
     /// Total pending proposals — may exceed `items.len()`, which is capped.
     #[serde(default)]
@@ -925,7 +925,7 @@ pub struct AgentCategoryReviewQueueBlock {
 /// produce a confidently wrong answer.
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct AgentClarificationOption {
     /// Stable identifier (e.g. an account id) so the answer resolves to a real
     /// entity rather than being re-matched from its label.
@@ -945,7 +945,7 @@ pub struct AgentClarificationOption {
 /// lacks their answer.
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct AgentClarificationBlock {
     /// Correlates an answer back to the question that prompted it.
     pub clarification_id: String,
@@ -968,7 +968,7 @@ pub struct AgentClarificationBlock {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(tag = "kind", rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub enum AgentResponseBlock {
     Markdown {
         markdown: String,
@@ -1003,7 +1003,7 @@ pub enum AgentResponseBlock {
 
 #[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct AgentAnswer {
     pub prose: String,
     pub reasoning: String,

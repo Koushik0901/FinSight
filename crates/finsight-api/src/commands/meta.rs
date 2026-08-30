@@ -5,7 +5,7 @@ use utoipa::ToSchema;
 
 #[derive(Debug, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct AppReady {
     pub version: String,
 }

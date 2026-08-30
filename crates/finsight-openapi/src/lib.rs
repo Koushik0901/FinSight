@@ -1,5 +1,5 @@
-use utoipa::OpenApi;
 use serde_json::Value;
+use utoipa::OpenApi;
 
 /// Every RPC command that `finsight-server/src/dispatch.rs` routes.
 /// Keep this sorted and identical to `SUPPORTED` (minus `UNSUPPORTED` which is
@@ -919,8 +919,14 @@ pub const COMMANDS: &[&str] = &[
         finsight_core::models::CreateReportWidgetRequest,
         finsight_core::models::UpdateReportWidgetRequest,
         finsight_core::models::DeleteReportWidgetRequest,
-        finsight_core::models::ReorderReportWidgetsRequest,)),
-    info(title = "FinSight API", version = "0.1.0", description = "FinSight RPC API — every command is POST /api/rpc/{cmd} with a JSON object body. The OpenAPI file is the contract for the generated TypeScript client.", license(name = "AGPL-3.0-or-later"))
+        finsight_core::models::ReorderReportWidgetsRequest,
+    )),
+    info(
+        title = "FinSight API",
+        version = "0.1.0",
+        description = "FinSight RPC API — every command is POST /api/rpc/{cmd} with a JSON object body. The OpenAPI file is the contract for the generated TypeScript client.",
+        license(name = "AGPL-3.0-or-later")
+    )
 )]
 struct ApiDoc;
 
@@ -942,7 +948,10 @@ mod tests {
     fn openapi_is_version_3x() {
         let json = build_openapi_value();
         let v = json["openapi"].as_str().unwrap_or_default();
-        assert!(v.starts_with("3."), "OpenAPI version must be 3.x, got {v:?}");
+        assert!(
+            v.starts_with("3."),
+            "OpenAPI version must be 3.x, got {v:?}"
+        );
     }
 
     #[test]
@@ -967,7 +976,10 @@ mod tests {
         let paths = json["paths"].as_object().expect("paths must be object");
         for cmd in COMMANDS {
             let key = format!("/api/rpc/{cmd}");
-            assert!(paths.contains_key(&key), "openapi paths missing {key} — did you update COMMANDS vs dispatch.rs SUPPORTED?");
+            assert!(
+                paths.contains_key(&key),
+                "openapi paths missing {key} — did you update COMMANDS vs dispatch.rs SUPPORTED?"
+            );
         }
     }
 
@@ -976,7 +988,11 @@ mod tests {
         let json = build_openapi_value();
         let paths = json["paths"].as_object().unwrap();
         let rpc_count = paths.keys().filter(|k| k.starts_with("/api/rpc/")).count();
-        assert_eq!(rpc_count, COMMANDS.len(), "rpc path count must equal COMMANDS.len() — drift between spec and dispatch");
+        assert_eq!(
+            rpc_count,
+            COMMANDS.len(),
+            "rpc path count must equal COMMANDS.len() — drift between spec and dispatch"
+        );
     }
 
     #[test]
@@ -991,10 +1007,17 @@ mod tests {
         let spec = build_openapi();
         let json = serde_json::to_value(&spec).unwrap();
         let schemas = json["components"]["schemas"].as_object().expect("schemas");
-        assert!(schemas.len() > 20, "expected many schemas, got {}", schemas.len());
+        assert!(
+            schemas.len() > 20,
+            "expected many schemas, got {}",
+            schemas.len()
+        );
         for (name, schema) in schemas {
             let s = schema.to_string();
-            assert!(!s.contains(r#""type":"object""#) || s.contains("properties"), "shallow schema {name} still type:object without properties");
+            assert!(
+                !s.contains(r#""type":"object""#) || s.contains("properties"),
+                "shallow schema {name} still type:object without properties"
+            );
         }
     }
 
@@ -1003,7 +1026,10 @@ mod tests {
         let spec = build_openapi();
         let json = serde_json::to_value(&spec).unwrap();
         let path = json["paths"]["/api/rpc/list_accounts"]["post"].to_string();
-        assert!(path.contains("$ref") || path.contains("AccountSummary"), "list_accounts should ref AccountSummary, got {path}");
+        assert!(
+            path.contains("$ref") || path.contains("AccountSummary"),
+            "list_accounts should ref AccountSummary, got {path}"
+        );
     }
 
     #[test]
@@ -1016,7 +1042,9 @@ mod tests {
             }
             let post = &item["post"];
             if let Some(rb) = post.get("requestBody") {
-                let content = rb["content"].as_object().expect("requestBody content must be object");
+                let content = rb["content"]
+                    .as_object()
+                    .expect("requestBody content must be object");
                 assert!(
                     content.contains_key("application/json"),
                     "{path} has requestBody but no application/json (has {:?})",
@@ -1077,12 +1105,25 @@ mod tests {
 
     #[test]
     fn commands_sorted_snake() {
-        assert!(COMMANDS.windows(2).all(|w| w[0] < w[1]), "COMMANDS must be sorted");
+        assert!(
+            COMMANDS.windows(2).all(|w| w[0] < w[1]),
+            "COMMANDS must be sorted"
+        );
         for c in COMMANDS {
-            assert!(c.chars().all(|ch| ch.is_ascii_lowercase() || ch == '_' || ch.is_ascii_digit()), "cmd {c} must be snake_case");
+            assert!(
+                c.chars()
+                    .all(|ch| ch.is_ascii_lowercase() || ch == '_' || ch.is_ascii_digit()),
+                "cmd {c} must be snake_case"
+            );
         }
-        assert!(!COMMANDS.contains(&"reconcileBases"), "camelCase reconcileBases must be gone");
-        assert!(!COMMANDS.contains(&"transfer_envelope"), "alias must be gone");
+        assert!(
+            !COMMANDS.contains(&"reconcileBases"),
+            "camelCase reconcileBases must be gone"
+        );
+        assert!(
+            !COMMANDS.contains(&"transfer_envelope"),
+            "alias must be gone"
+        );
     }
 
     #[test]

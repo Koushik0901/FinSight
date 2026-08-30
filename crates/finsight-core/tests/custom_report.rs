@@ -55,7 +55,8 @@ fn setup() -> (tempfile::TempDir, finsight_core::Db) {
             .unwrap();
         }
         // Add a transfer that must be excluded when include_transfers = false
-        let transfer_date = (now - Duration::days(5)).to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+        let transfer_date =
+            (now - Duration::days(5)).to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
         conn.execute(
             "INSERT INTO transactions(id, account_id, posted_at, amount_cents, merchant_raw, category_id, status, is_anomaly, is_transfer, created_at, settle_up) \
              VALUES(?1, 'acc1', ?2, -9999, 'Transfer Payee', 'cat1', 'cleared', 0, 1, ?2, 0)",

@@ -50,7 +50,15 @@ fn cover_is_atomic_and_auditable() {
     let (_dir, db) = setup();
     {
         let mut conn = db.get().unwrap();
-        transfer(&mut conn, "groceries", "rent", 500, "2026-09", Some("cover")).unwrap();
+        transfer(
+            &mut conn,
+            "groceries",
+            "rent",
+            500,
+            "2026-09",
+            Some("cover"),
+        )
+        .unwrap();
     }
     {
         let conn = db.get().unwrap();
@@ -134,7 +142,10 @@ fn available_is_budgeted_plus_carryover_plus_transfers_minus_spent() {
     {
         let conn = db.get().unwrap();
         let before = available(&conn, "groceries", "2026-09").unwrap();
-        assert_eq!(before, 2000, "groceries: 1000 carryover + 1000 budgeted - 0 spent = 2000, got {before}");
+        assert_eq!(
+            before, 2000,
+            "groceries: 1000 carryover + 1000 budgeted - 0 spent = 2000, got {before}"
+        );
     }
     {
         let mut conn = db.get().unwrap();

@@ -6,7 +6,7 @@ use utoipa::ToSchema;
 /// Accounts are owned by zero or more members; 2+ owners = a joint account.
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct HouseholdMember {
     pub id: String,
     pub name: String,
@@ -23,7 +23,7 @@ pub struct HouseholdMember {
 /// net-worth attribution in one query. `share_bps` None = equal split.
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct AccountOwner {
     pub account_id: String,
     pub member_id: String,
@@ -34,7 +34,7 @@ pub struct AccountOwner {
 /// [`AccountOwner`].
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct AssetOwner {
     pub asset_id: String,
     pub member_id: String,
@@ -45,7 +45,7 @@ pub struct AssetOwner {
 /// an account or asset. `share_bps` None ⇒ equal split with the other owners.
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct OwnerShare {
     pub member_id: String,
     pub share_bps: Option<i64>,

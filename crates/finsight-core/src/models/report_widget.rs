@@ -109,13 +109,7 @@ pub const SPLIT_BYS: &[&str] = &[
     "month",
     "spendingType",
 ];
-pub const PERIODS: &[&str] = &[
-    "Last1Month",
-    "Last3Months",
-    "Last6Months",
-    "YTD",
-    "All",
-];
+pub const PERIODS: &[&str] = &["Last1Month", "Last3Months", "Last6Months", "YTD", "All"];
 
 pub fn validate_chart_type(v: &str) -> bool {
     CHART_TYPES.contains(&v)
@@ -134,10 +128,18 @@ mod tests {
     #[test]
     fn split_bys_and_periods_match_enum() {
         for s in SPLIT_BYS {
-            assert!(validate_split_by(s), "SPLIT_BYS entry {} should be valid SplitBy", s);
+            assert!(
+                validate_split_by(s),
+                "SPLIT_BYS entry {} should be valid SplitBy",
+                s
+            );
         }
         for p in PERIODS {
-            assert!(validate_period(p), "PERIODS entry {} should be valid Period", p);
+            assert!(
+                validate_period(p),
+                "PERIODS entry {} should be valid Period",
+                p
+            );
         }
         let cases = [
             (crate::models::SplitBy::Category, "category"),
@@ -148,7 +150,11 @@ mod tests {
             (crate::models::SplitBy::SpendingType, "spendingType"),
         ];
         for (variant, expected) in cases {
-            let s = serde_json::to_value(variant).unwrap().as_str().unwrap().to_string();
+            let s = serde_json::to_value(variant)
+                .unwrap()
+                .as_str()
+                .unwrap()
+                .to_string();
             assert_eq!(s, expected);
             assert!(SPLIT_BYS.contains(&s.as_str()));
         }

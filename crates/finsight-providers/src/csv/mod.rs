@@ -14,8 +14,8 @@ use finsight_core::repos::{accounts, import_candidates};
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use specta::Type;
-use utoipa::ToSchema;
 use std::path::Path;
+use utoipa::ToSchema;
 
 const MAX_BYTES: u64 = 50 * 1024 * 1024;
 const PREVIEW_ROWS: usize = 10;

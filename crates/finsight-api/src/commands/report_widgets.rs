@@ -6,8 +6,6 @@ use finsight_core::models::{
 };
 use finsight_core::repos::{report_widgets, run};
 
-
-
 // ── Handlers ───────────────────────────────────────────────────────────────
 
 #[utoipa::path(post, path = "/api/rpc/list_report_widgets", responses((status = 200, body = Vec<ReportWidget>)))]
@@ -29,20 +27,17 @@ pub async fn create_report_widget(
     position: Option<i64>,
 ) -> AppResult<ReportWidget> {
     let db = (*state.db).clone();
-    run(
-        &db,
-        move |conn| {
-            report_widgets::create_widget(
-                conn,
-                &title,
-                &chart_type,
-                &split_by,
-                &period,
-                filters_json.as_deref(),
-                position,
-            )
-        },
-    )
+    run(&db, move |conn| {
+        report_widgets::create_widget(
+            conn,
+            &title,
+            &chart_type,
+            &split_by,
+            &period,
+            filters_json.as_deref(),
+            position,
+        )
+    })
     .await
     .map_err(AppError::from)
 }
@@ -58,20 +53,17 @@ pub async fn update_report_widget(
     filters_json: Option<String>,
 ) -> AppResult<Option<ReportWidget>> {
     let db = (*state.db).clone();
-    run(
-        &db,
-        move |conn| {
-            report_widgets::update_widget(
-                conn,
-                &id,
-                title.as_deref(),
-                chart_type.as_deref(),
-                split_by.as_deref(),
-                period.as_deref(),
-                filters_json.as_deref(),
-            )
-        },
-    )
+    run(&db, move |conn| {
+        report_widgets::update_widget(
+            conn,
+            &id,
+            title.as_deref(),
+            chart_type.as_deref(),
+            split_by.as_deref(),
+            period.as_deref(),
+            filters_json.as_deref(),
+        )
+    })
     .await
     .map_err(AppError::from)
 }
@@ -90,10 +82,9 @@ pub async fn reorder_report_widgets(
     ordered_ids: Vec<String>,
 ) -> AppResult<Vec<ReportWidget>> {
     let db = (*state.db).clone();
-    run(
-        &db,
-        move |conn| report_widgets::reorder_widgets(conn, &ordered_ids),
-    )
+    run(&db, move |conn| {
+        report_widgets::reorder_widgets(conn, &ordered_ids)
+    })
     .await
     .map_err(AppError::from)
 }

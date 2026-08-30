@@ -9,7 +9,7 @@ use utoipa::ToSchema;
 
 #[derive(Debug, Deserialize, Type, Default, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct TxnFilterInput {
     pub account_id: Option<String>,
     pub limit: Option<i64>,
@@ -234,7 +234,7 @@ pub async fn list_categories(state: &ApiState) -> AppResult<Vec<CategoryDto>> {
 /// Category with real spending aggregated from transactions.
 #[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct CategoryWithSpending {
     pub id: String,
     pub label: String,
@@ -366,7 +366,7 @@ pub async fn list_categories_with_spending(
 
 #[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct SpendingBreakdown {
     pub fixed_cents: i64,
     pub investments_cents: i64,
@@ -480,7 +480,7 @@ pub async fn get_spending_breakdown(state: &ApiState) -> AppResult<SpendingBreak
 /// Rule with resolved category label and color.
 #[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct RuleWithCategory {
     pub id: String,
     pub pattern: String,
@@ -581,7 +581,7 @@ pub async fn set_transaction_flags(
 /// apply the verdict to all of them in one click.
 #[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct TransferVerdictResult {
     pub transaction: Transaction,
     /// LIKE pattern identifying the siblings (pass to
@@ -657,7 +657,7 @@ pub async fn apply_transfer_verdict_to_similar(
 /// Tauri/specta dependency), so this DTO crosses the specta boundary instead.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub enum CounterpartyVerdict {
     Transfer,
     SettleUp,
@@ -730,7 +730,7 @@ pub async fn apply_counterparty_verdict_to_similar(
 /// review surface. Mirrors `finsight_core::repos::transactions::UnresolvedCounterparty`.
 #[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct UnresolvedCounterpartyDto {
     pub pattern: Option<String>,
     pub label: String,
@@ -770,7 +770,7 @@ pub async fn list_unresolved_counterparties(
 
 #[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct TransactionSplitDto {
     pub id: String,
     pub txn_id: String,
@@ -780,7 +780,7 @@ pub struct TransactionSplitDto {
 
 #[derive(Debug, Clone, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct SplitInputDto {
     pub category_id: Option<String>,
     pub amount_cents: i64,
@@ -896,7 +896,7 @@ pub async fn export_transactions_csv(
 /// (was finsight-bindings-only before the export commands became transport-agnostic).
 #[derive(Debug, Clone, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct SearchTxnQueryInput {
     pub merchant: Option<String>,
     pub account: Option<String>,

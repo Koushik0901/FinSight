@@ -11,7 +11,7 @@ use utoipa::ToSchema;
 
 #[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct JourneyStatus {
     pub milestones: Vec<JourneyMilestone>,
     pub current_stage: u8,
@@ -20,7 +20,7 @@ pub struct JourneyStatus {
 
 #[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct JourneyMilestone {
     pub stage: u8,
     pub name: String,

@@ -5,7 +5,7 @@ use utoipa::ToSchema;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Type, ToSchema, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
-#[schema(rename_all="lowercase")]
+#[schema(rename_all = "lowercase")]
 pub enum TransactionStatus {
     Cleared,
     Pending,
@@ -37,7 +37,7 @@ impl TransactionStatus {
 /// internal moves (Trade, MoneyMovement) vs real income/expense.
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema, PartialEq)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct TxnActivity {
     pub activity_type: String,
     pub activity_sub_type: Option<String>,

@@ -12,7 +12,7 @@ use utoipa::ToSchema;
 
 #[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct ExecutionSummary {
     pub bundle_id: String,
     pub succeeded: u32,
@@ -26,7 +26,7 @@ pub struct ExecutionSummary {
 
 #[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct ExecutionItemResult {
     pub item_id: String,
     pub action_kind: String,
@@ -225,7 +225,7 @@ pub async fn execute_action_bundle(
 
 #[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct ReconcileResult {
     pub delta_cents: i64,
     pub reason: String,

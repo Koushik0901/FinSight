@@ -12,7 +12,7 @@ use utoipa::ToSchema;
 
 #[derive(Debug, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct BackupInfo {
     pub path: String,
     pub name: String,
@@ -23,7 +23,7 @@ pub struct BackupInfo {
 
 #[derive(Debug, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct DataHealth {
     /// "ok" when the last integrity check passed; otherwise the error rows.
     pub integrity_status: String,

@@ -1,7 +1,7 @@
 use crate::error::{CoreError, CoreResult};
 use crate::models::{
-    BudgetChange, BudgetTransfer, CustomReportParams, CustomReportResult, FundingTemplate,
-    Period, ReportRow, SplitBy,
+    BudgetChange, BudgetTransfer, CustomReportParams, CustomReportResult, FundingTemplate, Period,
+    ReportRow, SplitBy,
 };
 use chrono::{Datelike, Utc};
 use rusqlite::{params, Connection, OptionalExtension};
@@ -245,7 +245,14 @@ pub fn transfer(
     month: &str,
     note: Option<&str>,
 ) -> CoreResult<BudgetTransfer> {
-    transfer_optional(conn, Some(from_category), Some(to_category), amount_cents, month, note)
+    transfer_optional(
+        conn,
+        Some(from_category),
+        Some(to_category),
+        amount_cents,
+        month,
+        note,
+    )
 }
 
 /// Nullable variant: either side may be `None` to represent moving to/from
@@ -327,7 +334,13 @@ pub fn delete_transfer(conn: &mut Connection, id: &str) -> CoreResult<bool> {
 // ── Declarative Funding Templates (Actual's #template as a table) ─────────
 
 const FUNDING_KINDS: &[&str] = &[
-    "fixed", "up_to", "by", "average", "percent", "remainder", "schedule",
+    "fixed",
+    "up_to",
+    "by",
+    "average",
+    "percent",
+    "remainder",
+    "schedule",
 ];
 
 fn validate_funding_kind(kind: &str) -> CoreResult<()> {
@@ -389,19 +402,30 @@ fn parse_pct_from_json(params_json: &str) -> CoreResult<f64> {
     Ok(0.0)
 }
 
-pub fn category_spent(conn: &Connection, category_id: &str, from: &str, to: &str) -> CoreResult<i64> {
+pub fn category_spent(
+    conn: &Connection,
+    category_id: &str,
+    from: &str,
+    to: &str,
+) -> CoreResult<i64> {
     let v: i64 = conn.query_row(
         "SELECT COALESCE(SUM(CASE WHEN t.settle_up=1 THEN -t.amount_cents \
          WHEN t.amount_cents < 0 THEN -t.amount_cents ELSE 0 END),0) \
          FROM transactions t \
          WHERE t.category_id=?1 AND t.posted_at >= ?2 AND t.posted_at < ?3 AND t.is_transfer=0",
-        params![category_id, from, to], |r| r.get(0))?;
+        params![category_id, from, to],
+        |r| r.get(0),
+    )?;
     Ok(v)
 }
 
 pub fn period_bounds(conn: &Connection, period: Period) -> CoreResult<(Option<String>, String)> {
-    let anchor: Option<String> = conn.query_row("SELECT MAX(date(posted_at)) FROM transactions", [], |r| r.get(0))?;
-    let mut anchor_date = anchor.as_deref()
+    let anchor: Option<String> =
+        conn.query_row("SELECT MAX(date(posted_at)) FROM transactions", [], |r| {
+            r.get(0)
+        })?;
+    let mut anchor_date = anchor
+        .as_deref()
         .and_then(|s| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok())
         .unwrap_or_else(|| Utc::now().date_naive());
     // Future guard (I8): if the data's max is in the future relative to wall-clock,
@@ -412,12 +436,26 @@ pub fn period_bounds(conn: &Connection, period: Period) -> CoreResult<(Option<St
     if anchor_date > today {
         anchor_date = today;
     }
-    let end = (anchor_date + chrono::Duration::days(1)).format("%Y-%m-%d").to_string();
+    let end = (anchor_date + chrono::Duration::days(1))
+        .format("%Y-%m-%d")
+        .to_string();
     let start = match period {
         Period::All => None,
-        Period::Last1Month => Some((anchor_date - chrono::Months::new(1)).format("%Y-%m-%d").to_string()),
-        Period::Last3Months => Some((anchor_date - chrono::Months::new(3)).format("%Y-%m-%d").to_string()),
-        Period::Last6Months => Some((anchor_date - chrono::Months::new(6)).format("%Y-%m-%d").to_string()),
+        Period::Last1Month => Some(
+            (anchor_date - chrono::Months::new(1))
+                .format("%Y-%m-%d")
+                .to_string(),
+        ),
+        Period::Last3Months => Some(
+            (anchor_date - chrono::Months::new(3))
+                .format("%Y-%m-%d")
+                .to_string(),
+        ),
+        Period::Last6Months => Some(
+            (anchor_date - chrono::Months::new(6))
+                .format("%Y-%m-%d")
+                .to_string(),
+        ),
         Period::YTD => Some(format!("{}-01-01", anchor_date.year())),
     };
     let start_rfc = start.map(|s| format!("{s}T00:00:00Z"));
@@ -482,7 +520,12 @@ fn months_between(from_month: &str, to_month: &str) -> i64 {
     ((ty - fy) * 12 + (tm - fm)) as i64
 }
 
-fn average_spending(conn: &Connection, category_id: &str, month: &str, months: u32) -> CoreResult<i64> {
+fn average_spending(
+    conn: &Connection,
+    category_id: &str,
+    month: &str,
+    months: u32,
+) -> CoreResult<i64> {
     if months == 0 {
         return Ok(0);
     }
@@ -686,20 +729,30 @@ pub fn apply_templates(conn: &mut Connection, month: &str) -> CoreResult<Vec<Bud
             let cat_avail = category_available(conn, &tmpl.category_id, month)?;
             let need: i64 = match tmpl.kind.as_str() {
                 "fixed" => {
-                    let raw = parse_amount_from_json(&tmpl.params_json, &["amount", "amount_cents", "amountCents", "cap"])?;
+                    let raw = parse_amount_from_json(
+                        &tmpl.params_json,
+                        &["amount", "amount_cents", "amountCents", "cap"],
+                    )?;
                     (raw - cur).max(0)
                 }
                 "up_to" => {
-                    let cap = parse_amount_from_json(&tmpl.params_json, &["cap", "amount", "amount_cents", "amountCents", "target"])?;
+                    let cap = parse_amount_from_json(
+                        &tmpl.params_json,
+                        &["cap", "amount", "amount_cents", "amountCents", "target"],
+                    )?;
                     (cap - cat_avail).max(0)
                 }
                 "by" => {
                     // Malformed params_json must bubble as Validation (previously silent 0 via unwrap_or).
                     // Missing fields keep previous defaults (target 0, by = current month) to avoid
                     // breaking existing templates; only truly invalid JSON is surfaced.
-                    let v: serde_json::Value = serde_json::from_str(&tmpl.params_json).map_err(|e| {
-                        CoreError::Validation(format!("invalid params_json for 'by' template {}: {e}", tmpl.id))
-                    })?;
+                    let v: serde_json::Value =
+                        serde_json::from_str(&tmpl.params_json).map_err(|e| {
+                            CoreError::Validation(format!(
+                                "invalid params_json for 'by' template {}: {e}",
+                                tmpl.id
+                            ))
+                        })?;
                     if !v.is_object() {
                         return Err(CoreError::Validation(format!(
                             "params_json for 'by' template {} must be a JSON object",
@@ -718,9 +771,13 @@ pub fn apply_templates(conn: &mut Connection, month: &str) -> CoreResult<Vec<Bud
                     (remaining + months_left - 1) / months_left
                 }
                 "average" => {
-                    let v: serde_json::Value = serde_json::from_str(&tmpl.params_json).map_err(|e| {
-                        CoreError::Validation(format!("invalid params_json for 'average' template {}: {e}", tmpl.id))
-                    })?;
+                    let v: serde_json::Value =
+                        serde_json::from_str(&tmpl.params_json).map_err(|e| {
+                            CoreError::Validation(format!(
+                                "invalid params_json for 'average' template {}: {e}",
+                                tmpl.id
+                            ))
+                        })?;
                     if !v.is_object() {
                         return Err(CoreError::Validation(format!(
                             "params_json for 'average' template {} must be a JSON object",
@@ -740,7 +797,10 @@ pub fn apply_templates(conn: &mut Connection, month: &str) -> CoreResult<Vec<Bud
                 }
                 "remainder" => available,
                 "schedule" => {
-                    let raw = parse_amount_from_json(&tmpl.params_json, &["amount", "amount_cents", "amountCents"])?;
+                    let raw = parse_amount_from_json(
+                        &tmpl.params_json,
+                        &["amount", "amount_cents", "amountCents"],
+                    )?;
                     (raw - cur).max(0)
                 }
                 _ => 0,
@@ -818,7 +878,7 @@ pub fn carryover_into_month(
 /// dollar string server-side.
 #[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct LookBackFact {
     pub category_id: String,
     pub category_label: String,
@@ -1024,21 +1084,36 @@ pub fn custom_report(conn: &Connection, p: CustomReportParams) -> CoreResult<Cus
         }
     }
     if !p.account_ids.is_empty() {
-        let placeholders = p.account_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let placeholders = p
+            .account_ids
+            .iter()
+            .map(|_| "?")
+            .collect::<Vec<_>>()
+            .join(",");
         sql.push_str(&format!(" AND t.account_id IN ({})", placeholders));
         for id in &p.account_ids {
             binds.push(id.clone());
         }
     }
     if !p.category_ids.is_empty() {
-        let placeholders = p.category_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let placeholders = p
+            .category_ids
+            .iter()
+            .map(|_| "?")
+            .collect::<Vec<_>>()
+            .join(",");
         sql.push_str(&format!(" AND t.category_id IN ({})", placeholders));
         for id in &p.category_ids {
             binds.push(id.clone());
         }
     }
     if !p.group_ids.is_empty() {
-        let placeholders = p.group_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let placeholders = p
+            .group_ids
+            .iter()
+            .map(|_| "?")
+            .collect::<Vec<_>>()
+            .join(",");
         sql.push_str(&format!(" AND g.id IN ({})", placeholders));
         for id in &p.group_ids {
             binds.push(id.clone());
@@ -1072,7 +1147,9 @@ pub fn custom_report(conn: &Connection, p: CustomReportParams) -> CoreResult<Cus
     }
     sql.push_str(" AND t.posted_at < ?");
     binds.push(end);
-    sql.push_str(&format!(" GROUP BY {group_by} ORDER BY total DESC, label ASC"));
+    sql.push_str(&format!(
+        " GROUP BY {group_by} ORDER BY total DESC, label ASC"
+    ));
 
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map(rusqlite::params_from_iter(binds.iter()), |r| {
@@ -1282,7 +1359,13 @@ mod tests {
         assert!(facts.iter().all(|f| f.category_id != "food"));
     }
 
-    fn insert_tx(conn: &rusqlite::Connection, category_id: &str, amount_cents: i64, date: &str, settle_up: i64) {
+    fn insert_tx(
+        conn: &rusqlite::Connection,
+        category_id: &str,
+        amount_cents: i64,
+        date: &str,
+        settle_up: i64,
+    ) {
         let posted_at = if date.len() == 10 {
             format!("{date}T00:00:00Z")
         } else {
@@ -1320,7 +1403,10 @@ mod tests {
             ..Default::default()
         };
         let res = custom_report(&conn, params).unwrap();
-        assert_eq!(res.total_cents, 3000, "expense - reimbursement, income ignored");
+        assert_eq!(
+            res.total_cents, 3000,
+            "expense - reimbursement, income ignored"
+        );
         assert_eq!(res.rows[0].total_cents, 3000);
     }
 
@@ -1356,7 +1442,9 @@ mod tests {
         }
         let today = Utc::now().format("%Y-%m-%d").to_string();
         insert_tx(&conn, "misc", -1000, &today, 0);
-        let future = (Utc::now() + chrono::Duration::days(2)).format("%Y-%m-%d").to_string();
+        let future = (Utc::now() + chrono::Duration::days(2))
+            .format("%Y-%m-%d")
+            .to_string();
         insert_tx(&conn, "misc", -9999, &future, 0);
         let params = CustomReportParams {
             period: Period::Last1Month,
@@ -1390,7 +1478,14 @@ mod tests {
     }
 
     fn create_fixed_template(conn: &mut Connection, category_id: &str, amount: i64, priority: i64) {
-        create_funding_template(conn, category_id, "fixed", &format!(r#"{{"amount":{}}}"#, amount), priority).unwrap();
+        create_funding_template(
+            conn,
+            category_id,
+            "fixed",
+            &format!(r#"{{"amount":{}}}"#, amount),
+            priority,
+        )
+        .unwrap();
     }
 
     #[test]
@@ -1415,7 +1510,10 @@ mod tests {
         assert_eq!(budget_amount(&conn, "cat_a", "2026-09"), 3000);
         assert_eq!(budget_amount(&conn, "cat_b", "2026-09"), 2000);
         // verify transactional: budgets sum equals to_budget initial
-        assert_eq!(budget_amount(&conn, "cat_a", "2026-09") + budget_amount(&conn, "cat_b", "2026-09"), 5000);
+        assert_eq!(
+            budget_amount(&conn, "cat_a", "2026-09") + budget_amount(&conn, "cat_b", "2026-09"),
+            5000
+        );
     }
 
     #[test]
@@ -1430,11 +1528,23 @@ mod tests {
         create_funding_template(&mut conn, "cat_a", "up_to", r#"{"cap":5000}"#, 1).unwrap();
         let c1 = apply_templates(&mut conn, "2026-09").unwrap();
         assert_eq!(c1[0].amount_cents, 5000);
-        assert_eq!(get_hold(&conn, "2026-09").unwrap(), None, "hold cleared after first");
+        assert_eq!(
+            get_hold(&conn, "2026-09").unwrap(),
+            None,
+            "hold cleared after first"
+        );
         assert_eq!(budget_amount(&conn, "cat_a", "2026-09"), 5000);
         let c2 = apply_templates(&mut conn, "2026-09").unwrap();
-        assert!(c2.iter().all(|c| c.amount_cents == 0), "second call no double-spend, got {:?}", c2);
-        assert_eq!(budget_amount(&conn, "cat_a", "2026-09"), 5000, "budget not doubled");
+        assert!(
+            c2.iter().all(|c| c.amount_cents == 0),
+            "second call no double-spend, got {:?}",
+            c2
+        );
+        assert_eq!(
+            budget_amount(&conn, "cat_a", "2026-09"),
+            5000,
+            "budget not doubled"
+        );
     }
 
     #[test]
@@ -1448,7 +1558,10 @@ mod tests {
         let c1 = apply_templates(&mut conn, "2026-09").unwrap();
         assert_eq!(c1[0].amount_cents, 5000);
         let c2 = apply_templates(&mut conn, "2026-09").unwrap();
-        assert!(c2.iter().all(|c| c.amount_cents == 0), "second call no double-spend");
+        assert!(
+            c2.iter().all(|c| c.amount_cents == 0),
+            "second call no double-spend"
+        );
         assert_eq!(budget_amount(&conn, "cat_a", "2026-09"), 5000);
     }
 
@@ -1489,13 +1602,24 @@ mod tests {
         set_hold(&mut conn, "2026-09", 5000).unwrap();
         create_fixed_template(&mut conn, "cat_a", 5000, 1);
         let c1 = apply_templates(&mut conn, "2026-09").unwrap();
-        assert_eq!(c1[0].amount_cents, 5000, "first fixed consumes hold-limited pool");
+        assert_eq!(
+            c1[0].amount_cents, 5000,
+            "first fixed consumes hold-limited pool"
+        );
         assert_eq!(get_hold(&conn, "2026-09").unwrap(), None);
         assert_eq!(budget_amount(&conn, "cat_a", "2026-09"), 5000);
         // available after hold cleared is still 5000 (10000-5000), but Fixed cap makes second 0
         let c2 = apply_templates(&mut conn, "2026-09").unwrap();
-        assert!(c2.iter().all(|c| c.amount_cents == 0), "second Fixed must be 0 via cur cap, got {:?}", c2);
-        assert_eq!(budget_amount(&conn, "cat_a", "2026-09"), 5000, "budget not doubled");
+        assert!(
+            c2.iter().all(|c| c.amount_cents == 0),
+            "second Fixed must be 0 via cur cap, got {:?}",
+            c2
+        );
+        assert_eq!(
+            budget_amount(&conn, "cat_a", "2026-09"),
+            5000,
+            "budget not doubled"
+        );
     }
 
     #[test]
@@ -1510,7 +1634,10 @@ mod tests {
         income_for_month(&mut conn, "2026-08", 1500); // fund Aug so to_budget covers hold if needed, not relevant
         create_fixed_template(&mut conn, "cat_a", 1500, 1);
         let changes = apply_templates(&mut conn, "2026-09").unwrap();
-        assert_eq!(changes[0].amount_cents, 1500, "prev_hold rolls forward via available_funds");
+        assert_eq!(
+            changes[0].amount_cents, 1500,
+            "prev_hold rolls forward via available_funds"
+        );
         assert_eq!(budget_amount(&conn, "cat_a", "2026-09"), 1500);
     }
 
@@ -1528,7 +1655,9 @@ mod tests {
         .unwrap();
         let err = apply_templates(&mut conn, "2026-09").unwrap_err();
         match err {
-            crate::error::CoreError::Validation(msg) => assert!(msg.contains("invalid params_json"), "got {}", msg),
+            crate::error::CoreError::Validation(msg) => {
+                assert!(msg.contains("invalid params_json"), "got {}", msg)
+            }
             _ => panic!("expected Validation, got {:?}", err),
         };
         // Transactional: no budget written, hold untouched if any
@@ -1597,16 +1726,26 @@ mod tests {
         let custom_sum: i64 = custom.rows.iter().map(|r| r.total_cents).sum();
         // The brief's invariant: for same 6-month period with reimbursements, sums must equal.
         // Expected: sum(1000*m -200) for m=1..6 = 19800 (is_transfer row excluded)
-        assert_eq!(custom.total_cents, custom_sum, "custom.total_cents must equal sum of rows");
+        assert_eq!(
+            custom.total_cents, custom_sum,
+            "custom.total_cents must equal sum of rows"
+        );
         assert_eq!(
             fixed_sum, custom_sum,
             "parity: fixed report sum {} != custom_report rows sum {} (custom.total_cents {})",
             fixed_sum, custom_sum, custom.total_cents
         );
         assert_eq!(fixed_sum, custom.total_cents);
-        assert_eq!(fixed_sum, 19_800, "expected 19800 from seeded fixture (transfer excluded)");
+        assert_eq!(
+            fixed_sum, 19_800,
+            "expected 19800 from seeded fixture (transfer excluded)"
+        );
         // Tighten: total must not include the 9999 transfer
-        assert_ne!(fixed_sum, 19_800 + 9_999, "is_transfer=1 row must be excluded");
+        assert_ne!(
+            fixed_sum,
+            19_800 + 9_999,
+            "is_transfer=1 row must be excluded"
+        );
         assert_ne!(custom.total_cents, 19_800 + 9_999);
     }
 
@@ -1616,8 +1755,16 @@ mod tests {
         let mut conn = db.get().unwrap();
         seed_category(&mut conn, "food");
         seed_category(&mut conn, "travel");
-        conn.execute("UPDATE categories SET spending_type='Need' WHERE id='food'", []).unwrap();
-        conn.execute("UPDATE categories SET spending_type='Want' WHERE id='travel'", []).unwrap();
+        conn.execute(
+            "UPDATE categories SET spending_type='Need' WHERE id='food'",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "UPDATE categories SET spending_type='Want' WHERE id='travel'",
+            [],
+        )
+        .unwrap();
         conn.execute(
             "INSERT OR IGNORE INTO accounts(id, owner, bank, type, name, currency, color, created_at) VALUES('acc1','Me','Bank','Checking','Acc1','USD','#fff',datetime('now'))",
             [],
@@ -1694,9 +1841,12 @@ mod tests {
         set(&mut conn, "Food", "2026-08", 5000).unwrap();
         insert_tx(&conn, "Food", -3000, "2026-08-10", 0);
         insert_tx(&conn, "Food", 1000, "2026-08-12", 1); // +1000 settle_up nets as -1000
-        // budgeted 5000 - spent 2000 (3000-1000) = 3000 carryover into 2026-09
+                                                         // budgeted 5000 - spent 2000 (3000-1000) = 3000 carryover into 2026-09
         assert_eq!(carryover_for(&conn, "Food", "2026-09").unwrap(), 3000);
-        assert_eq!(carryover_into_month(&mut conn, "Food", "2026-09").unwrap(), 3000);
+        assert_eq!(
+            carryover_into_month(&mut conn, "Food", "2026-09").unwrap(),
+            3000
+        );
     }
 
     #[test]
@@ -1723,7 +1873,8 @@ mod tests {
         set(&mut conn, "A", "2026-09", 1000).unwrap();
         insert_tx(&conn, "A", -900, "2026-09-05", 0);
         // spare = 100; try transfer 500 → Validation
-        let err = transfer_optional(&mut conn, Some("A"), Some("B"), 500, "2026-09", None).unwrap_err();
+        let err =
+            transfer_optional(&mut conn, Some("A"), Some("B"), 500, "2026-09", None).unwrap_err();
         assert!(
             matches!(err, crate::error::CoreError::Validation(_)),
             "expected Validation for insufficient spare, got {:?}",
@@ -1733,7 +1884,8 @@ mod tests {
         let ok = transfer_optional(&mut conn, Some("A"), Some("B"), 100, "2026-09", None).unwrap();
         assert_eq!(ok.amount_cents, 100);
         // now spare is 0, further transfer should fail
-        let err2 = transfer_optional(&mut conn, Some("A"), Some("B"), 1, "2026-09", None).unwrap_err();
+        let err2 =
+            transfer_optional(&mut conn, Some("A"), Some("B"), 1, "2026-09", None).unwrap_err();
         assert!(matches!(err2, crate::error::CoreError::Validation(_)));
     }
 }

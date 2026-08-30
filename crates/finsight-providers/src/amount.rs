@@ -77,10 +77,7 @@ mod tests {
 
     #[test]
     fn display_safe_bounds() {
-        assert_eq!(
-            parse_decimal_cents("22517998136852.47"),
-            Ok(MAX_SAFE_CENTS)
-        );
+        assert_eq!(parse_decimal_cents("22517998136852.47"), Ok(MAX_SAFE_CENTS));
         assert_eq!(
             parse_decimal_cents("22517998136852.48"),
             Err(CentsError::OutOfRange)

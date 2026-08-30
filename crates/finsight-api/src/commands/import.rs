@@ -9,8 +9,8 @@ use serde::Serialize;
 use specta::Type;
 use std::path::PathBuf;
 use std::sync::Arc;
-use uuid::Uuid;
 use utoipa::ToSchema;
+use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Type, ToSchema)]
 pub struct ProgressPayload {
@@ -26,7 +26,7 @@ pub struct ProgressPayload {
 /// thousands and must never cross the Tauri IPC boundary wholesale.
 #[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct PreparedImportPreview {
     pub signature: String,
     pub rows_total: u32,
@@ -109,7 +109,7 @@ pub async fn preview_csv_columns(path: String, skip_header_rows: u32) -> AppResu
 /// background enqueue.
 #[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct ImportResult {
     pub summary: ImportSummary,
     /// Rows the deterministic builtin pass categorized in this import's

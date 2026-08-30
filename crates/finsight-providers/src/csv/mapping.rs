@@ -10,7 +10,7 @@ use utoipa::ToSchema;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Type, ToSchema, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-#[schema(rename_all="snake_case")]
+#[schema(rename_all = "snake_case")]
 pub enum AmountConvention {
     NegativeIsOutflow,
     PositiveIsOutflow,

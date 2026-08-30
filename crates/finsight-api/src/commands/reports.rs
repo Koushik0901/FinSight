@@ -10,7 +10,7 @@ use utoipa::ToSchema;
 /// One month's summary for the bar chart.
 #[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct MonthSummary {
     /// "YYYY-MM"
     pub month: String,
@@ -27,7 +27,7 @@ pub struct MonthSummary {
 /// One category's 12-month total.
 #[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct CategoryTotal {
     pub category_id: String,
     pub label: String,
@@ -39,7 +39,7 @@ pub struct CategoryTotal {
 /// One merchant's 12-month total.
 #[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct MerchantTotal {
     pub merchant_raw: String,
     pub category_label: String,
@@ -50,7 +50,7 @@ pub struct MerchantTotal {
 
 #[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct ReportData {
     pub monthly: Vec<MonthSummary>,
     pub monthly_last_year: Vec<MonthSummary>,
@@ -393,7 +393,7 @@ pub async fn get_report_data(
 /// Lightweight summary for the Today screen.
 #[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct MonthTotals {
     pub income_cents: i64,
     pub expense_cents: i64,
@@ -431,7 +431,7 @@ pub async fn get_month_totals(state: &ApiState) -> AppResult<MonthTotals> {
 
 #[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct SavingsRatePoint {
     pub month: String,
     pub savings_rate_pct: i64,
@@ -489,11 +489,16 @@ pub struct CustomReportRequest {
 }
 
 #[utoipa::path(post, path = "/api/rpc/custom_report", request_body(content = CustomReportRequest), responses((status = 200, body = CustomReportResult)))]
-pub async fn custom_report(state: &ApiState, params: CustomReportParams) -> AppResult<CustomReportResult> {
+pub async fn custom_report(
+    state: &ApiState,
+    params: CustomReportParams,
+) -> AppResult<CustomReportResult> {
     let db = (*state.db).clone();
-    run(&db, move |conn| finsight_core::repos::budgets::custom_report(&*conn, params))
-        .await
-        .map_err(AppError::from)
+    run(&db, move |conn| {
+        finsight_core::repos::budgets::custom_report(&*conn, params)
+    })
+    .await
+    .map_err(AppError::from)
 }
 
 #[cfg(test)]

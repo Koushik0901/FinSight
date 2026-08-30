@@ -161,7 +161,10 @@ mod tests {
 
     #[test]
     fn parse_amount_rejects_beyond_display_safe_cents() {
-        assert_eq!(parse_amount_cents("22517998136852.47").unwrap(), (1 << 51) - 1);
+        assert_eq!(
+            parse_amount_cents("22517998136852.47").unwrap(),
+            (1 << 51) - 1
+        );
         assert!(parse_amount_cents("22517998136852.48").is_err());
     }
 
@@ -185,8 +188,12 @@ mod tests {
             .mount(&server)
             .await;
         let base = server.uri();
-        let a = fetch_enable_data_with_base_url("tok-x", &base).await.unwrap();
-        let b = fetch_enable_data_with_base_url("tok-y", &base).await.unwrap();
+        let a = fetch_enable_data_with_base_url("tok-x", &base)
+            .await
+            .unwrap();
+        let b = fetch_enable_data_with_base_url("tok-y", &base)
+            .await
+            .unwrap();
         assert_ne!(a.accounts[0].id, b.accounts[0].id);
     }
 

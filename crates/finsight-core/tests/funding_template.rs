@@ -19,7 +19,11 @@ fn setup() -> (tempfile::TempDir, finsight_core::Db) {
             [],
         )
         .unwrap();
-        for (id, label) in [("groceries", "Groceries"), ("rent", "Rent"), ("savings", "Savings")] {
+        for (id, label) in [
+            ("groceries", "Groceries"),
+            ("rent", "Rent"),
+            ("savings", "Savings"),
+        ] {
             conn.execute(
                 "INSERT INTO categories(id, group_id, label, color, sort_order) VALUES(?1, 'grp', ?2, '#94A3B8', 0)",
                 params![id, label],
@@ -113,8 +117,10 @@ fn crud_list_and_delete() {
     let (_dir, db) = setup();
     {
         let mut conn = db.get().unwrap();
-        let t1 = create_funding_template(&mut conn, "groceries", "fixed", r#"{"amount":1000}"#, 5).unwrap();
-        let t2 = create_funding_template(&mut conn, "rent", "fixed", r#"{"amount":2000}"#, 1).unwrap();
+        let t1 = create_funding_template(&mut conn, "groceries", "fixed", r#"{"amount":1000}"#, 5)
+            .unwrap();
+        let t2 =
+            create_funding_template(&mut conn, "rent", "fixed", r#"{"amount":2000}"#, 1).unwrap();
         let list = list_funding_templates(&conn).unwrap();
         assert_eq!(list.len(), 2);
         // ordered by priority ASC then id ASC: rent priority 1 before groceries priority 5

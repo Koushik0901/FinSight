@@ -410,15 +410,14 @@ fn update_matched_transaction(
 
 /// Parse a SimpleFin numeric string (e.g. "-33293.43" or "100.5") into integer cents.
 fn parse_amount_cents(amount: &str) -> ProviderResult<i64> {
-    crate::amount::parse_decimal_cents(amount)
-        .map_err(|e| match e {
-            crate::amount::CentsError::Invalid => {
-                ProviderError::Internal(format!("invalid amount: {}", amount))
-            }
-            crate::amount::CentsError::OutOfRange => {
-                ProviderError::Internal(format!("amount out of range: {}", amount))
-            }
-        })
+    crate::amount::parse_decimal_cents(amount).map_err(|e| match e {
+        crate::amount::CentsError::Invalid => {
+            ProviderError::Internal(format!("invalid amount: {}", amount))
+        }
+        crate::amount::CentsError::OutOfRange => {
+            ProviderError::Internal(format!("amount out of range: {}", amount))
+        }
+    })
 }
 
 #[cfg(test)]
@@ -437,7 +436,10 @@ mod tests {
 
     #[test]
     fn parse_amount_rejects_beyond_display_safe_cents() {
-        assert_eq!(parse_amount_cents("22517998136852.47").unwrap(), (1 << 51) - 1);
+        assert_eq!(
+            parse_amount_cents("22517998136852.47").unwrap(),
+            (1 << 51) - 1
+        );
         assert!(parse_amount_cents("22517998136852.48").is_err());
     }
 

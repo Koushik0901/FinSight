@@ -15,7 +15,7 @@ use utoipa::ToSchema;
 /// exists to drive the review queue, not to be a second audit log.
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct CategoryProposal {
     pub id: String,
     pub txn_id: String,

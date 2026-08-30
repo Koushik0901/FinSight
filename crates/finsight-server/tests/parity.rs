@@ -2,7 +2,10 @@ use std::collections::BTreeSet;
 
 #[test]
 fn every_openapi_command_is_routed_or_explicitly_unsupported() {
-    let wanted: BTreeSet<String> = finsight_openapi::COMMANDS.iter().map(|s| s.to_string()).collect();
+    let wanted: BTreeSet<String> = finsight_openapi::COMMANDS
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
     assert!(
         wanted.len() > 100,
         "openapi COMMANDS looks broken: {}",

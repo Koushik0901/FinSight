@@ -1,6 +1,6 @@
 use crate::error::{AppError, AppResult};
-use crate::sync_scheduler::{AccountSyncResult, SimpleFinSyncSettings};
 use crate::secrets;
+use crate::sync_scheduler::{AccountSyncResult, SimpleFinSyncSettings};
 use crate::ApiState;
 use chrono::{DateTime, Utc};
 use finsight_core::models::{
@@ -18,8 +18,8 @@ use finsight_providers::simplefin::{
 };
 use serde::{Deserialize, Serialize};
 use specta::Type;
-use uuid::Uuid;
 use utoipa::ToSchema;
+use uuid::Uuid;
 
 /// Legacy OS-keychain address for access URLs. Only read now, as the one-time
 /// migration source — new values go into the user's own encrypted DB.
@@ -33,7 +33,7 @@ const ONBOARDING_COMPLETION_KEY: &str = "onboarding_completion_marked";
 /// per-token isolation (no cross-read).
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Type, ToSchema, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub enum SyncProvider {
     SimpleFin,
     EnableBanking,
@@ -62,14 +62,14 @@ impl From<finsight_providers::provider::SyncProviderKind> for SyncProvider {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct SimpleFinStatus {
     pub configured: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct SimpleFinConnectionInfo {
     pub id: String,
     pub org_name: Option<String>,
@@ -81,7 +81,7 @@ pub struct SimpleFinConnectionInfo {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct SimpleFinPurgeSummary {
     pub accounts_deleted: i64,
     pub transactions_deleted: i64,
@@ -103,7 +103,7 @@ impl From<DbConnection> for SimpleFinConnectionInfo {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct SimpleFinAccountInfo {
     pub id: String,
     pub name: String,
@@ -117,7 +117,7 @@ pub struct SimpleFinAccountInfo {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct SimpleFinAccountImportRequest {
     pub simplefin_id: String,
     pub connection_id: String,
@@ -126,7 +126,7 @@ pub struct SimpleFinAccountImportRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct SyncSummary {
     pub added: usize,
     pub updated: usize,
@@ -136,7 +136,7 @@ pub struct SyncSummary {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct TransferSuggestionInfo {
     pub id: String,
     pub confidence: String,
@@ -998,17 +998,13 @@ pub async fn delete_simplefin_connection(state: &ApiState, connection_id: String
 }
 
 #[utoipa::path(post, path = "/api/rpc/sync_all_simplefin_accounts", responses((status = 200, body = Vec<AccountSyncResult>)))]
-pub async fn sync_all_simplefin_accounts(
-    state: &ApiState,
-) -> AppResult<Vec<AccountSyncResult>> {
+pub async fn sync_all_simplefin_accounts(state: &ApiState) -> AppResult<Vec<AccountSyncResult>> {
     let results = state.sync_scheduler.sync_all_now().await;
     Ok(results)
 }
 
 #[utoipa::path(post, path = "/api/rpc/get_simplefin_sync_settings", responses((status = 200, body = SimpleFinSyncSettings)))]
-pub async fn get_simplefin_sync_settings(
-    state: &ApiState,
-) -> AppResult<SimpleFinSyncSettings> {
+pub async fn get_simplefin_sync_settings(state: &ApiState) -> AppResult<SimpleFinSyncSettings> {
     let interval = state.sync_scheduler.interval();
     let enabled = state.sync_scheduler.enabled();
     Ok(SimpleFinSyncSettings {

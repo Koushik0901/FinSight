@@ -13,7 +13,7 @@ use utoipa::ToSchema;
 /// One category's budget + actual for a month.
 #[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct BudgetEnvelope {
     pub category_id: String,
     pub category_label: String,
@@ -157,7 +157,7 @@ pub async fn list_budget_envelopes(state: &ApiState) -> AppResult<Vec<BudgetEnve
 /// rather than splitting the target itself.
 #[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct MemberBudgetEnvelope {
     pub category_id: String,
     pub category_label: String,
@@ -456,7 +456,10 @@ pub async fn transfer_budget(
 }
 
 #[utoipa::path(post, path = "/api/rpc/list_budget_transfers", request_body(content = ListBudgetTransfersRequest), responses((status = 200, body = Vec<BudgetTransfer>)))]
-pub async fn list_budget_transfers(state: &ApiState, month: String) -> AppResult<Vec<BudgetTransfer>> {
+pub async fn list_budget_transfers(
+    state: &ApiState,
+    month: String,
+) -> AppResult<Vec<BudgetTransfer>> {
     let db = (*state.db).clone();
     run(&db, move |conn| budgets::list_transfers(conn, &month))
         .await
@@ -467,7 +470,7 @@ pub async fn list_budget_transfers(state: &ApiState, month: String) -> AppResult
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct GoalDto {
     pub id: String,
     pub name: String,
@@ -491,7 +494,7 @@ pub struct GoalDto {
 
 #[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct CategoryPlanRow {
     pub category_id: String,
     pub label: String,
@@ -505,7 +508,7 @@ pub struct CategoryPlanRow {
 
 #[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct PlanData {
     pub income_cents: i64,
     pub categories: Vec<CategoryPlanRow>,
@@ -517,7 +520,7 @@ pub struct PlanData {
 
 #[derive(Debug, Clone, serde::Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct PlanAssignment {
     pub category_id: String,
     pub amount_cents: i64,
@@ -525,7 +528,7 @@ pub struct PlanAssignment {
 
 #[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct MonthlyActual {
     pub month: String,
     pub label: String,
@@ -535,7 +538,7 @@ pub struct MonthlyActual {
 
 #[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct CategoryHistory {
     pub category_id: String,
     pub label: String,
@@ -545,7 +548,7 @@ pub struct CategoryHistory {
 
 #[derive(Debug, Clone, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct NewGoalInput {
     pub name: String,
     pub goal_type: String,
@@ -639,7 +642,7 @@ pub async fn create_goal(state: &ApiState, input: NewGoalInput) -> AppResult<Goa
 
 #[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct ProjectedValue {
     pub years: i32,
     pub value_cents: i64,
@@ -711,7 +714,7 @@ pub async fn project_goal_growth(
 
 #[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct GoalContributionDto {
     pub id: String,
     pub goal_id: String,
@@ -1497,18 +1500,8 @@ mod tests {
         // Negative: must not contain the old per-envelope N+1 scalar pattern.
         // Avoid a self-referential literal that would make include_str always match
         // its own test source: build the needle at runtime.
-        let needle_to = format!(
-            "{} {} {}",
-            "WHERE to_category",
-            "= ?1 AND month",
-            "= ?2"
-        );
-        let needle_from = format!(
-            "{} {} {}",
-            "WHERE from_category",
-            "= ?1 AND month",
-            "= ?2"
-        );
+        let needle_to = format!("{} {} {}", "WHERE to_category", "= ?1 AND month", "= ?2");
+        let needle_from = format!("{} {} {}", "WHERE from_category", "= ?1 AND month", "= ?2");
         // Count occurrences in the functional code before the test module:
         // the src from include_str includes this test itself, so it will contain
         // the fragments via the format! above but not the contiguous needle
@@ -1569,7 +1562,13 @@ mod tests {
             .unwrap();
         }
         let envelopes = budget_envelopes_for_month(&mut conn, month, month_start).unwrap();
-        let find = |id: &str| envelopes.iter().find(|e| e.category_id == id).unwrap().transfer_cents;
+        let find = |id: &str| {
+            envelopes
+                .iter()
+                .find(|e| e.category_id == id)
+                .unwrap()
+                .transfer_cents
+        };
         // groceries: in 100 - out (500+200)=700 => -600
         assert_eq!(find("groceries"), -600, "groceries transfer_cents");
         // dining: in 500 - out 300 => 200

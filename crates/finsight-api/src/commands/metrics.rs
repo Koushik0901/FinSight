@@ -16,7 +16,7 @@ use utoipa::ToSchema;
 /// either inventing an exchange rate or silently omitting real money.
 #[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct UnconvertedHolding {
     pub code: String,
     pub account_count: i64,
@@ -26,7 +26,7 @@ pub struct UnconvertedHolding {
 
 #[derive(Debug, Clone, Default, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct FinancialMetrics {
     // Balances (known-balance accounts only), classified by account type.
     pub liquid_cents: i64,
@@ -190,9 +190,7 @@ pub async fn explain_financial_metrics(
 /// `explain_metric` tool — the debt payoff order has no dedicated screen to hang
 /// an "explain" affordance on, so it isn't exposed as a standalone command.)
 #[utoipa::path(post, path = "/api/rpc/explain_goals", responses((status = 200, body = Vec<MetricExplanation>)))]
-pub async fn explain_goals(
-    state: &ApiState,
-) -> AppResult<Vec<MetricExplanation>> {
+pub async fn explain_goals(state: &ApiState) -> AppResult<Vec<MetricExplanation>> {
     let db = (*state.db).clone();
     run(&db, |conn| {
         Ok(finsight_agent::finance::explain_goals(conn)?)
@@ -207,7 +205,7 @@ pub async fn explain_goals(
 /// plus the residual reconcile to the household total.
 #[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct MemberNetWorth {
     pub member_id: Option<String>,
     pub name: String,
@@ -265,7 +263,7 @@ pub async fn household_net_worth_breakdown(state: &ApiState) -> AppResult<Vec<Me
 
 #[derive(Debug, Clone, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct FinancialAssumptionsInput {
     pub target_savings_rate_pct: i64,
     pub emergency_fund_target_months: f64,
@@ -311,7 +309,7 @@ pub async fn set_financial_assumptions(
 /// a preference is never worth erroring over.
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct FinancialPhilosophyDto {
     /// "avalanche" | "snowball"
     pub debt_strategy: String,

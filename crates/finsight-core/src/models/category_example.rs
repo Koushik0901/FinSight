@@ -18,7 +18,7 @@ use utoipa::ToSchema;
 /// prototype/centroid vector per category.
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct CategoryExample {
     pub id: String,
     pub category_id: String,

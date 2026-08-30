@@ -96,7 +96,7 @@ pub async fn list_net_worth_history(state: &ApiState, days: u32) -> AppResult<Ve
 
 #[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct DebtPayoffMonth {
     pub month: i32,
     pub month_label: String,
@@ -110,7 +110,7 @@ pub struct DebtPayoffMonth {
 
 #[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct DebtPayoffSummary {
     pub account_id: String,
     pub account_name: String,
@@ -122,7 +122,7 @@ pub struct DebtPayoffSummary {
 
 #[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct DebtPayoffResult {
     pub strategy: String,
     pub extra_monthly_cents: i64,

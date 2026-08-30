@@ -212,7 +212,8 @@ pub(crate) fn parse_accounts_value(value: Value) -> ProviderResult<Vec<EnableBan
         return Ok(out);
     }
     // Some ASPSP wrappers return { account: {...} } singular — treat as one.
-    if value.get("uid").is_some() || value.get("account_id").is_some() || value.get("id").is_some() {
+    if value.get("uid").is_some() || value.get("account_id").is_some() || value.get("id").is_some()
+    {
         let one: EnableBankingAccount = serde_json::from_value(value)
             .map_err(|e| ProviderError::Internal(format!("parse single account: {e}")))?;
         return Ok(vec![one]);

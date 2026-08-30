@@ -40,9 +40,11 @@ use utoipa::ToSchema;
 
 /// Labeled expense basis — the single source of truth for "monthly burn".
 /// Every consumer picks a label explicitly so differing buckets can be explained.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, Type, ToSchema)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, Type, ToSchema,
+)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub enum ExpenseBasis {
     DisplayMedian,
     RecentMean90,

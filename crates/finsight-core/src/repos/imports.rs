@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "snake_case")]
-#[schema(rename_all="snake_case")]
+#[schema(rename_all = "snake_case")]
 pub enum ImportSource {
     Csv,
     Manual,

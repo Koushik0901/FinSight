@@ -5,7 +5,7 @@ use utoipa::ToSchema;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct ImportCandidate {
     pub id: String,
     pub source: String,
@@ -49,7 +49,7 @@ pub struct NewImportCandidate {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct ImportCandidateMatch {
     pub id: String,
     pub candidate_id: String,
@@ -72,7 +72,7 @@ pub struct NewImportCandidateMatch {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct ImportCandidateWithMatches {
     pub candidate: ImportCandidate,
     pub matches: Vec<ImportCandidateMatch>,

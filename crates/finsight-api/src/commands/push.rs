@@ -41,7 +41,7 @@ const PUSH_TTL_SECONDS: u32 = 4 * 60 * 60;
 
 #[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct PushStatus {
     /// Base64url VAPID public key for `pushManager.subscribe`.
     pub public_key: String,
@@ -51,7 +51,7 @@ pub struct PushStatus {
 
 #[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct PushDevice {
     pub endpoint: String,
     pub label: Option<String>,
@@ -63,7 +63,7 @@ pub struct PushDevice {
 /// tell "no devices registered" apart from "the push service rejected us".
 #[derive(Debug, Clone, Default, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct PushDeliveryReport {
     pub delivered: i64,
     /// Subscriptions the push service reported as permanently gone; these are
@@ -76,7 +76,7 @@ pub struct PushDeliveryReport {
 /// — the contract is pinned by `ui/src/pwa/push.test.ts`.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(rename_all="camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct PushPayload {
     pub title: String,
     pub body: String,
