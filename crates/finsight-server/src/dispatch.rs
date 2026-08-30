@@ -91,8 +91,9 @@ pub async fn rpc(
     State(st): State<Arc<ServerState>>,
     user: AuthedUser,
     Path(cmd): Path<String>,
-    Json(p): Json<serde_json::Value>,
+    p: Option<Json<serde_json::Value>>,
 ) -> Response {
+    let p = p.map(|Json(v)| v).unwrap_or(serde_json::Value::Object(Default::default()));
     if UNSUPPORTED.contains(&cmd.as_str()) {
         return (
             StatusCode::NOT_IMPLEMENTED,
