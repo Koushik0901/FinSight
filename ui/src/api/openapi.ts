@@ -5065,6 +5065,18 @@ export interface components {
             /** @description The dated events inside the horizon, chronological, for display. */
             upcomingEvents: components["schemas"]["CashflowEvent"][];
             warnings: components["schemas"]["CashflowWarning"][];
+            overlookedCandidates?: components["schemas"]["OverlookedBill"][];
+        };
+        OverlookedBill: {
+            merchantKey: string;
+            label: string;
+            /** Format: int64 */
+            amountCents: number;
+            kind: components["schemas"]["CashflowEventKind"];
+            /** Format: double */
+            confidence: number;
+            nextExpected?: string | null;
+            cadence: string;
         };
         CashflowWarning: {
             level: components["schemas"]["WarningLevel"];
@@ -6029,6 +6041,7 @@ export interface components {
             extraExpenseDate?: string | null;
             /** Format: int64 */
             horizonDays?: number | null;
+            includeMerchantKeys?: string[] | null;
         };
         GetConversationMessagesRequest: {
             conversationId: string;
@@ -6758,6 +6771,11 @@ export interface components {
              * @description Net = income - expense
              */
             netCents: number;
+            /**
+             * Format: int64
+             * @description Total budgeted amount for this month (sum across all categories), as positive cents
+             */
+            budgetCents: number;
         };
         /** @description Lightweight summary for the Today screen. */
         MonthTotals: {

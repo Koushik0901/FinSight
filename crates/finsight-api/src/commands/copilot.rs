@@ -256,7 +256,7 @@ pub async fn get_safe_to_spend(
             extra_expense_date: None,
             extra_expense_label: None,
         };
-        cashflow::build_forecast(conn, horizon, &whatif)
+        cashflow::build_forecast(conn, horizon, &whatif, &[])
     })
     .await
     .map_err(AppError::from)

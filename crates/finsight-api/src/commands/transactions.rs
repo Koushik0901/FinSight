@@ -198,20 +198,27 @@ pub struct CategoryDto {
     pub group_id: String,
     pub group_label: String,
     pub spending_type: Option<String>,
+    /// Whether unspent budget rolls into next month. False = envelope resets.
+    #[serde(default = "default_true")]
+    pub rollover_enabled: bool,
 }
 
-#[utoipa::path(post, path = "/api/rpc/list_categories", responses((status = 200, body = Vec<CategoryDto>)))]
+fn default_true() -> bool {
+    true
+}
+
 pub async fn list_categories(state: &ApiState) -> AppResult<Vec<CategoryDto>> {
     let db = (*state.db).clone();
     run(&db, |conn| {
         let mut stmt = conn.prepare(
-            "SELECT c.id, c.label, c.color, c.group_id, COALESCE(g.label, ''), c.spending_type \
+            "SELECT c.id, c.label, c.color, c.group_id, COALESCE(g.label, ''), c.spending_type, COALESCE(c.rollover_enabled,1) \
              FROM categories c \
              LEFT JOIN category_groups g ON g.id = c.group_id \
              WHERE c.archived_at IS NULL \
              ORDER BY g.sort_order, c.sort_order",
         )?;
         let rows = stmt.query_map([], |r| {
+            let rollover_raw: i64 = r.get(6)?;
             Ok(CategoryDto {
                 id: r.get(0)?,
                 label: r.get(1)?,
@@ -219,6 +226,7 @@ pub async fn list_categories(state: &ApiState) -> AppResult<Vec<CategoryDto>> {
                 group_id: r.get(3)?,
                 group_label: r.get(4)?,
                 spending_type: r.get(5)?,
+                rollover_enabled: rollover_raw != 0,
             })
         })?;
         let mut out = Vec::new();
@@ -254,6 +262,9 @@ pub struct CategoryWithSpending {
     pub budget_cents: i64,
     /// Free-text categorizer/Copilot guidance the user attached.
     pub guidance: Option<String>,
+    /// Whether unspent budget rolls forward. When false, carryover is always 0.
+    #[serde(default = "default_true")]
+    pub rollover_enabled: bool,
 }
 
 /// Query logic behind [`list_categories_with_spending`], extracted so it is
@@ -292,13 +303,14 @@ fn categories_with_spending(
            COALESCE(SUM(CASE WHEN s.posted_at >= ?3 THEN s.cents ELSE 0 END), 0),
            COUNT(CASE WHEN s.posted_at >= ?3 THEN 1 END),
            COALESCE(MAX(b.amount_cents), 0),
-           c.guidance
+           c.guidance,
+           COALESCE(c.rollover_enabled, 1)
          FROM categories c
          LEFT JOIN category_groups g ON g.id = c.group_id
          LEFT JOIN spending s ON s.category_id = c.id
          LEFT JOIN budgets b ON b.category_id = c.id AND b.month = ?4
          WHERE c.archived_at IS NULL
-         GROUP BY c.id, c.label, c.color, c.group_id, g.label, c.spending_type, c.guidance
+         GROUP BY c.id, c.label, c.color, c.group_id, g.label, c.spending_type, c.guidance, c.rollover_enabled
          ORDER BY 7 DESC, g.sort_order, c.sort_order",
     )?;
     let rows = stmt.query_map(
@@ -309,6 +321,7 @@ fn categories_with_spending(
             current_month
         ],
         |r| {
+            let rollover_raw: i64 = r.get(13)?;
             Ok(CategoryWithSpending {
                 id: r.get(0)?,
                 label: r.get(1)?,
@@ -323,6 +336,7 @@ fn categories_with_spending(
                 year_txn_count: r.get(10)?,
                 budget_cents: r.get(11)?,
                 guidance: r.get(12)?,
+                rollover_enabled: rollover_raw != 0,
             })
         },
     )?;

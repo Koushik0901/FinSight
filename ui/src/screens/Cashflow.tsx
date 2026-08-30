@@ -5,7 +5,7 @@ import type { CashflowForecast, CashflowEvent } from "../api/openapiClient";
 import { money } from "../utils/format";
 import { blurAmounts } from "../utils/blurAmounts";
 
-const HORIZONS = [30, 60, 90] as const;
+const HORIZONS = [7, 14, 30, 60, 90, 180] as const;
 
 /** Parse a "YYYY-MM-DD" into a short "Mon D" label. */
 function shortDate(iso: string): string {
@@ -99,13 +99,14 @@ export default function Cashflow() {
   const [horizon, setHorizon] = useState<(typeof HORIZONS)[number]>(30);
   const [bufferInput, setBufferInput] = useState("0");
   const [testInput, setTestInput] = useState("");
+  const [includeKeys, setIncludeKeys] = useState<string[]>([]);
   const bufferCents = toCents(bufferInput);
   const extraExpenseCents = toCents(testInput);
 
   const { data: metrics } = useFinancialMetrics();
   const currency = metrics?.currency ?? undefined;
   const cur = currency ? { currency } : undefined;
-  const { data: forecast, isLoading, isError } = useCashflowForecast({ horizonDays: horizon, bufferCents, extraExpenseCents });
+  const { data: forecast, isLoading, isError } = useCashflowForecast({ horizonDays: horizon, bufferCents, extraExpenseCents, includeMerchantKeys: includeKeys });
 
   const cautions = forecast?.warnings.filter((w) => w.level === "caution") ?? [];
   const infos = forecast?.warnings.filter((w) => w.level === "info") ?? [];
@@ -213,6 +214,36 @@ export default function Cashflow() {
               )}
             </section>
           </div>
+          {(forecast.overlookedCandidates?.length ?? 0) > 0 && (
+            <section className="card" style={{ marginTop: 16 }}>
+              <div className="eyebrow">Include overlooked bill</div>
+              <p className="muted" style={{ margin: "6px 0 10px", fontSize: 13, lineHeight: 1.5 }}>
+                These bills were detected but left out of the projection (low confidence or irregular cadence). Check any you want to force-include — they’ll be treated as dated bills inside the horizon.
+              </p>
+              <div style={{ display: "grid", gap: 8 }}>
+                {forecast.overlookedCandidates.map((b) => {
+                  const checked = includeKeys.includes(b.merchantKey);
+                  return (
+                    <label key={b.merchantKey} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 10, border: "1px solid var(--line)", background: checked ? "var(--surface-2)" : "transparent", cursor: "pointer" }}>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(e) => {
+                          setIncludeKeys((prev) => e.target.checked ? [...prev, b.merchantKey] : prev.filter((k) => k !== b.merchantKey));
+                        }}
+                      />
+                      <span style={{ flex: 1, fontSize: 13 }}>
+                        <span style={{ fontWeight: 600 }}>{b.label}</span>
+                        <span className="muted" style={{ marginLeft: 6 }}>@ {money(b.amountCents, cur)}</span>
+                        <span className="muted" style={{ marginLeft: 6, fontSize: 12 }}>· {b.cadence} · {Math.round(b.confidence * 100)}%{b.nextExpected ? ` · next ${shortDate(b.nextExpected)}` : ""}</span>
+                      </span>
+                      <span className="chip" style={{ fontSize: 11 }}>{b.kind}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </section>
+          )}
         </>
       ) : null}
     </div>

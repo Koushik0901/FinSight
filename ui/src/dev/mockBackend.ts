@@ -380,21 +380,36 @@ function buildMetricExplanations(m: AnyRec): AnyRec[] {
  *  events on their days + a residual smooth burn, then lowest-point / breach /
  *  safe-to-spend. Reads the mock metrics so it moves with the chosen dataset
  *  (the `empty` set → withheld/rough, populated sets → a real trajectory). */
-function buildCashflowForecast(m: AnyRec, horizonDays?: number, bufferCents?: number, extraExpenseCents?: number): AnyRec {
-  const horizon = Math.min(90, Math.max(7, Number(horizonDays ?? 30)));
+function buildCashflowForecast(m: AnyRec, horizonDays?: number, bufferCents?: number, extraExpenseCents?: number, includeKeys?: string[]): AnyRec {
+  const horizon = Math.min(180, Math.max(7, Number(horizonDays ?? 30)));
   const buffer = Math.max(0, Number(bufferCents ?? 0));
   const start = Number(m.liquidCents ?? 0);
   const avgExp = Number(m.avgMonthlyExpenseCents ?? 0);
   const avgInc = Number(m.avgMonthlyIncomeCents ?? 0);
   const hasData = avgExp > 0;
 
-  const raw: Array<{ day: number; amountCents: number; kind: string; label: string }> = [];
+  const raw: Array<{ day: number; amountCents: number; kind: string; label: string; merchantKey?: string }> = [];
   if (hasData) {
     raw.push({ day: 3, amountCents: -1_200, kind: "subscription", label: "Streaming Plus" });
     if (10 < horizon) raw.push({ day: 10, amountCents: -Math.round(avgExp * 0.4), kind: "bill", label: "Rent" });
     if (14 < horizon && avgInc > 0) raw.push({ day: 14, amountCents: avgInc, kind: "income", label: "Employer payroll" });
   }
   if (Number(extraExpenseCents ?? 0) > 0) raw.push({ day: 0, amountCents: -Math.abs(Number(extraExpenseCents)), kind: "hypothetical", label: "Hypothetical spend" });
+
+  // Overlooked candidates — low-confidence bill that can be force-included.
+  const overlookedCandidates: AnyRec[] = hasData ? [
+    { merchantKey: "gym_annual", label: "Gym annual fee", amountCents: -2900, kind: "bill", confidence: 0.42, nextExpected: isoInDays(12), cadence: "annual" },
+    { merchantKey: "lawn_service", label: "Lawn service", amountCents: -4500, kind: "subscription", confidence: 0.35, nextExpected: isoInDays(9), cadence: "monthly" },
+  ] : [];
+  const includeSet = new Set((includeKeys ?? []).map(String));
+  for (const cand of overlookedCandidates) {
+    if (includeSet.has(cand.merchantKey) && cand.nextExpected) {
+      const day = Math.round((new Date(cand.nextExpected).getTime() - new Date(isoInDays(0)).getTime()) / 86400000);
+      if (day >= 0 && day < horizon) {
+        raw.push({ day, amountCents: cand.amountCents, kind: cand.kind, label: cand.label, merchantKey: cand.merchantKey });
+      }
+    }
+  }
 
   // Residual everyday burn: expense minus the dated obligations, per day.
   const datedObligationMonthly = hasData ? 1_200 + Math.round(avgExp * 0.4) : 0;
@@ -449,6 +464,7 @@ function buildCashflowForecast(m: AnyRec, horizonDays?: number, bufferCents?: nu
     upcomingEvents,
     warnings,
     reliable: hasData,
+    overlookedCandidates,
   };
 }
 
@@ -1027,6 +1043,7 @@ function buildResponders(ds: Dataset): Partial<Record<CommandName, Responder>> {
         a?.horizonDays as number | undefined,
         a?.bufferCents as number | undefined,
         a?.extraExpenseCents as number | undefined,
+        a?.includeMerchantKeys as string[] | undefined,
       ),
     // ── Scenarios (in-memory) ──
     run_scenario: (a) => {
@@ -1365,8 +1382,8 @@ function buildResponders(ds: Dataset): Partial<Record<CommandName, Responder>> {
     set_budget: () => null,
     create_category_group: (a) => ({ id: String(a.label ?? "group").toLowerCase().replace(/[^a-z0-9]+/g, "-"), label: a.label, hint: a.hint ?? null, sort_order: ds.categoryGroups.length }),
     set_category_group: () => null,
+    set_category_rollover: () => null,
     apply_next_month_plan: () => null,
-    update_goal_monthly: () => null,
   };
 }
 

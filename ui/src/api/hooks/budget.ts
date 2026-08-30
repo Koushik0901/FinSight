@@ -1,16 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, type BudgetEnvelope, type CategoryHistory, type GoalContributionDto, type GoalDto, type MemberBudgetEnvelope, type NewGoalInput, type PlanAssignment, type ProjectedValue } from "../openapiClient";
+import { api, raw, type BudgetEnvelope, type CategoryHistory, type GoalContributionDto, type GoalDto, type MemberBudgetEnvelope, type NewGoalInput, type PlanAssignment, type ProjectedValue } from "../openapiClient";
 import { unwrap } from "../openapiClient";
 import { isBackendAvailable } from "../../utils/runtime";
 import { invalidateDomains } from "../invalidation";
 
 // ── Budget ────────────────────────────────────────────────────────────────
 
-export function useBudgetEnvelopes() {
+export function useBudgetEnvelopes(month?: string) {
   return useQuery<BudgetEnvelope[]>({
-    queryKey: ["budget-envelopes"],
+    queryKey: ["budget-envelopes", month ?? "current"],
     queryFn: async () => {
-      return unwrap(api.listBudgetEnvelopes());
+      return unwrap(api.listBudgetEnvelopes(month));
     },
     enabled: isBackendAvailable(),
   });
@@ -35,9 +35,9 @@ export function useMemberBudgetEnvelopes(memberId: string | null) {
 export function useSetBudget() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ categoryId, amountCents }: { categoryId: string; amountCents: number }) => {
+    mutationFn: async ({ categoryId, amountCents, allowOverAssign, month }: { categoryId: string; amountCents: number; allowOverAssign?: boolean; month?: string }) => {
       if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
-      await unwrap(api.setBudget(categoryId, amountCents));
+      await unwrap(api.setBudget(categoryId, amountCents, allowOverAssign, month));
     },
     onSuccess: () => {
       invalidateDomains(qc, "budgetEnvelopes");
@@ -135,9 +135,10 @@ export function useArchiveGoal() {
 export function useUpdateGoalMonthly() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, monthlyCents }: { id: string; monthlyCents: number }) => {
+    mutationFn: async ({ id, monthlyCents, period }: { id: string; monthlyCents: number; period?: string }) => {
       if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
-      await unwrap(api.updateGoalMonthly(id, monthlyCents));
+      // Direct raw call keeps period in the payload even before openapi types are regenerated.
+      await unwrap(raw.POST("/api/rpc/update_goal_monthly" as never, { body: { id, monthlyCents, period: period ?? null } } as never));
     },
     onSuccess: () => {
       invalidateDomains(qc, "goals");
@@ -216,6 +217,31 @@ export function useApplyNextMonthPlan() {
       return unwrap(api.applyNextMonthPlan(assignments));
     },
     onSuccess: () => {
+      invalidateDomains(qc, "budgetEnvelopes");
+    },
+  });
+}
+
+// ── Hold for Next Month (buffer → hold persistence) ───────────────────────
+
+/**
+ * Persist a hold for `month` ("YYYY-MM"). Mirrors `finsight_core::repos::budgets::set_hold`.
+ * A hold parks unassigned money for next month: it deducts from this month's
+ * `to_budget` and reappears as income-like in `available_funds` for the following month.
+ */
+export function useSetHold() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ month, amountCents }: { month: string; amountCents: number }) => {
+      if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
+      return unwrap(api.setHold(month, amountCents));
+    },
+    onSuccess: (data) => {
+      const monthKey = typeof data === "object" && data !== null && "month" in data && typeof data.month === "string" ? data.month : undefined;
+      if (monthKey) qc.setQueryData(["hold", monthKey], data);
+      qc.invalidateQueries({ queryKey: ["hold"] });
+      qc.invalidateQueries({ queryKey: ["budget-envelopes"] });
+      qc.invalidateQueries({ queryKey: ["month-totals"] });
       invalidateDomains(qc, "budgetEnvelopes");
     },
   });

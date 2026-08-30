@@ -6,9 +6,11 @@ import { toast } from "sonner";
 import { useBudgetEnvelopes, useBudgetHistory, useSetBudget, useGoals, useContributeToGoal, useMemberBudgetEnvelopes } from "../api/hooks/budget";
 import { useHold, useSetHold } from "../api/hooks/budgetHolds";
 import { useBudgetTransfers, useTransferBudget } from "../api/hooks/budgetTransfers";
+import { useFundingTemplates, useCreateFundingTemplate, useUpdateFundingTemplate, useDeleteFundingTemplate, useApplyTemplates } from "../api/hooks/fundingTemplates";
+import { useCategories } from "../api/hooks/transactions";
 import { useHouseholdMembers } from "../api/hooks/household";
 import { useMonthTotals } from "../api/hooks/reports";
-import { api, type BudgetEnvelope, type SpendingBreakdown } from "../api/openapiClient";
+import { api, type BudgetEnvelope, type SpendingBreakdown, type FundingTemplate, type CategoryDto } from "../api/openapiClient";
 import { unwrap } from "../api/openapiClient";
 import PlanNextMonthModal from "./PlanNextMonthModal";
 import EmptyState from "../components/EmptyState";
@@ -31,18 +33,86 @@ function envelopeStatus(env: BudgetEnvelope) {
   return { label: "Available", tone: "positive" as const, severity: 0 };
 }
 
-function BudgetInput({ envelope, onClose }: { envelope: BudgetEnvelope; onClose: () => void }) {
+function BudgetInput({ envelope, month, onClose }: { envelope: BudgetEnvelope; month?: string; onClose: () => void }) {
   const setBudget = useSetBudget();
   const [value, setValue] = useState(envelope.budgetCents > 0 ? String(Math.round(envelope.budgetCents / 100)) : "");
+  const [overAssignError, setOverAssignError] = useState<string | null>(null);
+  const [pendingCents, setPendingCents] = useState<number | null>(null);
+  const [lockedError, setLockedError] = useState<string | null>(null);
+  const [lockedPendingCents, setLockedPendingCents] = useState<number | null>(null);
+  const [lockedPendingAllow, setLockedPendingAllow] = useState(false);
+  const [reopening, setReopening] = useState(false);
 
-  const save = async () => {
-    const amountCents = Math.round(Number(value || 0) * 100);
+  const computedMonth = month ?? `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}`;
+
+  const isClosedLockMessage = (msg: string) => {
+    const l = msg.toLowerCase();
+    return l.includes("closed") && (l.includes("drift") || l.includes("reopen"));
+  };
+
+  const save = async (allowOverAssign = false) => {
+    const amountCents = pendingCents !== null && allowOverAssign ? pendingCents : Math.round(Number(value || 0) * 100);
+    const effectiveAllow = allowOverAssign;
+    setOverAssignError(null);
     try {
-      await setBudget.mutateAsync({ categoryId: envelope.categoryId, amountCents });
+      await setBudget.mutateAsync({ categoryId: envelope.categoryId, amountCents, allowOverAssign: effectiveAllow || undefined, month: computedMonth });
       toast.success("Budget saved", { description: `${envelope.categoryLabel} · ${money(amountCents)}` });
+      setOverAssignError(null);
+      setPendingCents(null);
+      setLockedError(null);
+      setLockedPendingCents(null);
+      setLockedPendingAllow(false);
       onClose();
-    } catch {
-      toast.error("Failed to save budget");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (isClosedLockMessage(msg)) {
+        setLockedError(msg);
+        setLockedPendingCents(amountCents);
+        setLockedPendingAllow(effectiveAllow);
+        toast("This month is closed — editing will cause drift.", { description: msg });
+      } else if (msg.toLowerCase().includes("over-assigned")) {
+        setOverAssignError(msg);
+        setPendingCents(amountCents);
+      } else {
+        toast.error("Failed to save budget", { description: msg });
+      }
+    }
+  };
+
+  const confirmOverAssign = async () => {
+    await save(true);
+  };
+
+  const handleReopen = async () => {
+    if (lockedPendingCents === null) return;
+    const parts = computedMonth.split("-");
+    const y = Number(parts[0]);
+    const m = Number(parts[1]);
+    if (!y || !m) {
+      toast.error("Could not reopen — invalid month");
+      return;
+    }
+    setReopening(true);
+    try {
+      await unwrap(api.saveMonthClose({ year: y, month: m, status: "in_progress", notes: null, acknowledgedFlagIds: [] }));
+      toast.success("Month reopened", { description: `${computedMonth} is now open for edits` });
+      const cents = lockedPendingCents;
+      const allow = lockedPendingAllow;
+      setLockedError(null);
+      await setBudget.mutateAsync({ categoryId: envelope.categoryId, amountCents: cents, allowOverAssign: allow || undefined, month: computedMonth });
+      toast.success("Budget saved", { description: `${envelope.categoryLabel} · ${money(cents)}` });
+      setLockedPendingCents(null);
+      setLockedPendingAllow(false);
+      onClose();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (isClosedLockMessage(msg)) {
+        toast.error("Still closed — could not reopen", { description: msg });
+      } else {
+        toast.error("Could not reopen month", { description: msg });
+      }
+    } finally {
+      setReopening(false);
     }
   };
 
@@ -56,7 +126,7 @@ function BudgetInput({ envelope, onClose }: { envelope: BudgetEnvelope; onClose:
           min="0"
           step="10"
           value={value}
-          onChange={(e) => setValue(e.target.value)}
+          onChange={(e) => { setValue(e.target.value); if (overAssignError) { setOverAssignError(null); setPendingCents(null); } if (lockedError) { setLockedError(null); setLockedPendingCents(null); } }}
           onKeyDown={(e) => {
             if (e.key === "Enter") void save();
             if (e.key === "Escape") onClose();
@@ -67,9 +137,39 @@ function BudgetInput({ envelope, onClose }: { envelope: BudgetEnvelope; onClose:
         <button className="btn primary sm" type="button" onClick={() => void save()}>Save</button>
         <button className="btn ghost sm" type="button" onClick={onClose}>Cancel</button>
       </div>
+      {lockedError && (
+        <div role="alertdialog" aria-label="Month closed" style={{ marginTop: 10, padding: 12, borderRadius: 8, background: "var(--surface-2)", border: "1px solid var(--line)", fontSize: 13 }}>
+          <div style={{ fontWeight: 600 }}>This month is closed — Reopen?</div>
+          <div className="muted" style={{ marginTop: 4 }}>{lockedError}</div>
+          <div className="muted" style={{ marginTop: 4, fontSize: 12 }}>Editing will cause drift from the frozen close. Reopen to continue.</div>
+          <div className="row row-sm" style={{ marginTop: 10 }}>
+            <button className="btn primary sm" type="button" onClick={() => void handleReopen()} disabled={reopening || setBudget.isPending}>
+              {reopening ? "Reopening…" : "Reopen"}
+            </button>
+            <button className="btn ghost sm" type="button" onClick={() => { setLockedError(null); setLockedPendingCents(null); setLockedPendingAllow(false); }} disabled={reopening}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+      {overAssignError && (
+        <div role="alert" style={{ marginTop: 10, padding: 10, borderRadius: 8, background: "var(--surface-2)", border: "1px solid var(--negative)", color: "var(--negative)", fontSize: 13 }}>
+          <div style={{ fontWeight: 600 }}>Over-assigned budget</div>
+          <div className="muted" style={{ marginTop: 4, color: "var(--negative)" }}>{overAssignError}</div>
+          <div className="row row-sm" style={{ marginTop: 10 }}>
+            <button className="btn primary sm" type="button" onClick={() => void confirmOverAssign()} disabled={setBudget.isPending}>
+              Over-assign anyway?
+            </button>
+            <button className="btn ghost sm" type="button" onClick={() => { setOverAssignError(null); setPendingCents(null); }}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+
 
 function EnvelopeCard({ env, editing, onEdit, donor, memberShareCents, memberName, onCover }: { env: BudgetEnvelope; editing: boolean; onEdit: () => void; donor: BudgetEnvelope | null; memberShareCents?: number; memberName?: string; onCover?: (from: BudgetEnvelope, to: BudgetEnvelope, amount: number) => void }) {
   const status = envelopeStatus(env);
@@ -185,6 +285,338 @@ function EnvelopeCard({ env, editing, onEdit, donor, memberShareCents, memberNam
   );
 }
 
+function FundingTemplatesPanel() {
+  const [open, setOpen] = useState(false);
+  const { data: templates = [], isLoading: templatesLoading } = useFundingTemplates();
+  const { data: categories = [] } = useCategories();
+  const create = useCreateFundingTemplate();
+  const update = useUpdateFundingTemplate();
+  const del = useDeleteFundingTemplate();
+  const apply = useApplyTemplates();
+  const now = new Date();
+  const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [showForm, setShowForm] = useState(false);
+  const [formCategoryId, setFormCategoryId] = useState("");
+  const [formKind, setFormKind] = useState("fixed");
+  const [formAmount, setFormAmount] = useState("");
+  const [formCap, setFormCap] = useState("");
+  const [formTarget, setFormTarget] = useState("");
+  const [formBy, setFormBy] = useState("");
+  const [formMonths, setFormMonths] = useState("3");
+  const [formPct, setFormPct] = useState("50");
+  const [formSchedule, setFormSchedule] = useState("");
+  const [formPriority, setFormPriority] = useState("0");
+
+  const resetForm = useCallback(() => {
+    setEditingId(null);
+    setShowForm(false);
+    setFormCategoryId(categories[0]?.id ?? "");
+    setFormKind("fixed");
+    setFormAmount("");
+    setFormCap("");
+    setFormTarget("");
+    setFormBy("");
+    setFormMonths("3");
+    setFormPct("50");
+    setFormSchedule("");
+    setFormPriority("0");
+  }, [categories]);
+
+  useEffect(() => {
+    if (!showForm && categories.length > 0 && formCategoryId === "") {
+      setFormCategoryId(categories[0].id);
+    }
+  }, [categories, showForm, formCategoryId]);
+
+  const startEdit = useCallback((t: FundingTemplate) => {
+    setEditingId(t.id);
+    setShowForm(true);
+    setFormCategoryId(t.categoryId);
+    setFormKind(t.kind);
+    setFormPriority(String(t.priority));
+    let params: Record<string, unknown> = {};
+    try { params = JSON.parse(t.paramsJson) || {}; } catch { params = {}; }
+    const amt = (params.amount ?? params.amount_cents ?? params.amountCents ?? params.cap ?? params.target ?? "") as string | number;
+    const amtStr = amt !== "" && amt !== undefined ? String(Math.round(Number(amt) / 100)) : "";
+    if (t.kind === "fixed") {
+      setFormAmount(amtStr);
+    } else if (t.kind === "up_to") {
+      setFormCap(amtStr);
+    } else if (t.kind === "by") {
+      setFormTarget(amtStr);
+      setFormBy((params.by as string) ?? "");
+    } else if (t.kind === "average") {
+      setFormMonths(String(params.months ?? "3"));
+    } else if (t.kind === "percent") {
+      const pct = (params.pct ?? params.percent ?? 0) as number;
+      const num = Number(pct);
+      setFormPct(num > 1 ? String(num) : num > 0 ? String(Math.round(num * 100)) : "50");
+    } else if (t.kind === "schedule") {
+      setFormAmount(amtStr);
+      setFormSchedule((params.schedule ?? params.cron ?? params.pattern ?? params.interval ?? "") as string);
+    }
+  }, []);
+
+  const buildParamsJson = useCallback((): string => {
+    switch (formKind) {
+      case "fixed":
+        return JSON.stringify({ amount: Math.round(Number(formAmount || 0) * 100) });
+      case "up_to":
+        return JSON.stringify({ cap: Math.round(Number(formCap || 0) * 100) });
+      case "by":
+        return JSON.stringify({ target: Math.round(Number(formTarget || 0) * 100), by: formBy || currentMonth });
+      case "average":
+        return JSON.stringify({ months: parseInt(formMonths || "3", 10) || 3 });
+      case "percent": {
+        const n = Number(formPct || 0);
+        const fraction = n > 1 ? n / 100 : n;
+        return JSON.stringify({ pct: fraction });
+      }
+      case "remainder":
+        return JSON.stringify({});
+      case "schedule":
+        return JSON.stringify({ amount: Math.round(Number(formAmount || 0) * 100), schedule: formSchedule.trim() });
+      default:
+        return JSON.stringify({});
+    }
+  }, [formKind, formAmount, formCap, formTarget, formBy, formMonths, formPct, formSchedule, currentMonth]);
+
+  const handleSubmit = useCallback(async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formCategoryId) { toast.error("Pick a category"); return; }
+    const paramsJson = buildParamsJson();
+    const priority = parseInt(formPriority || "0", 10) || 0;
+    try {
+      if (editingId) {
+        await update.mutateAsync({ id: editingId, categoryId: formCategoryId, kind: formKind, paramsJson, priority });
+        toast.success("Template updated");
+      } else {
+        await create.mutateAsync({ categoryId: formCategoryId, kind: formKind, paramsJson, priority });
+        toast.success("Template created");
+      }
+      resetForm();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error(editingId ? "Could not update template" : "Could not create template", { description: msg });
+    }
+  }, [formCategoryId, formKind, formPriority, editingId, buildParamsJson, create, update, resetForm]);
+
+  const handleDelete = useCallback(async (id: string) => {
+    try {
+      await del.mutateAsync(id);
+      toast.success("Template deleted");
+      if (editingId === id) resetForm();
+    } catch (err) {
+      toast.error("Could not delete template", { description: err instanceof Error ? err.message : String(err) });
+    }
+  }, [del, editingId, resetForm]);
+
+  const handleApply = useCallback(async () => {
+    try {
+      const changes = await apply.mutateAsync(currentMonth);
+      const total = changes.reduce((s, c) => s + c.amountCents, 0);
+      if (total === 0) {
+        toast("Templates applied — no new funding needed", { description: `All targets already met for ${currentMonth}.` });
+      } else {
+        toast.success(`Templates applied — ${money(total)} funded`, { description: `${changes.filter(c => c.amountCents !== 0).length} categor${changes.filter(c => c.amountCents !== 0).length === 1 ? "y" : "ies"} updated for ${currentMonth}.` });
+      }
+    } catch (err) {
+      toast.error("Could not apply templates", { description: err instanceof Error ? err.message : String(err) });
+    }
+  }, [apply, currentMonth]);
+
+  const categoryLabel = useCallback((id: string) => {
+    const cat = categories.find((c: CategoryDto) => c.id === id);
+    return cat?.label ?? id;
+  }, [categories]);
+
+  const humanParams = useCallback((t: FundingTemplate): string => {
+    let p: Record<string, unknown> = {};
+    try { p = JSON.parse(t.paramsJson) || {}; } catch { return t.paramsJson; }
+    switch (t.kind) {
+      case "fixed": return money(Number(p.amount ?? p.amount_cents ?? p.amountCents ?? 0));
+      case "up_to": return `cap ${money(Number(p.cap ?? p.amount ?? 0))}`;
+      case "by": return `${money(Number(p.target ?? p.amount ?? 0))} by ${(p.by as string) ?? "—"}`;
+      case "average": return `${p.months ?? 3} mo avg`;
+      case "percent": {
+        const n = Number(p.pct ?? p.percent ?? 0);
+        const pct = n > 1 ? n : Math.round(n * 100);
+        return `${pct}%`;
+      }
+      case "remainder": return "remainder";
+      case "schedule": {
+        const amt = money(Number(p.amount ?? p.amount_cents ?? 0));
+        const sched = (p.schedule ?? p.cron ?? p.pattern ?? p.interval ?? "") as string;
+        return sched ? `${amt} · ${sched}` : amt;
+      }
+      default: return t.paramsJson;
+    }
+  }, []);
+
+  return (
+    <div className="card tight" style={{ marginTop: 16, padding: 18 }}>
+      <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+        <div>
+          <div className="eyebrow"><span className="dot" />Templates</div>
+          <div className="muted" style={{ fontSize: 12.5, marginTop: 4 }}>
+            Declarative funding rules — ordered by priority. Schedule templates use cron like <span className="mono">0 0 1 * *</span> or interval like <span className="mono">weekly</span>.
+          </div>
+        </div>
+        <button className="btn ghost sm" type="button" aria-expanded={open} aria-controls="budget-templates-panel" onClick={() => setOpen((v) => !v)}>
+          {open ? "Hide" : `Show ${templates.length > 0 ? `(${templates.length})` : ""}`}
+        </button>
+      </div>
+
+      {open && (
+        <div id="budget-templates-panel" style={{ marginTop: 14 }}>
+          <div className="row row-sm wrap" style={{ gap: 8, marginBottom: 12 }}>
+            <button className="btn primary sm" type="button" disabled={apply.isPending} onClick={() => void handleApply()}>
+              {apply.isPending ? "Applying…" : `Apply to ${currentMonth}`}
+            </button>
+            {!showForm && (
+              <button className="btn outline sm" type="button" onClick={() => { resetForm(); setShowForm(true); }}>
+                New template
+              </button>
+            )}
+            {showForm && (
+              <button className="btn ghost sm" type="button" onClick={resetForm}>Cancel</button>
+            )}
+          </div>
+
+          {templatesLoading ? (
+            <p className="muted" style={{ fontSize: 12.5 }}>Loading templates…</p>
+          ) : templates.length === 0 && !showForm ? (
+            <p className="muted" style={{ fontSize: 12.5, margin: "8px 0 0" }}>No templates yet. Create one to auto-fund categories each month.</p>
+          ) : templates.length > 0 ? (
+            <div className="tbl-scroll" style={{ marginBottom: showForm ? 16 : 0 }}>
+              <table className="tbl" style={{ fontSize: 13 }}>
+                <thead>
+                  <tr>
+                    <th>Category</th>
+                    <th>Kind</th>
+                    <th>Params</th>
+                    <th className="right">Priority</th>
+                    <th className="right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {templates.map((t) => (
+                    <tr key={t.id}>
+                      <td><span className="cswatch" style={{ background: categories.find((c: CategoryDto) => c.id === t.categoryId)?.color || "var(--accent)" }} /> {categoryLabel(t.categoryId)}</td>
+                      <td><span className="chip">{t.kind}</span></td>
+                      <td className="muted" style={{ maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{humanParams(t)}</td>
+                      <td className="right mono">{t.priority}</td>
+                      <td className="right">
+                        <div className="row row-sm" style={{ justifyContent: "flex-end", gap: 6 }}>
+                          <button className="btn ghost sm" type="button" onClick={() => startEdit(t)}>Edit</button>
+                          <button className="btn ghost sm" type="button" disabled={del.isPending} onClick={() => void handleDelete(t.id)}>Delete</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
+
+          {showForm && (
+            <form onSubmit={handleSubmit} className="card" style={{ padding: 14, background: "var(--surface-2)", display: "flex", flexDirection: "column", gap: 10 }}>
+              <div className="row row-sm wrap" style={{ gap: 8, alignItems: "flex-end" }}>
+                <label style={{ display: "flex", flexDirection: "column", gap: 4, flex: "1 1 160px" }}>
+                  <span className="muted" style={{ fontSize: 11 }}>Category</span>
+                  <select className="control" value={formCategoryId} onChange={(e) => setFormCategoryId(e.target.value)} required>
+                    <option value="">Pick category…</option>
+                    {categories.map((c: CategoryDto) => (
+                      <option key={c.id} value={c.id}>{c.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <label style={{ display: "flex", flexDirection: "column", gap: 4, flex: "0 0 140px" }}>
+                  <span className="muted" style={{ fontSize: 11 }}>Kind</span>
+                  <select className="control" value={formKind} onChange={(e) => setFormKind(e.target.value)}>
+                    <option value="fixed">fixed</option>
+                    <option value="up_to">up_to</option>
+                    <option value="by">by</option>
+                    <option value="average">average</option>
+                    <option value="percent">percent</option>
+                    <option value="remainder">remainder</option>
+                    <option value="schedule">schedule</option>
+                  </select>
+                </label>
+                <label style={{ display: "flex", flexDirection: "column", gap: 4, flex: "0 0 90px" }}>
+                  <span className="muted" style={{ fontSize: 11 }}>Priority</span>
+                  <input className="control" type="number" value={formPriority} onChange={(e) => setFormPriority(e.target.value)} />
+                </label>
+              </div>
+
+              {formKind === "fixed" && (
+                <label style={{ display: "flex", flexDirection: "column", gap: 4, maxWidth: 200 }}>
+                  <span className="muted" style={{ fontSize: 11 }}>Amount $</span>
+                  <input className="control" type="text" inputMode="numeric" placeholder="0.00" value={formAmount} onChange={(e) => setFormAmount(e.target.value)} required />
+                </label>
+              )}
+              {formKind === "up_to" && (
+                <label style={{ display: "flex", flexDirection: "column", gap: 4, maxWidth: 200 }}>
+                  <span className="muted" style={{ fontSize: 11 }}>Cap $</span>
+                  <input className="control" type="text" inputMode="numeric" placeholder="0.00" value={formCap} onChange={(e) => setFormCap(e.target.value)} required />
+                </label>
+              )}
+              {formKind === "by" && (
+                <div className="row row-sm wrap" style={{ gap: 8 }}>
+                  <label style={{ display: "flex", flexDirection: "column", gap: 4, flex: "0 0 140px" }}>
+                    <span className="muted" style={{ fontSize: 11 }}>Target $</span>
+                    <input className="control" type="text" inputMode="numeric" placeholder="0.00" value={formTarget} onChange={(e) => setFormTarget(e.target.value)} required />
+                  </label>
+                  <label style={{ display: "flex", flexDirection: "column", gap: 4, flex: "1 1 140px" }}>
+                    <span className="muted" style={{ fontSize: 11 }}>By month YYYY-MM</span>
+                    <input className="control" type="text" placeholder="2026-12" value={formBy} onChange={(e) => setFormBy(e.target.value)} />
+                  </label>
+                </div>
+              )}
+              {formKind === "average" && (
+                <label style={{ display: "flex", flexDirection: "column", gap: 4, maxWidth: 140 }}>
+                  <span className="muted" style={{ fontSize: 11 }}>Months</span>
+                  <input className="control" type="number" min="1" max="24" value={formMonths} onChange={(e) => setFormMonths(e.target.value)} required />
+                </label>
+              )}
+              {formKind === "percent" && (
+                <label style={{ display: "flex", flexDirection: "column", gap: 4, maxWidth: 140 }}>
+                  <span className="muted" style={{ fontSize: 11 }}>Percent 0-100</span>
+                  <input className="control" type="number" min="0" max="100" step="1" value={formPct} onChange={(e) => setFormPct(e.target.value)} required />
+                </label>
+              )}
+              {formKind === "schedule" && (
+                <div className="row row-sm wrap" style={{ gap: 8 }}>
+                  <label style={{ display: "flex", flexDirection: "column", gap: 4, flex: "0 0 140px" }}>
+                    <span className="muted" style={{ fontSize: 11 }}>Amount $</span>
+                    <input className="control" type="text" inputMode="numeric" placeholder="0.00" value={formAmount} onChange={(e) => setFormAmount(e.target.value)} required />
+                  </label>
+                  <label style={{ display: "flex", flexDirection: "column", gap: 4, flex: "1 1 220px" }}>
+                    <span className="muted" style={{ fontSize: 11 }}>Schedule — cron or interval</span>
+                    <input className="control" type="text" placeholder="0 0 1 * * or weekly" value={formSchedule} onChange={(e) => setFormSchedule(e.target.value)} required />
+                  </label>
+                </div>
+              )}
+              {formKind === "remainder" && (
+                <p className="muted" style={{ fontSize: 12, margin: 0 }}>Remainder takes all remaining funds — no params.</p>
+              )}
+
+              <div className="row row-sm" style={{ gap: 8, marginTop: 4 }}>
+                <button className="btn primary sm" type="submit" disabled={create.isPending || update.isPending}>
+                  {editingId ? (update.isPending ? "Saving…" : "Save changes") : (create.isPending ? "Creating…" : "Create")}
+                </button>
+                <button className="btn ghost sm" type="button" onClick={resetForm}>Cancel</button>
+              </div>
+            </form>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 export default function Budget() {
   const navigate = useNavigate();
   const { data: envelopes = [], isLoading, error, refetch } = useBudgetEnvelopes();
@@ -203,7 +635,10 @@ export default function Budget() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showPlan, setShowPlan] = useState(false);
   const [showAllAttention, setShowAllAttention] = useState(false);
-  // Which household member's share of the spend to overlay, or null for the
+  const [goalLockedError, setGoalLockedError] = useState<string | null>(null);
+  const [goalLockedPendingGoalId, setGoalLockedPendingGoalId] = useState<string | null>(null);
+  const [goalLockedPendingCents, setGoalLockedPendingCents] = useState<number | null>(null);
+  const [goalReopening, setGoalReopening] = useState(false);
   // whole household. The budgets stay household-level either way — this only
   // scopes the "spent" side.
   const [scopeMemberId, setScopeMemberId] = useState<string | null>(null);
@@ -432,12 +867,52 @@ export default function Budget() {
           },
         },
       });
-    } catch {
-      toast.error("Could not record goal progress", {
-        description: "Your budget and bank balances were not changed. Try again.",
-      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      const lower = msg.toLowerCase();
+      const isLocked = lower.includes("closed") && (lower.includes("drift") || lower.includes("reopen"));
+      if (isLocked) {
+        setGoalLockedError(msg);
+        setGoalLockedPendingGoalId(firstGoal.id);
+        setGoalLockedPendingCents(toBudget);
+        toast("This month is closed — editing will cause drift.", { description: msg });
+      } else {
+        toast.error("Could not record goal progress", {
+          description: msg || "Your budget and bank balances were not changed. Try again.",
+        });
+      }
     }
   };
+
+  const handleGoalReopen = async () => {
+    if (goalLockedPendingGoalId === null || goalLockedPendingCents === null) return;
+    const parts = currentMonth.split("-");
+    const y = Number(parts[0]);
+    const m = Number(parts[1]);
+    if (!y || !m) {
+      toast.error("Could not reopen — invalid month");
+      return;
+    }
+    setGoalReopening(true);
+    try {
+      await unwrap(api.saveMonthClose({ year: y, month: m, status: "in_progress", notes: null, acknowledgedFlagIds: [] }));
+      toast.success("Month reopened", { description: `${currentMonth} is now open for edits` });
+      const gid = goalLockedPendingGoalId;
+      const cents = goalLockedPendingCents;
+      const goalName = goals.find((g) => g.id === gid)?.name ?? "goal";
+      setGoalLockedError(null);
+      await contribute.mutateAsync({ id: gid, amountCents: cents, note: "Recorded unassigned budget toward goal", source: "sweep" });
+      toast.success(`Recorded ${money(cents)} toward ${goalName}`, { description: "This updates FinSight only. No money was moved." });
+      setGoalLockedPendingGoalId(null);
+      setGoalLockedPendingCents(null);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      toast.error("Could not reopen month", { description: msg });
+    } finally {
+      setGoalReopening(false);
+    }
+  };
+
 
 
   if (isLoading) {
@@ -620,6 +1095,21 @@ export default function Budget() {
           }</span>}
       </div>
 
+      )}
+      {goalLockedError && (
+        <div role="alertdialog" aria-label="Month closed" style={{ marginTop: 12, padding: 12, borderRadius: 8, background: "var(--surface-2)", border: "1px solid var(--line)", fontSize: 13 }}>
+          <div style={{ fontWeight: 600 }}>This month is closed — Reopen?</div>
+          <div className="muted" style={{ marginTop: 4 }}>{goalLockedError}</div>
+          <div className="muted" style={{ marginTop: 4, fontSize: 12 }}>Recording toward a goal will cause drift from the frozen close. Reopen to continue.</div>
+          <div className="row row-sm" style={{ marginTop: 10 }}>
+            <button className="btn primary sm" type="button" onClick={() => void handleGoalReopen()} disabled={goalReopening || contribute.isPending}>
+              {goalReopening ? "Reopening…" : "Reopen"}
+            </button>
+            <button className="btn ghost sm" type="button" onClick={() => { setGoalLockedError(null); setGoalLockedPendingGoalId(null); setGoalLockedPendingCents(null); }} disabled={goalReopening}>
+              Cancel
+            </button>
+          </div>
+        </div>
       )}
             {readiness !== "unavailable" && (
         <div className="card tight" style={{ marginTop: 16, padding: 18 }}>
@@ -808,6 +1298,9 @@ export default function Budget() {
           )}
         </div>
       )}
+
+      <FundingTemplatesPanel />
+
 
       {breakdown && totalTagged > 0 && <div className="card tight" style={{ marginTop: 16 }}><div className="eyebrow"><span className="dot" />Spending mix</div><div className="stream" style={{ marginTop: 10, height: 16, borderRadius: 6 }}><span style={{ width: `${(breakdown.fixedCents / totalTagged) * 100}%`, background: "var(--ink-mute)" }} /><span style={{ width: `${(breakdown.investmentsCents / totalTagged) * 100}%`, background: "var(--accent)" }} /><span style={{ width: `${(breakdown.savingsCents / totalTagged) * 100}%`, background: "var(--positive)" }} /><span style={{ width: `${(breakdown.guiltFreeCents / totalTagged) * 100}%`, background: "var(--c-dining)" }} /><span style={{ width: `${(breakdown.untaggedCents / totalTagged) * 100}%`, background: "var(--ink-faint)" }} /></div></div>}
 

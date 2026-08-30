@@ -19,6 +19,7 @@ pub mod import_candidates;
 pub mod imports;
 pub mod institutions;
 pub mod manual_assets;
+pub mod month_close;
 pub mod net_worth;
 pub mod planned_transactions;
 pub mod push;

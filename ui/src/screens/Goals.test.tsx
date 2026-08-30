@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import Goals, { buildHorizonRows, horizonTickLabel } from "./Goals";
+import Goals, { buildHorizonRows, horizonTickLabel, requiredMonthly, monthsUntil, underfundedCents } from "./Goals";
 import { createWrapper, createWrapperWithEntries } from "../test-utils";
 
 const mockUpdateMonthly = vi.fn().mockResolvedValue(undefined);
@@ -522,3 +522,157 @@ describe("Goals — Horizon timeline", () => {
     expect(screen.getByText(/Behind schedule/)).toBeInTheDocument();
   });
 });
+
+describe("Goals — needed-for-spending", () => {
+  const baseGoal = {
+    id: "x", name: "X", color: "#C9F950", notes: null, purpose: null,
+    sortOrder: 0, createdAt: "2026-01-01", accountId: null, targetDate: null,
+    priority: "normal", deadlineStrictness: "target",
+  };
+
+  it("includes needed-for-spending goals in horizon rows like save-by-date", () => {
+    const nfs = { ...baseGoal, id: "nfs1", goalType: "needed-for-spending", targetCents: 120000, currentCents: 60000, monthlyCents: 20000 };
+    const { rows } = buildHorizonRows([nfs]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.goal.goalType).toBe("needed-for-spending");
+    // remaining 60000, monthly 20000 -> 3 months
+    expect(rows[0]!.months).toBe(3);
+  });
+
+  it("renders Needed for spending chip on GoalCard", async () => {
+    const budget = await import("../api/hooks/budget");
+    (budget.useGoals as ReturnType<typeof vi.fn>).mockReturnValueOnce({
+      data: [
+        {
+          id: "nfs2", name: "Car Insurance", goalType: "needed-for-spending",
+          targetCents: 120000, currentCents: 60000, monthlyCents: 20000,
+          targetDate: future(6), color: "#C9F950", notes: null, purpose: null,
+          sortOrder: 0, createdAt: "2026-01-01", accountId: null,
+          priority: "normal", deadlineStrictness: "target",
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+    render(<Goals />, { wrapper: createWrapper() });
+    expect(await screen.findByText("Needed for spending")).toBeInTheDocument();
+    expect(screen.getByText(/Available to spend/)).toBeInTheDocument();
+  });
+});
+
+describe("Goals — requiredMonthly", () => {
+  const baseGoal = {
+    id: "x", name: "X", color: "#C9F950", notes: null, purpose: null,
+    sortOrder: 0, createdAt: "2026-01-01", accountId: null,
+    priority: "normal", deadlineStrictness: "target",
+  };
+  const jan15 = new Date(2026, 0, 15);
+
+  function dateFromJan15(daysAhead: number): string {
+    const d = new Date(jan15);
+    d.setDate(d.getDate() + daysAhead);
+    return d.toISOString().slice(0, 10);
+  }
+
+  it("computes monthsUntil as ceil(days/30)", () => {
+    expect(monthsUntil(dateFromJan15(0), jan15)).toBe(0);
+    expect(monthsUntil(dateFromJan15(1), jan15)).toBe(1);
+    expect(monthsUntil(dateFromJan15(30), jan15)).toBe(1);
+    expect(monthsUntil(dateFromJan15(31), jan15)).toBe(2);
+    expect(monthsUntil(dateFromJan15(60), jan15)).toBe(2);
+    expect(monthsUntil(dateFromJan15(61), jan15)).toBe(3);
+    expect(monthsUntil(null, jan15)).toBe(null);
+  });
+
+  it("returns 0 when no targetDate", () => {
+    const g = { ...baseGoal, goalType: "save-by-date", targetCents: 100000, currentCents: 0, monthlyCents: 1000, targetDate: null };
+    expect(requiredMonthly(g, jan15)).toBe(0);
+    expect(underfundedCents(g, jan15)).toBe(0);
+  });
+
+  it("returns 0 when already funded", () => {
+    const g = { ...baseGoal, goalType: "save-by-date", targetCents: 100000, currentCents: 100000, monthlyCents: 1000, targetDate: dateFromJan15(60) };
+    expect(requiredMonthly(g, jan15)).toBe(0);
+  });
+
+  it("returns 0 for spending-cap goals", () => {
+    const g = { ...baseGoal, goalType: "spending-cap", targetCents: 50000, currentCents: 0, monthlyCents: 0, targetDate: dateFromJan15(60) };
+    expect(requiredMonthly(g, jan15)).toBe(0);
+  });
+
+  it("calculates requiredMonthly as ceil(remaining / max(1, monthsUntil))", () => {
+    // remaining 100000, 60 days -> monthsUntil 2 -> ceil(100000/2)=50000
+    const g = { ...baseGoal, goalType: "save-by-date", targetCents: 100000, currentCents: 0, monthlyCents: 20000, targetDate: dateFromJan15(60) };
+    expect(requiredMonthly(g, jan15)).toBe(50000);
+    expect(underfundedCents(g, jan15)).toBe(30000);
+  });
+
+  it("uses denom 1 when target is today or past (monthsUntil <=0)", () => {
+    const todayTarget = { ...baseGoal, goalType: "save-by-date", targetCents: 90000, currentCents: 40000, monthlyCents: 10000, targetDate: dateFromJan15(0) };
+    expect(monthsUntil(dateFromJan15(0), jan15)).toBe(0);
+    expect(requiredMonthly(todayTarget, jan15)).toBe(50000);
+    expect(underfundedCents(todayTarget, jan15)).toBe(40000);
+    const pastTarget = { ...baseGoal, goalType: "save-by-date", targetCents: 90000, currentCents: 40000, monthlyCents: 10000, targetDate: dateFromJan15(-10) };
+    expect(monthsUntil(dateFromJan15(-10), jan15)).toBe(0);
+    expect(requiredMonthly(pastTarget, jan15)).toBe(50000);
+  });
+
+  it("ceil division handles non-even remaining", () => {
+    // remaining 100001, 30 days -> monthsUntil 1 -> ceil(100001/1)=100001
+    const g1 = { ...baseGoal, goalType: "save-by-date", targetCents: 100001, currentCents: 0, monthlyCents: 0, targetDate: dateFromJan15(30) };
+    expect(requiredMonthly(g1, jan15)).toBe(100001);
+    // remaining 100001, 60 days -> monthsUntil 2 -> ceil(100001/2)=50001
+    const g2 = { ...baseGoal, goalType: "save-by-date", targetCents: 100001, currentCents: 0, monthlyCents: 0, targetDate: dateFromJan15(60) };
+    expect(requiredMonthly(g2, jan15)).toBe(50001);
+  });
+
+  it("underfunded is 0 when monthly covers required", () => {
+    const g = { ...baseGoal, goalType: "save-by-date", targetCents: 100000, currentCents: 0, monthlyCents: 60000, targetDate: dateFromJan15(60) };
+    expect(requiredMonthly(g, jan15)).toBe(50000);
+    expect(underfundedCents(g, jan15)).toBe(0);
+  });
+
+  it("shows Need badge on GoalCard when underfunded and in horizon tooltip", async () => {
+    const budget = await import("../api/hooks/budget");
+    // need 100000 in ~2 months -> required ~50000, monthly 10000 -> underfunded 40000 -> Need $500.00/mo
+    const target = future(2);
+    (budget.useGoals as ReturnType<typeof vi.fn>).mockReturnValueOnce({
+      data: [
+        {
+          id: "need1", name: "Need Badge Goal", goalType: "save-by-date",
+          targetCents: 100000, currentCents: 0, monthlyCents: 10000,
+          targetDate: target, color: "#C9F950", notes: null, purpose: null,
+          sortOrder: 0, createdAt: "2026-01-01", accountId: null,
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+    render(<Goals />, { wrapper: createWrapper() });
+    // GoalCard badge
+    expect(await screen.findByText(/Need .*\/mo/)).toBeInTheDocument();
+    // Horizon tooltip badge also uses same text - at least one more occurrence in horizon
+    const badges = screen.getAllByText(/Need .*\/mo/);
+    expect(badges.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("does not show Need badge when funded or on track", async () => {
+    const budget = await import("../api/hooks/budget");
+    (budget.useGoals as ReturnType<typeof vi.fn>).mockReturnValueOnce({
+      data: [
+        {
+          id: "ok1", name: "On Track Goal", goalType: "save-by-date",
+          targetCents: 100000, currentCents: 80000, monthlyCents: 50000,
+          targetDate: future(2), color: "#C9F950", notes: null, purpose: null,
+          sortOrder: 0, createdAt: "2026-01-01", accountId: null,
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+    render(<Goals />, { wrapper: createWrapper() });
+    await screen.findByText("On Track Goal");
+    expect(screen.queryByText(/Need .*\/mo/)).not.toBeInTheDocument();
+  });
+});
+

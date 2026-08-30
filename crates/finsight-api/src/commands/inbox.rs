@@ -604,6 +604,68 @@ pub async fn get_action_items(state: &ApiState) -> AppResult<Vec<ActionItem>> {
             }
         }
 
+        // ── Fees this month (≥2 fees or >$25) ───────────────────────────────
+        // Currency-isolated to the primary currency and grouped by canonical
+        // merchant key, so cross-currency fees never sum and descriptor variants
+        // ("ATM FEE 123" vs "ATM FEE 456") collapse. Triggers at the same
+        // thresholds the fee detector defines, so Inbox and the detector agree.
+        if let Ok(Some(fees)) = finsight_core::fees::fees_this_month(conn, now) {
+            let count = fees.count;
+            let total = fees.total_cents;
+            // Human-readable breakdown of top fee vendors
+            let top = fees
+                .details
+                .iter()
+                .take(2)
+                .map(|d| format!("{} ({})", d.display, fmt_money(d.total_cents)))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let detail = if fees.mixed_currency {
+                format!(
+                    "{} in {} fee{} totalling {} this month (other currencies excluded). {}. Review to reduce avoidable charges.",
+                    count,
+                    fees.currency,
+                    if count == 1 { "" } else { "s" },
+                    fmt_money(total),
+                    if top.is_empty() { String::new() } else { format!("Top: {top}") }
+                )
+            } else {
+                format!(
+                    "{} fee{} totalling {} this month{}. Review bank fees, overdraft and ATM charges — small fees compound quickly.",
+                    count,
+                    if count == 1 { "" } else { "s" },
+                    fmt_money(total),
+                    if top.is_empty() { String::new() } else { format!(" — {top}") }
+                )
+            };
+            let priority = if total > 5000 || count >= 4 {
+                "high"
+            } else if total > 2500 || count >= 3 {
+                "medium"
+            } else {
+                "medium"
+            };
+            items.push(ActionItem {
+                id: "fees-this-month".to_string(),
+                category: "fees".to_string(),
+                priority: priority.to_string(),
+                title: format!(
+                    "{} in fees this month — {}",
+                    fmt_money(total),
+                    if count >= 2 {
+                        format!("{count} charges")
+                    } else {
+                        "over $25".to_string()
+                    }
+                ),
+                detail,
+                action_label: "Review fees".to_string(),
+                action_route: "/transactions?filter=fees".to_string(),
+                badge_count: Some(count),
+                amount_cents: Some(total),
+            });
+        }
+
         // ── Sort: high first, then medium, then low ───────────────────────────
         items.sort_by_key(|item| match item.priority.as_str() {
             "high" => 0,

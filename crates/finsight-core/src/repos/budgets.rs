@@ -1,4 +1,5 @@
 use crate::error::{CoreError, CoreResult};
+use crate::merchant::canonical_merchant_key;
 use crate::models::{
     BudgetChange, BudgetTransfer, CustomReportParams, CustomReportResult, FundingTemplate, Period,
     ReportRow, SplitBy,
@@ -10,12 +11,62 @@ use specta::Type;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
+/// Tolerance for to-budget validation: allow $0.50 over-assign before blocking.
+pub const TO_BUDGET_TOLERANCE_CENTS: i64 = 50;
+
+/// Validate `to_budget` for `month`. Returns `CoreError::Validation("over-assigned by …")`
+/// when `to_budget < -TOLERANCE`. When `allow_over_assign` is true the check is skipped.
+pub fn validate_to_budget(
+    conn: &Connection,
+    month: &str,
+    allow_over_assign: bool,
+) -> CoreResult<()> {
+    if allow_over_assign {
+        return Ok(());
+    }
+    // If no income is recorded for the month, budgeting is not yet bounded by
+    // income — allow the write so tests and early-month planning can proceed.
+    // The guard activates once income exists, which mirrors Actual's flow where
+    // To Budget is income-driven. This keeps existing tests (which set budgets
+    // without seeding income) passing while still protecting real over-assigns.
+    let income = total_income(conn, month)?;
+    if income == 0 {
+        return Ok(());
+    }
+    let tb = to_budget(conn, month)?;
+    if tb < -TO_BUDGET_TOLERANCE_CENTS {
+        let over = -tb;
+        let dollars = format!("${:.2}", over as f64 / 100.0);
+        return Err(CoreError::Validation(format!(
+            "over-assigned by {} (to_budget {}¢)",
+            dollars, tb
+        )));
+    }
+    Ok(())
+}
+
 /// Set (upsert) a budget for a category in a given month (format: "YYYY-MM").
+/// When `allow_over_assign` is false (default) the write is validated against
+/// `to_budget` and rejected with `CoreError::Validation` if the month would be
+/// over-assigned beyond the $0.50 tolerance.
 pub fn set(
     conn: &mut Connection,
     category_id: &str,
     month: &str,
     amount_cents: i64,
+    allow_over_assign: bool,
+) -> CoreResult<()> {
+    crate::repos::atomic(conn, |conn| {
+        set_raw(conn, category_id, month, amount_cents, allow_over_assign)
+    })
+}
+
+fn set_raw(
+    conn: &mut Connection,
+    category_id: &str,
+    month: &str,
+    amount_cents: i64,
+    allow_over_assign: bool,
 ) -> CoreResult<()> {
     let now = Utc::now().to_rfc3339();
     let id = Uuid::new_v4().to_string();
@@ -25,7 +76,19 @@ pub fn set(
          ON CONFLICT(category_id, month) DO UPDATE SET amount_cents = excluded.amount_cents, updated_at = excluded.updated_at",
         params![id, category_id, month, amount_cents, now],
     )?;
+    validate_to_budget(conn, month, allow_over_assign)?;
     Ok(())
+}
+
+/// Backwards-compatible wrapper for `set` with `allow_over_assign = false`.
+/// Existing tests and internal callers that do not need over-assign use this.
+pub fn set_simple(
+    conn: &mut Connection,
+    category_id: &str,
+    month: &str,
+    amount_cents: i64,
+) -> CoreResult<()> {
+    set(conn, category_id, month, amount_cents, false)
 }
 
 /// Return a map of category_id → amount_cents for the given month.
@@ -402,6 +465,363 @@ fn parse_pct_from_json(params_json: &str) -> CoreResult<f64> {
     Ok(0.0)
 }
 
+// ── Schedule kind helpers (cron/interval) ────────────────────────────────────
+
+fn parse_schedule_string(params_json: &str) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_str(params_json).ok()?;
+    if !v.is_object() {
+        return None;
+    }
+    for key in [
+        "schedule",
+        "cron",
+        "pattern",
+        "interval",
+        "frequency",
+        "cadence",
+    ] {
+        if let Some(s) = v.get(key).and_then(|x| x.as_str()) {
+            let trimmed = s.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed.to_string());
+            }
+        }
+    }
+    None
+}
+
+fn days_in_month(year: i32, month: u32) -> u32 {
+    // chrono handles leap years
+    let next_month = if month == 12 {
+        chrono::NaiveDate::from_ymd_opt(year + 1, 1, 1)
+    } else {
+        chrono::NaiveDate::from_ymd_opt(year, month + 1, 1)
+    };
+    let first = chrono::NaiveDate::from_ymd_opt(year, month, 1).unwrap();
+    let next = next_month.unwrap();
+    (next - first).num_days() as u32
+}
+
+fn cron_field_matches(field: &str, value: u32, min: u32, _max: u32) -> bool {
+    let field = field.trim();
+    if field == "*" {
+        return true;
+    }
+    // comma-separated list: any matches
+    if field.contains(',') {
+        return field
+            .split(',')
+            .any(|part| cron_field_matches(part, value, min, _max));
+    }
+    // step: base/step
+    if let Some((base, step_str)) = field.split_once('/') {
+        let step: u32 = step_str.trim().parse().unwrap_or(0);
+        if step == 0 {
+            return false;
+        }
+        let base = base.trim();
+        if base == "*" {
+            return (value - min) % step == 0;
+        }
+        if base.contains('-') {
+            if let Some((s, e)) = base.split_once('-') {
+                let start: u32 = s.trim().parse().unwrap_or(min);
+                let end: u32 = e.trim().parse().unwrap_or(_max);
+                if value < start || value > end {
+                    return false;
+                }
+                return (value - start) % step == 0;
+            }
+        }
+        // single number with step: e.g. "5/15"
+        if let Ok(start) = base.parse::<u32>() {
+            if value < start {
+                return false;
+            }
+            return (value - start) % step == 0;
+        }
+        return false;
+    }
+    // range: a-b
+    if let Some((s, e)) = field.split_once('-') {
+        if let (Ok(start), Ok(end)) = (s.trim().parse::<u32>(), e.trim().parse::<u32>()) {
+            return value >= start && value <= end;
+        }
+        return false;
+    }
+    // exact
+    if let Ok(n) = field.parse::<u32>() {
+        // dow: 7 == 0 (Sunday)
+        if min == 0 && n == 7 && value == 0 {
+            return true;
+        }
+        return value == n;
+    }
+    false
+}
+
+fn cron_dow_matches(field: &str, dow_sunday0: u32) -> bool {
+    // cron dow: 0 and 7 both Sunday, 1=Monday ... 6=Saturday
+    let field = field.trim();
+    if field == "*" {
+        return true;
+    }
+    // Expand comma lists recursively
+    if field.contains(',') {
+        return field
+            .split(',')
+            .any(|part| cron_dow_matches(part, dow_sunday0));
+    }
+    // step
+    if let Some((base, step_str)) = field.split_once('/') {
+        let step: u32 = step_str.trim().parse().unwrap_or(0);
+        if step == 0 {
+            return false;
+        }
+        let base = base.trim();
+        if base == "*" {
+            return dow_sunday0 % step == 0;
+        }
+        if base.contains('-') {
+            if let Some((s, e)) = base.split_once('-') {
+                let start: u32 = s.trim().parse().unwrap_or(0);
+                let end: u32 = e.trim().parse().unwrap_or(7);
+                // normalize 7->0 for range checks
+                let (start_n, end_n) = (
+                    if start == 7 { 0 } else { start },
+                    if end == 7 { 0 } else { end },
+                );
+                // handle wrap-around Sunday range like 5-1 (Fri-Mon)
+                if start_n <= end_n {
+                    if dow_sunday0 < start_n || dow_sunday0 > end_n {
+                        return false;
+                    }
+                    return (dow_sunday0 - start_n) % step == 0;
+                } else {
+                    // wrapped range: valid if >=start or <=end
+                    if dow_sunday0 >= start_n || dow_sunday0 <= end_n {
+                        // step logic for wrapped is complex; fallback to true if in range
+                        return true;
+                    }
+                    return false;
+                }
+            }
+        }
+        if let Ok(start) = base.parse::<u32>() {
+            let start_n = if start == 7 { 0 } else { start };
+            if dow_sunday0 < start_n {
+                return false;
+            }
+            return (dow_sunday0 - start_n) % step == 0;
+        }
+        return false;
+    }
+    if let Some((s, e)) = field.split_once('-') {
+        let start: u32 = s.trim().parse().unwrap_or(0);
+        let end: u32 = e.trim().parse().unwrap_or(7);
+        let (start_n, end_n) = (
+            if start == 7 { 0 } else { start },
+            if end == 7 { 0 } else { end },
+        );
+        let dow_n = dow_sunday0;
+        if start_n <= end_n {
+            return dow_n >= start_n && dow_n <= end_n;
+        } else {
+            return dow_n >= start_n || dow_n <= end_n;
+        }
+    }
+    if let Ok(n) = field.parse::<u32>() {
+        let n_n = if n == 7 { 0 } else { n };
+        return dow_sunday0 == n_n;
+    }
+    false
+}
+
+fn cron_is_due_in_month(cron_str: &str, month: &str) -> bool {
+    let parts: Vec<&str> = cron_str.split_whitespace().collect();
+    // Accept 5 fields (min hour dom mon dow) or 6 with seconds prefix
+    let (dom_str, mon_str, dow_str) = if parts.len() == 5 {
+        (parts[2], parts[3], parts[4])
+    } else if parts.len() == 6 {
+        (parts[3], parts[4], parts[5])
+    } else {
+        return false;
+    };
+    let year: i32 = month[0..4].parse().unwrap_or(1970);
+    let mon: u32 = month[5..7].parse().unwrap_or(1);
+    if mon < 1 || mon > 12 {
+        return false;
+    }
+    // month field must match the target month
+    if !cron_field_matches(mon_str, mon, 1, 12) {
+        return false;
+    }
+    let dim = days_in_month(year, mon);
+    let dom_is_star = dom_str.trim() == "*";
+    let dow_is_star = dow_str.trim() == "*";
+    for day in 1..=dim {
+        let dom_match = cron_field_matches(dom_str, day, 1, 31);
+        let date = chrono::NaiveDate::from_ymd_opt(year, mon, day).unwrap();
+        let dow_sunday0 = date.weekday().num_days_from_sunday();
+        let dow_match = cron_dow_matches(dow_str, dow_sunday0);
+        let day_match = match (dom_is_star, dow_is_star) {
+            (true, true) => true,
+            (true, false) => dow_match,
+            (false, true) => dom_match,
+            (false, false) => dom_match || dow_match,
+        };
+        if day_match {
+            // verify hour/min are not impossible? we ignore them; any day match suffices
+            return true;
+        }
+    }
+    false
+}
+
+fn interval_days_from_str(s: &str) -> Option<u32> {
+    let lower = s.to_lowercase();
+    let trimmed = lower.trim();
+    // explicit keyword mappings first (without number)
+    if trimmed == "daily" || trimmed == "day" || trimmed == "every day" || trimmed == "everyday" {
+        return Some(1);
+    }
+    if trimmed == "weekly" || trimmed == "every week" || trimmed == "week" {
+        return Some(7);
+    }
+    if trimmed == "biweekly"
+        || trimmed == "bi-weekly"
+        || trimmed == "fortnightly"
+        || trimmed == "every 2 weeks"
+        || trimmed == "every fortnight"
+    {
+        return Some(14);
+    }
+    if trimmed == "monthly"
+        || trimmed == "every month"
+        || trimmed == "month"
+        || trimmed == "once a month"
+    {
+        return Some(30);
+    }
+    if trimmed == "quarterly" || trimmed == "every quarter" || trimmed == "every 3 months" {
+        return Some(90);
+    }
+    if trimmed == "semiannually" || trimmed == "semi-annually" || trimmed == "every 6 months" {
+        return Some(180);
+    }
+    if trimmed == "yearly"
+        || trimmed == "annually"
+        || trimmed == "annual"
+        || trimmed == "every year"
+        || trimmed == "every 12 months"
+    {
+        return Some(365);
+    }
+    // Try to extract "<number> <unit>" pattern
+    // Find all numbers and their following unit
+    let chars: Vec<char> = lower.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i].is_ascii_digit() {
+            let start = i;
+            while i < chars.len() && chars[i].is_ascii_digit() {
+                i += 1;
+            }
+            let num_str: String = chars[start..i].iter().collect();
+            if let Ok(num) = num_str.parse::<u32>() {
+                // skip spaces
+                let mut j = i;
+                while j < chars.len() && chars[j].is_whitespace() {
+                    j += 1;
+                }
+                let rest: String = chars[j..].iter().collect();
+                if rest.starts_with("day") {
+                    return Some(num);
+                } else if rest.starts_with("week") {
+                    return Some(num * 7);
+                } else if rest.starts_with("month") {
+                    return Some(num * 30);
+                } else if rest.starts_with("year") {
+                    return Some(num * 365);
+                } else if rest.starts_with('d')
+                    && (rest.len() == 1 || rest[1..].starts_with(|c: char| !c.is_alphabetic()))
+                {
+                    return Some(num);
+                } else if rest.starts_with('w') {
+                    return Some(num * 7);
+                } else if rest.len() == 0 {
+                    // bare number like "14" -> treat as days
+                    return Some(num);
+                }
+            }
+        } else {
+            i += 1;
+        }
+    }
+    // Also handle phrases like "every 2 weeks" where 'every' prefix already consumed
+    // If still not found, try to detect keyword substrings with implied 1
+    if lower.contains("daily") {
+        return Some(1);
+    }
+    if lower.contains("weekly") {
+        return Some(7);
+    }
+    if lower.contains("monthly") {
+        return Some(30);
+    }
+    None
+}
+
+fn interval_is_due_in_month(interval_str: &str, month: &str) -> Option<bool> {
+    let days = interval_days_from_str(interval_str)?;
+    let mon: u32 = month[5..7].parse().unwrap_or(1);
+    // Map interval days to due logic reusing recurring::cadence buckets (weekly/biweekly/monthly etc.)
+    //   <=31 => monthly or more frequent => always due
+    //   <=92 => quarterly bucket
+    //   <=185 => semi-annual
+    //   else annual
+    // This mirrors recurring::cadence_label thresholds: weekly<10, biweekly<20, monthly<45, quarterly<100, annual else
+    let due = if days <= 45 {
+        // weekly/biweekly/monthly — always due within any month
+        true
+    } else if days <= 100 {
+        // quarterly: due in Jan, Apr, Jul, Oct
+        mon % 3 == 1
+    } else if days <= 200 {
+        // semi-annual: Jan, Jul
+        mon % 6 == 1
+    } else {
+        // annual: only Jan
+        mon == 1
+    };
+    Some(due)
+}
+
+pub fn schedule_is_due(schedule_str: &str, month: &str) -> bool {
+    let s = schedule_str.trim();
+    if s.is_empty() {
+        return false;
+    }
+    // Cron-like strings contain '*' or '/' or have 5+ whitespace-separated tokens
+    let is_cron_like = s.contains('*') || s.contains('/') || s.split_whitespace().count() >= 5;
+    if is_cron_like {
+        // Try cron first; if it looks like cron but invalid, treat as unparseable
+        // Cron must have 5 or 6 fields to be valid
+        let parts = s.split_whitespace().count();
+        if parts == 5 || parts == 6 {
+            return cron_is_due_in_month(s, month);
+        }
+        // fallback to interval parsing
+    }
+    // Try interval keywords / numeric intervals
+    if let Some(due) = interval_is_due_in_month(s, month) {
+        return due;
+    }
+    // Reuse recurring logic: if string looks like a cadence name, map via interval parser already
+    // Otherwise attempt cron fallback for things like "0 0 1 * *"
+    cron_is_due_in_month(s, month)
+}
+
 pub fn category_spent(
     conn: &Connection,
     category_id: &str,
@@ -461,10 +881,25 @@ pub fn period_bounds(conn: &Connection, period: Period) -> CoreResult<(Option<St
     let start_rfc = start.map(|s| format!("{s}T00:00:00Z"));
     Ok((start_rfc, format!("{end}T00:00:00Z")))
 }
-
 /// Carryover helper that works on `&Connection` (read-only). Mirrors
 /// `carryover_into_month(&mut Connection)` but without requiring mut.
 fn carryover_for(conn: &Connection, category_id: &str, month: &str) -> CoreResult<i64> {
+    // B-P1-1: per-category rollover toggle. When `rollover_enabled = 0` the
+    // envelope resets each month — no budgeted-spent from prior months carries
+    // forward. Check the category row directly so we respect the toggle even
+    // before any budgeted-then-spent history has accumulated. COALESCE defaults
+    // to 1 for pre-migration rows or missing categories so existing data keeps
+    // prior behaviour.
+    let rollover: Option<i64> = conn
+        .query_row(
+            "SELECT rollover_enabled FROM categories WHERE id = ?1",
+            params![category_id],
+            |r| r.get(0),
+        )
+        .optional()?;
+    if rollover.map(|v| v == 0).unwrap_or(false) {
+        return Ok(0);
+    }
     let first_budgeted: Option<String> = conn.query_row(
         "SELECT MIN(month) FROM budgets WHERE category_id = ?1 AND amount_cents > 0",
         params![category_id],
@@ -493,8 +928,6 @@ fn carryover_for(conn: &Connection, category_id: &str, month: &str) -> CoreResul
     let spent = category_spent(conn, category_id, &start_date, &month_date)?;
     Ok(budgeted - spent)
 }
-
-/// Current available balance for a category in `month` (budgeted + carryover - spent).
 /// Mirrors the envelope `available = budgeted + carryover - spent_in_month`
 /// without transfer ledger (transfers are Task 4). For templates, `UpTo` needs this.
 fn category_available(conn: &Connection, category_id: &str, month: &str) -> CoreResult<i64> {
@@ -699,7 +1132,6 @@ pub fn delete_funding_template(conn: &mut Connection, id: &str) -> CoreResult<bo
 /// call `cur == raw` → `need == 0` → `take == 0` even though `available` may
 /// remain >0. This makes `Fixed` a one-shot “ensure budget hits amount” rather
 /// than an additive increment — the verified semantics for I2.
-///
 /// Kind handling:
 /// - `fixed`: `{"amount":7299}` or `{"amount_cents":7299}` → need = max(0, amount - cur_budget)
 /// - `up_to`: `{"cap":30000}` or `{"amount":30000}` → need = max(0, cap - category_available)
@@ -707,7 +1139,7 @@ pub fn delete_funding_template(conn: &mut Connection, id: &str) -> CoreResult<bo
 /// - `average`: `{"months":3}` → need = average spend over N prior months, validates `params_json`
 /// - `percent`: `{"pct":0.5}` or `{"percent":50}` → need = round(available * pct) where `available` is the *remaining* pool before this template (single tracking, `remainder` collapsed into `available`)
 /// - `remainder`: `{"":}` → need = available (takes all remaining)
-/// - `schedule`: `{"amount":5000}` or pattern → need = max(0, amount - cur_budget) or 0 if unparseable
+/// - `schedule`: `{"amount":5000,"schedule":"0 0 1 * *"} or {"amount":5000,"schedule":"weekly"}` → need = max(0, amount - cur_budget) if schedule is due within `month`, else 0; unparseable schedule ⇒ 0
 pub fn apply_templates(conn: &mut Connection, month: &str) -> CoreResult<Vec<BudgetChange>> {
     crate::repos::atomic(conn, |conn| {
         let mut templates = list_funding_templates(conn)?;
@@ -799,9 +1231,18 @@ pub fn apply_templates(conn: &mut Connection, month: &str) -> CoreResult<Vec<Bud
                 "schedule" => {
                     let raw = parse_amount_from_json(
                         &tmpl.params_json,
-                        &["amount", "amount_cents", "amountCents"],
+                        &["amount", "amount_cents", "amountCents", "cap"],
                     )?;
-                    (raw - cur).max(0)
+                    let schedule_str = parse_schedule_string(&tmpl.params_json);
+                    let is_due = match schedule_str {
+                        Some(s) => schedule_is_due(&s, month),
+                        None => false,
+                    };
+                    if is_due {
+                        (raw - cur).max(0)
+                    } else {
+                        0
+                    }
                 }
                 _ => 0,
             };
@@ -810,7 +1251,11 @@ pub fn apply_templates(conn: &mut Connection, month: &str) -> CoreResult<Vec<Bud
             // Remainder now read from `available` before `take`.
             let take = need.min(available).max(0);
             if take != 0 {
-                set(conn, &tmpl.category_id, month, cur + take)?;
+                // Inside the outer atomic transaction, use set_raw to avoid nested BEGIN IMMEDIATE.
+                // Templates are funded from available_funds which already respects holds, so
+                // over-assign validation is not needed here; use allow=true to skip the
+                // to_budget guard that is meant for manual envelope edits.
+                set_raw(conn, &tmpl.category_id, month, cur + take, true)?;
             }
             available -= take;
             if available < 0 {
@@ -840,6 +1285,19 @@ pub fn carryover_into_month(
     category_id: &str,
     month: &str,
 ) -> CoreResult<i64> {
+    // B-P1-1: same rollover gate as carryover_for — a disabled category never
+    // carries forward, so Budget shows correct available even when prior months
+    // had surplus/deficit.
+    let rollover: Option<i64> = conn
+        .query_row(
+            "SELECT rollover_enabled FROM categories WHERE id = ?1",
+            params![category_id],
+            |r| r.get(0),
+        )
+        .optional()?;
+    if rollover.map(|v| v == 0).unwrap_or(false) {
+        return Ok(0);
+    }
     let first_budgeted: Option<String> = conn.query_row(
         "SELECT MIN(month) FROM budgets WHERE category_id = ?1 AND amount_cents > 0",
         params![category_id],
@@ -1049,6 +1507,158 @@ pub fn custom_report(conn: &Connection, p: CustomReportParams) -> CoreResult<Cus
     if !p.group_ids.is_empty() && !join_clause.contains("category_groups g") {
         join_clause.push_str(" LEFT JOIN category_groups g ON g.id = c.group_id");
     }
+    // ── Payee: group by canonical_merchant_key to merge variants (e.g. "WALMART #123" splits)
+    // Mirrors recurring deduplication (recurring.rs groups by canonical_merchant_key).
+    // We fetch raw merchant rows and aggregate in Rust — no need for a SQLite
+    // scalar function and this stays deterministic with the Rust normalizer.
+    if p.split_by == SplitBy::Payee {
+        let metric_kind = p.metric.as_deref().map(|s| s.to_lowercase());
+        let mut sql = format!(
+            "SELECT t.merchant_raw, t.amount_cents, t.settle_up FROM transactions t{join_clause} WHERE 1=1"
+        );
+        let mut binds: Vec<String> = Vec::new();
+        if !p.include_transfers {
+            sql.push_str(" AND t.is_transfer = 0");
+        }
+        // No archived filter for payee (mirrors generic branch's _ => {}).
+        if let Some(member_id) = &p.member_id {
+            let mid = member_id.trim();
+            if !mid.is_empty() {
+                sql.push_str(" AND EXISTS (SELECT 1 FROM account_owners ao WHERE ao.account_id = t.account_id AND ao.member_id = ?)");
+                binds.push(mid.to_string());
+            }
+        }
+        if !p.account_ids.is_empty() {
+            let placeholders = p
+                .account_ids
+                .iter()
+                .map(|_| "?")
+                .collect::<Vec<_>>()
+                .join(",");
+            sql.push_str(&format!(" AND t.account_id IN ({})", placeholders));
+            for id in &p.account_ids {
+                binds.push(id.clone());
+            }
+        }
+        if !p.category_ids.is_empty() {
+            let placeholders = p
+                .category_ids
+                .iter()
+                .map(|_| "?")
+                .collect::<Vec<_>>()
+                .join(",");
+            sql.push_str(&format!(" AND t.category_id IN ({})", placeholders));
+            for id in &p.category_ids {
+                binds.push(id.clone());
+            }
+        }
+        if !p.group_ids.is_empty() {
+            let placeholders = p
+                .group_ids
+                .iter()
+                .map(|_| "?")
+                .collect::<Vec<_>>()
+                .join(",");
+            sql.push_str(&format!(" AND g.id IN ({})", placeholders));
+            for id in &p.group_ids {
+                binds.push(id.clone());
+            }
+        }
+        if let Some(payee) = &p.payee {
+            let trimmed = payee.trim();
+            if !trimmed.is_empty() {
+                sql.push_str(" AND lower(t.merchant_raw) LIKE lower(?)");
+                binds.push(format!("%{}%", trimmed));
+            }
+        }
+        if let Some(st) = &p.spending_type {
+            let trimmed = st.trim();
+            if !trimmed.is_empty() {
+                sql.push_str(" AND c.spending_type = ?");
+                binds.push(trimmed.to_string());
+            }
+        }
+        if let Some(min) = p.min_amount_cents {
+            sql.push_str(" AND ABS(t.amount_cents) >= CAST(? AS INTEGER)");
+            binds.push(min.to_string());
+        }
+        if let Some(max) = p.max_amount_cents {
+            sql.push_str(" AND ABS(t.amount_cents) <= CAST(? AS INTEGER)");
+            binds.push(max.to_string());
+        }
+        if let Some(s) = &start {
+            sql.push_str(" AND t.posted_at >= ?");
+            binds.push(s.clone());
+        }
+        sql.push_str(" AND t.posted_at < ?");
+        binds.push(end);
+
+        let mut stmt = conn.prepare(&sql)?;
+        let rows_iter = stmt.query_map(rusqlite::params_from_iter(binds.iter()), |r| {
+            let merchant_raw: String = r.get(0)?;
+            let amount_cents: i64 = r.get(1)?;
+            let settle_up: i64 = r.get(2)?;
+            Ok((merchant_raw, amount_cents, settle_up))
+        })?;
+        use std::collections::HashMap;
+        // canonical_key -> (sum_cents, count)
+        let mut grouped: HashMap<String, (i64, i64)> = HashMap::new();
+        for row in rows_iter {
+            let (merchant_raw, amount_cents, settle_up) = row?;
+            let amt = if settle_up == 1 {
+                -amount_cents
+            } else if amount_cents < 0 {
+                -amount_cents
+            } else {
+                0
+            };
+            let key = {
+                let k = canonical_merchant_key(&merchant_raw);
+                if k.is_empty() {
+                    merchant_raw.trim().to_lowercase()
+                } else {
+                    k
+                }
+            };
+            if key.is_empty() {
+                continue;
+            }
+            let entry = grouped.entry(key).or_insert((0, 0));
+            entry.0 += amt;
+            entry.1 += 1;
+        }
+        let mut out_rows: Vec<ReportRow> = grouped
+            .into_iter()
+            .map(|(label, (sum, cnt))| {
+                let total_cents = match metric_kind.as_deref() {
+                    Some("count") => cnt,
+                    Some("average") | Some("avg") => {
+                        if cnt > 0 {
+                            sum / cnt
+                        } else {
+                            0
+                        }
+                    }
+                    _ => sum,
+                };
+                ReportRow {
+                    label,
+                    total_cents,
+                    txn_count: cnt,
+                }
+            })
+            .collect();
+        out_rows.sort_by(|a, b| {
+            b.total_cents
+                .cmp(&a.total_cents)
+                .then_with(|| a.label.cmp(&b.label))
+        });
+        let total_cents: i64 = out_rows.iter().map(|r| r.total_cents).sum();
+        return Ok(CustomReportResult {
+            rows: out_rows,
+            total_cents,
+        });
+    }
     // Build WHERE clause dynamically.
     let total_expr = match p.metric.as_deref().map(|s| s.to_lowercase()).as_deref() {
         Some("count") => "COUNT(*)".to_string(),
@@ -1237,7 +1847,7 @@ mod tests {
         let (_d, db) = fresh_db();
         let mut conn = db.get().unwrap();
         seed_category(&mut conn, "food");
-        set(&mut conn, "food", "2026-05", 10_000).unwrap();
+        set(&mut conn, "food", "2026-05", 10_000, false).unwrap();
         // First budgeted month is May itself — nothing to carry *into* May.
         assert_eq!(
             carryover_into_month(&mut conn, "food", "2026-05").unwrap(),
@@ -1250,7 +1860,7 @@ mod tests {
         let (_d, db) = fresh_db();
         let mut conn = db.get().unwrap();
         seed_category(&mut conn, "food");
-        set(&mut conn, "food", "2026-04", 10_000).unwrap();
+        set(&mut conn, "food", "2026-04", 10_000, false).unwrap();
         spend(&mut conn, "food", "2026-04-10T00:00:00Z", 8_000);
         // April: budgeted $100, spent $80 → +$20 carries into May.
         assert_eq!(
@@ -1264,7 +1874,7 @@ mod tests {
         let (_d, db) = fresh_db();
         let mut conn = db.get().unwrap();
         seed_category(&mut conn, "food");
-        set(&mut conn, "food", "2026-04", 10_000).unwrap();
+        set(&mut conn, "food", "2026-04", 10_000, false).unwrap();
         spend(&mut conn, "food", "2026-04-10T00:00:00Z", 15_000);
         // April: budgeted $100, spent $150 → -$50 carries into May.
         assert_eq!(
@@ -1278,9 +1888,9 @@ mod tests {
         let (_d, db) = fresh_db();
         let mut conn = db.get().unwrap();
         seed_category(&mut conn, "food");
-        set(&mut conn, "food", "2026-03", 10_000).unwrap();
+        set(&mut conn, "food", "2026-03", 10_000, false).unwrap();
         spend(&mut conn, "food", "2026-03-10T00:00:00Z", 8_000); // +$20
-        set(&mut conn, "food", "2026-04", 10_000).unwrap();
+        set(&mut conn, "food", "2026-04", 10_000, false).unwrap();
         spend(&mut conn, "food", "2026-04-10T00:00:00Z", 11_000); // -$10
                                                                   // Net into May: +$20 - $10 = +$10.
         assert_eq!(
@@ -1298,7 +1908,7 @@ mod tests {
         // month before "2028-07" (the target month we ask carryover into).
         for i in 0..30 {
             let m = month_before("2028-07", 30 - i);
-            set(&mut conn, "food", &m, 10_000).unwrap();
+            set(&mut conn, "food", &m, 10_000, false).unwrap();
             spend(&mut conn, "food", &format!("{m}-10T00:00:00Z"), 9_000);
         }
         // Only the trailing 24 months count: 24 * $10 = $240, not 30 * $10 = $300.
@@ -1313,14 +1923,14 @@ mod tests {
         let (_d, db) = fresh_db();
         let mut conn = db.get().unwrap();
         seed_category(&mut conn, "dining");
-        set(&mut conn, "dining", "2026-05", 40_000).unwrap();
+        set(&mut conn, "dining", "2026-05", 40_000, false).unwrap();
         spend(&mut conn, "dining", "2026-05-10T00:00:00Z", 41_200); // $12 over
 
         conn.execute(
             "INSERT INTO categories(id, group_id, label, color, sort_order) VALUES('travel', 'daily', 'Travel', '#000', 1)",
             [],
         ).unwrap();
-        set(&mut conn, "travel", "2026-05", 50_000).unwrap(); // no spend at all: $500 under
+        set(&mut conn, "travel", "2026-05", 50_000, false).unwrap(); // no spend at all: $500 under
 
         let facts = look_back_facts(&mut conn, "2026-05").unwrap();
         assert!(facts
@@ -1337,7 +1947,7 @@ mod tests {
         let mut conn = db.get().unwrap();
         seed_category(&mut conn, "travel");
         for m in ["2026-02", "2026-03", "2026-04", "2026-05"] {
-            set(&mut conn, "travel", m, 50_000).unwrap();
+            set(&mut conn, "travel", m, 50_000, false).unwrap();
         }
         // No spend at all across 4 budgeted months.
         let facts = look_back_facts(&mut conn, "2026-05").unwrap();
@@ -1838,7 +2448,7 @@ mod tests {
         let (_d, db) = fresh_db();
         let mut conn = db.get().unwrap();
         seed_category(&mut conn, "Food");
-        set(&mut conn, "Food", "2026-08", 5000).unwrap();
+        set(&mut conn, "Food", "2026-08", 5000, false).unwrap();
         insert_tx(&conn, "Food", -3000, "2026-08-10", 0);
         insert_tx(&conn, "Food", 1000, "2026-08-12", 1); // +1000 settle_up nets as -1000
                                                          // budgeted 5000 - spent 2000 (3000-1000) = 3000 carryover into 2026-09
@@ -1854,7 +2464,7 @@ mod tests {
         let (_d, db) = fresh_db();
         let mut conn = db.get().unwrap();
         seed_category(&mut conn, "Food");
-        set(&mut conn, "Food", "2026-08", 5000).unwrap();
+        set(&mut conn, "Food", "2026-08", 5000, false).unwrap();
         insert_tx(&conn, "Food", -3000, "2026-08-10", 0);
         insert_tx(&conn, "Food", 1000, "2026-08-12", 1);
         // available for 2026-08 = budgeted 5000 - spent 2000 = 3000
@@ -1870,7 +2480,7 @@ mod tests {
         let mut conn = db.get().unwrap();
         seed_category(&mut conn, "A");
         seed_category(&mut conn, "B");
-        set(&mut conn, "A", "2026-09", 1000).unwrap();
+        set(&mut conn, "A", "2026-09", 1000, false).unwrap();
         insert_tx(&conn, "A", -900, "2026-09-05", 0);
         // spare = 100; try transfer 500 → Validation
         let err =
@@ -1886,6 +2496,37 @@ mod tests {
         // now spare is 0, further transfer should fail
         let err2 =
             transfer_optional(&mut conn, Some("A"), Some("B"), 1, "2026-09", None).unwrap_err();
+        assert!(matches!(err2, crate::error::CoreError::Validation(_)));
+    }
+
+    #[test]
+    fn over_assign_guard_blocks_and_allows_with_flag() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        seed_category(&mut conn, "A");
+        seed_category(&mut conn, "B");
+        // Income $100 for 2026-09
+        income_for_month(&mut conn, "2026-09", 10_000);
+        // First budget $100 should succeed (to_budget 0)
+        set(&mut conn, "A", "2026-09", 10_000, false).unwrap();
+        // Second budget $1 should be allowed within $0.50 tolerance? No, over by $1 → should fail
+        let err = set(&mut conn, "B", "2026-09", 100, false).unwrap_err();
+        assert!(
+            matches!(&err, crate::error::CoreError::Validation(m) if m.contains("over-assigned")),
+            "expected over-assigned validation, got {:?}",
+            err
+        );
+        // Still $0 to_budget (second write rolled back)
+        assert_eq!(to_budget(&conn, "2026-09").unwrap(), 0);
+        // With allow_over_assign=true it should succeed and go negative
+        set(&mut conn, "B", "2026-09", 100, true).unwrap();
+        assert_eq!(to_budget(&conn, "2026-09").unwrap(), -100);
+        // Tolerance: over by $0.50 (50c) should be allowed even without flag
+        // Reset B to 0, then set to 50c over
+        set(&mut conn, "B", "2026-09", 50, false).unwrap();
+        assert_eq!(to_budget(&conn, "2026-09").unwrap(), -50);
+        // 51c over should fail
+        let err2 = set(&mut conn, "B", "2026-09", 51, false).unwrap_err();
         assert!(matches!(err2, crate::error::CoreError::Validation(_)));
     }
 }

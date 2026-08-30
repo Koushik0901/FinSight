@@ -280,6 +280,22 @@ export function useSetCategoryGroup() {
   });
 }
 
+export function useSetCategoryRollover() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, rolloverEnabled }: { id: string; rolloverEnabled: boolean }) => {
+      if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
+      await unwrap(api.setCategoryRollover(id, rolloverEnabled));
+    },
+    onSuccess: () => {
+      // Rollover flips carryover for the next month, so budget envelopes also change.
+      invalidateDomains(qc, "categories");
+      invalidateDomains(qc, "budget");
+      qc.invalidateQueries({ queryKey: ["budget-envelopes"] });
+    },
+  });
+}
+
 export function useRulesWithCategories() {
   return useQuery<RuleWithCategory[]>({
     queryKey: ["rules"],

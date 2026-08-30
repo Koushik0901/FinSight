@@ -13,13 +13,23 @@ import PageHeader from "../components/PageHeader";
 import EmptyState from "../components/EmptyState";
 import { getReportReadiness } from "../utils/dataReadiness";
 import ReportCanvas from "../components/reportWidgets/ReportCanvas";
+import { ComposedChart, Bar, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, CartesianGrid, ReferenceLine } from "recharts";
 type Scope = "month" | "quarter" | "year" | "all";
+
+function getBudgetCents(m: ReportData["monthly"][number]): number {
+  if (m !== null && typeof m === "object" && "budgetCents" in m) {
+    const v = m.budgetCents;
+    if (typeof v === "number" && Number.isFinite(v)) return v;
+  }
+  return 0;
+}
 
 export function buildReportCsv(data: ReportData): string {
   const rows: string[] = [];
-  rows.push("Section,Label,Income,Expense,Net");
+  rows.push("Section,Label,Income,Expense,Budget,Net");
   for (const month of data.monthly) {
-    rows.push(`Monthly,${month.label},${(month.incomeCents / 100).toFixed(2)},${(month.expenseCents / 100).toFixed(2)},${(month.netCents / 100).toFixed(2)}`);
+    const budget = getBudgetCents(month);
+    rows.push(`Monthly,${month.label},${(month.incomeCents / 100).toFixed(2)},${(month.expenseCents / 100).toFixed(2)},${(budget / 100).toFixed(2)},${(month.netCents / 100).toFixed(2)}`);
   }
   rows.push("");
   rows.push("Section,Category,Amount,Txns");
@@ -32,6 +42,106 @@ export function buildReportCsv(data: ReportData): string {
     rows.push(`Top merchant,"${merchant.merchantRaw.replace(/"/g, '""')}",${(merchant.totalCents / 100).toFixed(2)},${merchant.txnCount}`);
   }
   return rows.join("\n");
+}
+
+type BudgetVsActualRow = { month: string; label: string; budget: number; expense: number; variance: number };
+
+function BudgetVsActualChart({ data, onNavigateBudget }: { data: ReportData; onNavigateBudget: () => void }) {
+  const monthly = data.monthly;
+  const hasBudget = monthly.some((m) => getBudgetCents(m) > 0);
+  const chartData: BudgetVsActualRow[] = monthly.map((m) => {
+    const budget = getBudgetCents(m) / 100;
+    const expense = m.expenseCents / 100;
+    return { month: m.month, label: m.label, budget, expense, variance: budget - expense };
+  });
+  const totalBudget = chartData.reduce((s, r) => s + r.budget, 0);
+  const totalExpense = chartData.reduce((s, r) => s + r.expense, 0);
+  const totalVariance = totalBudget - totalExpense;
+  const maxVal = Math.max(1, ...chartData.flatMap((r) => [r.budget, r.expense]));
+  const yDomain: [number, number] = [0, Math.ceil(maxVal * 1.15)];
+
+  if (!hasBudget) {
+    return (
+      <div className="card" style={{ padding: 16 }} data-testid="budget-vs-actual-empty">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <div>
+            <h3 className="h3" style={{ margin: 0 }}>Budget vs Actual</h3>
+            <p className="muted" style={{ margin: "4px 0 0", fontSize: 12 }}>Compare what you planned to spend against what you spent — month by month.</p>
+          </div>
+          <button className="btn primary sm" type="button" onClick={onNavigateBudget}>Set budgets</button>
+        </div>
+        <div className="muted" style={{ textAlign: "center", padding: "28px 12px", fontSize: 13, lineHeight: 1.5 }}>
+          No budgets yet for this period. Set monthly budgets on the Budget screen to see the overlay.
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="card" style={{ padding: 16 }} data-testid="budget-vs-actual">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
+        <div>
+          <h3 className="h3" style={{ margin: 0 }}>Budget vs Actual</h3>
+          <p className="muted" style={{ margin: "4px 0 0", fontSize: 12 }}>Budgeted (line) vs actual spending (bars) — positive variance means under budget.</p>
+        </div>
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", textAlign: "right" }}>
+          <div>
+            <div className="eyebrow" style={{ fontSize: 10 }}>Total budgeted</div>
+            <div className="money" style={{ fontWeight: 700, fontSize: 14 }}>{money(Math.round(totalBudget * 100))}</div>
+          </div>
+          <div>
+            <div className="eyebrow" style={{ fontSize: 10 }}>Total spent</div>
+            <div className="money" style={{ fontWeight: 700, fontSize: 14 }}>{money(Math.round(totalExpense * 100))}</div>
+          </div>
+          <div>
+            <div className="eyebrow" style={{ fontSize: 10 }}>Variance</div>
+            <div style={{ fontWeight: 700, fontSize: 14, color: totalVariance >= 0 ? "var(--positive, #16a34a)" : "var(--negative)" }}>{totalVariance >= 0 ? "+" : ""}{money(Math.round(totalVariance * 100))}</div>
+            <div className="muted" style={{ fontSize: 10 }}>{totalVariance >= 0 ? "Under budget" : "Over budget"}</div>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ width: "100%", height: 240 }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <ComposedChart data={chartData} margin={{ top: 8, right: 12, left: 8, bottom: 0 }} barCategoryGap="28%">
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--line, #e5e7eb)" vertical={false} />
+            <XAxis dataKey="label" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
+            <YAxis domain={yDomain} tick={{ fontSize: 11 }} tickFormatter={(v: number) => `$${Math.round(v).toLocaleString()}`} width={64} axisLine={false} tickLine={false} />
+            <Tooltip
+              formatter={(value: number, name: string) => [`$${Number(value).toFixed(2)}`, name === "budget" ? "Budgeted" : name === "expense" ? "Actual" : name]}
+              labelFormatter={(l) => `Month: ${l}`}
+              contentStyle={{ borderRadius: 10, border: "1px solid var(--line)", fontSize: 12 }}
+            />
+            <Legend verticalAlign="top" height={24} iconType="plainline" formatter={(value) => <span style={{ fontSize: 12 }}>{value === "budget" ? "Budgeted" : value === "expense" ? "Actual spend" : value}</span>} />
+            <Bar dataKey="expense" name="expense" fill="var(--accent, #84cc16)" radius={[8, 8, 0, 0]} barSize={22} />
+            <Line type="monotone" dataKey="budget" name="budget" stroke="#0ea5e9" strokeWidth={2.5} dot={{ r: 3, strokeWidth: 2 }} activeDot={{ r: 5 }} />
+            <ReferenceLine y={0} stroke="var(--line)" />
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
+
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+        {chartData.map((r) => {
+          const over = r.expense > r.budget && r.budget > 0;
+          return (
+            <span
+              key={r.month}
+              className="chip"
+              style={{
+                fontSize: 11,
+                padding: "4px 8px",
+                borderColor: over ? "var(--negative)" : r.budget === 0 ? "var(--line)" : "var(--positive, #16a34a)",
+                background: over ? "color-mix(in srgb, var(--negative) 10%, transparent)" : "var(--surface-2)",
+              }}
+              title={`${r.label}: budget $${r.budget.toFixed(2)} vs $${r.expense.toFixed(2)} (${r.variance >= 0 ? "+" : ""}$${r.variance.toFixed(2)})`}
+            >
+              {r.label}: {over ? "over" : r.budget === 0 ? "no budget" : "under"} {r.budget > 0 ? money(Math.abs(Math.round(r.variance * 100))) : ""}
+            </span>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 function useReportData(scope: Scope, memberId: string | null) {
@@ -160,9 +270,11 @@ export default function Reports() {
         <div className="stat accent"><div className="label">Runway</div><div className="value">{runwayMonths ?? "—"}</div><div className="sub">{runwayMonths !== null ? "Months of typical spending covered" : "Needs about a month of history"}</div>{yoyDeltaPct !== null && <div className="muted" style={{ fontSize: 11, marginTop: 6 }}>{yoyDeltaPct >= 0 ? "↑" : "↓"} {Math.abs(yoyDeltaPct)}% vs same months last year</div>}</div>
       </div>
 
+      {/* P0: Budget vs Actual overlay — trending budgeted vs spent */}
+      {data && <BudgetVsActualChart data={data} onNavigateBudget={() => navigate("/budget")} />}
+
       {/* Customizable canvas — vertical stack, drag-handle reorder, pretty on mobile & desktop */}
       <ReportCanvas memberId={memberId} />
-
       {/* Tail hint for mobile */}
       <div className="muted" style={{ textAlign: "center", fontSize: 11, marginTop: 18, padding: "0 12px", lineHeight: 1.5 }}>
         Tip: on mobile, use the grip to drag and the ↑↓ buttons to nudge. Each widget&apos;s <span style={{ color: "var(--ink)", fontWeight: 600 }}>⋯ → Edit</span> lets you change data slice and chart type.

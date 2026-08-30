@@ -15,7 +15,7 @@ import EmptyState from "../components/EmptyState";
 import { ExplainDrawer } from "../components/ExplainInspector";
 import PageHeader from "../components/PageHeader";
 
-type GoalFilter = "all" | "save-by-date" | "build-balance" | "debt-payoff" | "spending-cap" | "sinking-fund";
+type GoalFilter = "all" | "save-by-date" | "build-balance" | "debt-payoff" | "spending-cap" | "sinking-fund" | "needed-for-spending";
 
 const TYPE_LABELS: Record<string, string> = {
   "save-by-date": "Save by date",
@@ -23,6 +23,7 @@ const TYPE_LABELS: Record<string, string> = {
   "debt-payoff": "Pay off debt",
   "spending-cap": "Spending cap",
   "sinking-fund": "Sinking fund",
+  "needed-for-spending": "Needed for spending",
 };
 
 /// Written as what the user is saying about the goal, not as abstract levels —
@@ -39,6 +40,24 @@ const STRICTNESS_LABELS: Record<string, string> = {
   target: "A target I'm aiming for",
   none: "No real deadline",
 };
+/** Periods per year for cadence conversion. */
+export function periodFactor(period: string | null | undefined): number {
+  switch ((period ?? "monthly").trim().toLowerCase()) {
+    case "weekly":
+      return 52 / 12;
+    case "biweekly":
+    case "bi-weekly":
+      return 26 / 12;
+    default:
+      return 1;
+  }
+}
+
+export function monthlyEquivalentCents(goal: { monthlyCents: number; period?: string | null }): number {
+  if (goal.monthlyCents <= 0) return 0;
+  const rawPeriod = typeof goal.period === "string" ? goal.period : "monthly";
+  return Math.round(goal.monthlyCents * periodFactor(rawPeriod));
+}
 
 function paceLabel(goal: GoalDto) {
   // Spending caps invert the usual direction: a full bar is bad, not "ahead".
@@ -51,9 +70,7 @@ function paceLabel(goal: GoalDto) {
   }
   const remaining = goal.targetCents - goal.currentCents;
   if (remaining <= 0) return { label: "Funded", className: "chip positive" };
-  if (goal.monthlyCents <= 0) return { label: "Needs attention", className: "chip warning" };
-  // With a target date, "on track" means the projected ETA lands on or before
-  // it — not merely that the bar is nearly full.
+  if (monthlyEquivalentCents(goal) <= 0) return { label: "Needs attention", className: "chip warning" };
   if (goal.targetDate) {
     return isBehindSchedule(goal, monthsToGoal(goal))
       ? { label: "Behind", className: "chip warning" }
@@ -66,7 +83,10 @@ function GoalCard({ goal, onEdit, onExplain, linkedAccountName, onTogglePause, p
   const pct = goal.targetCents > 0 ? Math.min(100, Math.round((goal.currentCents / goal.targetCents) * 100)) : 0;
   const pace = paceLabel(goal);
   const canPause = goal.goalType !== "spending-cap" && goal.goalType !== "debt-payoff";
-  const isPaused = canPause && goal.monthlyCents === 0;
+  const isPaused = canPause && monthlyEquivalentCents(goal) === 0;
+  const required = requiredMonthly(goal);
+  const underfunded = Math.max(0, required - monthlyEquivalentCents(goal));
+  const displayMonthly = money(monthlyEquivalentCents(goal));
 
   return (
     <div className="card" style={{ padding: 22 }}>
@@ -76,25 +96,32 @@ function GoalCard({ goal, onEdit, onExplain, linkedAccountName, onTogglePause, p
             <span className="chip">{TYPE_LABELS[goal.goalType] || goal.goalType}</span>
             {canPause && pausedByUser && <span className="chip warning">Paused</span>}
             <span className={pace.className}>{pace.label}</span>
+            {underfunded > 0 && <span className="chip warning">Need {money(required)}/mo</span>}
           </div>
           <h2 className="h1" style={{ fontSize: 24 }}>{goal.name}</h2>
           <div className="muted" style={{ marginTop: 6 }}>
             {blurAmounts(
               (goal.goalType === "debt-payoff"
-                ? `Paying ${money(goal.monthlyCents)}/month`
+                ? `Paying ${displayMonthly}/month`
                 : goal.goalType === "spending-cap"
                   ? `Cap of ${money(goal.targetCents)} this month`
-                  : `Auto-moves ${money(goal.monthlyCents)}/month`) +
-                (goal.targetDate
+                  : goal.goalType === "needed-for-spending"
+                    ? `Need ${money(goal.targetCents)} by ${goal.targetDate ? formatCalendarDate(goal.targetDate, { month: "short", year: "numeric" }) : "target date"} · refills`
+                    : `Auto-moves ${displayMonthly}/month`) +
+                (goal.targetDate && goal.goalType !== "needed-for-spending"
                   ? ` · target ${formatCalendarDate(goal.targetDate, { month: "short", year: "numeric" })}`
-                  : ""),
+                  : goal.goalType === "needed-for-spending" && goal.targetDate
+                    ? ` · due ${formatCalendarDate(goal.targetDate, { month: "short", year: "numeric" })}`
+                    : !goal.targetDate && goal.goalType === "needed-for-spending"
+                      ? ` · set a due date`
+                      : ""),
             )}
           </div>
           {goal.accountId && linkedAccountName && <div className="muted" style={{ marginTop: 8 }}>Linked to {linkedAccountName}</div>}
         </div>
 
         <div>
-          <div className="eyebrow">{goal.goalType === "spending-cap" ? "This month" : "Progress"}</div>
+          <div className="eyebrow">{goal.goalType === "spending-cap" ? "This month" : goal.goalType === "needed-for-spending" ? "Available to spend" : "Progress"}</div>
           <div className={`goal-bar ${goal.goalType === "spending-cap" && goal.currentCents > goal.targetCents ? "negative" : ""}`} style={{ marginTop: 10 }}>
             <span style={{ width: `${pct}%` }} />
           </div>
@@ -122,11 +149,37 @@ function GoalCard({ goal, onEdit, onExplain, linkedAccountName, onTogglePause, p
 }
 
 function monthsToGoal(goal: GoalDto, monthlyOverrideCents?: number) {
-  const monthly = monthlyOverrideCents ?? goal.monthlyCents;
+  const monthly = monthlyOverrideCents ?? monthlyEquivalentCents(goal);
   const remaining = goal.targetCents - goal.currentCents;
   if (remaining <= 0) return 0;
   if (monthly <= 0) return Infinity;
   return Math.ceil(remaining / monthly);
+}
+
+export function monthsUntil(targetDate: string | null, now: Date = new Date()): number | null {
+  if (!targetDate) return null;
+  const target = parseCalendarDate(targetDate);
+  const today = new Date(now);
+  target.setHours(0, 0, 0, 0);
+  today.setHours(0, 0, 0, 0);
+  const diffMs = target.getTime() - today.getTime();
+  const diffDays = diffMs / (1000 * 60 * 60 * 24);
+  return Math.ceil(diffDays / 30);
+}
+
+export function requiredMonthly(goal: GoalDto, now: Date = new Date()): number {
+  if (!goal.targetDate) return 0;
+  if (goal.goalType === "spending-cap") return 0;
+  const remaining = goal.targetCents - goal.currentCents;
+  if (remaining <= 0) return 0;
+  const mu = monthsUntil(goal.targetDate, now);
+  const denom = Math.max(1, mu ?? 1);
+  return Math.ceil(remaining / denom);
+}
+
+export function underfundedCents(goal: GoalDto, now: Date = new Date()): number {
+  const required = requiredMonthly(goal, now);
+  return Math.max(0, required - monthlyEquivalentCents(goal));
 }
 
 function etaLabel(months: number) {
@@ -161,6 +214,9 @@ function isBehindSchedule(goal: GoalDto, months: number): boolean {
 }
 
 export function buildHorizonRows(goals: GoalDto[]): { rows: HorizonRow[]; windowMonths: number } {
+  // Needed-for-spending is a saving type with a refill window (targetDate ..
+  // targetDate+interval). For the simple version it participates in the horizon
+  // exactly like save-by-date; only spending-cap is excluded.
   const eligible = goals.filter((goal) => goal.goalType !== "spending-cap");
   const withEta = eligible
     .map((goal) => ({ goal, months: monthsToGoal(goal) }))
@@ -241,14 +297,18 @@ function GoalsHorizon({ goals }: { goals: GoalDto[] }) {
             const labelStyle = labelOnLeft
               ? { position: "absolute" as const, right: `calc(${100 - row.xPercent}% + 14px)`, top: "50%", transform: "translateY(-50%)", fontSize: 13, whiteSpace: "nowrap" as const, textAlign: "right" as const }
               : { position: "absolute" as const, left: `calc(${row.xPercent}% + 14px)`, top: "50%", transform: "translateY(-50%)", fontSize: 13, whiteSpace: "nowrap" as const };
+            const required = requiredMonthly(row.goal);
+            const underfunded = Math.max(0, required - row.goal.monthlyCents);
+            const tooltip = underfunded > 0 ? `Need ${money(required)}/mo to hit target` : undefined;
             return (
-              <div key={row.goal.id} style={{ position: "relative", height: 44, display: "flex", alignItems: "center" }}>
+              <div key={row.goal.id} style={{ position: "relative", height: 44, display: "flex", alignItems: "center" }} title={tooltip}>
                 <div style={{ position: "absolute", left: 0, top: "50%", width: `${row.xPercent}%`, height: 1, background: "var(--hairline)" }} />
                 <div style={{ position: "absolute", left: 0, top: "50%", width: `${(row.xPercent * row.pct) / 100}%`, height: 2, background: color }} />
                 <div style={{ position: "absolute", left: `${row.xPercent}%`, top: "50%", transform: "translate(-50%, -50%)", width: 10, height: 10, borderRadius: "50%", border: `2px solid ${color}`, background: "var(--surface)" }} />
                 <div style={labelStyle}>
                   {row.goal.name} <span className="muted mono" style={{ fontSize: 12 }}>· {etaLabel(row.months)} · <span className="blurable">{money(row.goal.targetCents)}</span></span>
                   {row.needsAttention && <span className="mono" style={{ fontSize: 12, color: "var(--negative)" }}> · Behind schedule</span>}
+                  {underfunded > 0 && <span className="mono" style={{ fontSize: 12, color: "var(--negative)" }} title={tooltip}> · Need {money(required)}/mo</span>}
                 </div>
               </div>
             );
@@ -478,23 +538,25 @@ function NewGoalForm({ onClose }: { onClose: () => void }) {
   const [goalType, setGoalType] = useState<GoalFilter>("save-by-date");
   const [target, setTarget] = useState("");
   const [monthly, setMonthly] = useState("");
+  const [period, setPeriod] = useState("monthly");
   const [targetDate, setTargetDate] = useState("");
   const [purpose, setPurpose] = useState("");
   const [accountId, setAccountId] = useState("");
   const [priority, setPriority] = useState("normal");
   const [deadlineStrictness, setDeadlineStrictness] = useState("target");
-
+  // Needed-for-spending refill window: targetDate .. targetDate+intervalMonths (default 6 for insurance example)
+  const [intervalMonths, setIntervalMonths] = useState("6");
   const submit = async () => {
     if (!name.trim() || !target) {
       toast.error("Name and target amount are required");
       return;
     }
-
-    const input: NewGoalInput = {
+    const input = {
       name: name.trim(),
       goalType,
       targetCents: Math.round(Number(target) * 100),
       monthlyCents: Math.round(Number(monthly || 0) * 100),
+      period,
       targetDate: targetDate || null,
       color: "var(--accent)",
       notes: null,
@@ -504,7 +566,7 @@ function NewGoalForm({ onClose }: { onClose: () => void }) {
       // A goal with no date is open-ended whatever the picker says, so don't
       // record a commitment the date cannot back up.
       deadlineStrictness: targetDate ? deadlineStrictness : "none",
-    };
+    } as unknown as NewGoalInput;
 
     try {
       await createGoal.mutateAsync(input);
@@ -528,13 +590,20 @@ function NewGoalForm({ onClose }: { onClose: () => void }) {
         <label className="stack stack-xs"><span className="muted">Name</span><input className="control" value={name} onChange={(e) => setName(e.target.value)} placeholder="Italy fund" /></label>
         <label className="stack stack-xs"><span className="muted">Type</span><select className="control" value={goalType} onChange={(e) => setGoalType(e.target.value as GoalFilter)}>{Object.entries(TYPE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
         <label className="stack stack-xs"><span className="muted">Target ($)</span><input className="control" type="number" value={target} onChange={(e) => setTarget(e.target.value)} /></label>
-        <label className="stack stack-xs"><span className="muted">Monthly contribution ($)</span><input className="control" type="number" value={monthly} onChange={(e) => setMonthly(e.target.value)} /></label>
+        <label className="stack stack-xs"><span className="muted">Contribution ($)</span><input className="control" type="number" value={monthly} onChange={(e) => setMonthly(e.target.value)} /></label>
+        <label className="stack stack-xs"><span className="muted">Cadence</span><select className="control" value={period} onChange={(e) => setPeriod(e.target.value)}><option value="monthly">Monthly</option><option value="weekly">Weekly</option><option value="biweekly">Biweekly</option></select></label>
         <label className="stack stack-xs"><span className="muted">Target date</span><input className="control" type="date" value={targetDate} onChange={(e) => setTargetDate(e.target.value)} /></label>
+        {goalType === "needed-for-spending" && (
+          <label className="stack stack-xs"><span className="muted">Refill every</span><select className="control" value={intervalMonths} onChange={(e) => setIntervalMonths(e.target.value)}><option value="1">Monthly</option><option value="3">Every 3 months</option><option value="6">Every 6 months</option><option value="12">Yearly</option></select></label>
+        )}
         <label className="stack stack-xs"><span className="muted">Priority</span><select className="control" value={priority} onChange={(e) => setPriority(e.target.value)}>{Object.entries(PRIORITY_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
         {/* Only meaningful with a date — an open-ended goal has no deadline to
             be strict about, and offering the choice would imply otherwise. */}
         {targetDate && (
           <label className="stack stack-xs"><span className="muted">Is that date firm?</span><select className="control" value={deadlineStrictness} onChange={(e) => setDeadlineStrictness(e.target.value)}>{Object.entries(STRICTNESS_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+        )}
+        {goalType === "needed-for-spending" && (
+          <div className="muted" style={{ gridColumn: "1 / -1", fontSize: 12, marginTop: -4 }}>Refills after the due date — e.g., insurance every {intervalMonths} months. Available to spend caps at target; spent in period reduces funded.</div>
         )}
         <label className="stack stack-xs" style={{ gridColumn: "1 / -1" }}><span className="muted">Linked account</span><select className="control" value={accountId} onChange={(e) => setAccountId(e.target.value)}><option value="">None</option>{accounts.map((account) => <option key={account.id} value={account.id}>{getAccountDisplayName(account)}</option>)}</select></label>
         <label className="stack stack-xs" style={{ gridColumn: "1 / -1" }}><span className="muted">Why this goal?</span><textarea className="control" rows={3} value={purpose} onChange={(e) => setPurpose(e.target.value)} /></label>
@@ -619,6 +688,7 @@ export default function Goals() {
         <button className={filter === "debt-payoff" ? "on" : ""} type="button" onClick={() => setFilter("debt-payoff")}>Debt payoff {counts["debt-payoff"] ?? 0}</button>
         <button className={filter === "spending-cap" ? "on" : ""} type="button" onClick={() => setFilter("spending-cap")}>Spending cap {counts["spending-cap"] ?? 0}</button>
         <button className={filter === "sinking-fund" ? "on" : ""} type="button" onClick={() => setFilter("sinking-fund")}>Sinking fund {counts["sinking-fund"] ?? 0}</button>
+        <button className={filter === "needed-for-spending" ? "on" : ""} type="button" onClick={() => setFilter("needed-for-spending")}>Needed for spending {counts["needed-for-spending"] ?? 0}</button>
       </div>}
 
       {creating && <NewGoalForm onClose={() => setCreating(false)} />}

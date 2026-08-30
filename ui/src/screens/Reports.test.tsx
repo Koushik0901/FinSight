@@ -52,14 +52,14 @@ vi.mock("../api/hooks/accounts", async () => {
 
 const REPORT_DATA = {
   monthly: [
-    { month: "2026-01", label: "Jan", incomeCents: 500000, expenseCents: 350000, netCents: 150000 },
-    { month: "2026-02", label: "Feb", incomeCents: 520000, expenseCents: 370000, netCents: 150000 },
-    { month: "2026-03", label: "Mar", incomeCents: 510000, expenseCents: 360000, netCents: 150000 },
+    { month: "2026-01", label: "Jan", incomeCents: 500000, expenseCents: 350000, netCents: 150000, budgetCents: 400000 },
+    { month: "2026-02", label: "Feb", incomeCents: 520000, expenseCents: 370000, netCents: 150000, budgetCents: 400000 },
+    { month: "2026-03", label: "Mar", incomeCents: 510000, expenseCents: 360000, netCents: 150000, budgetCents: 400000 },
   ],
   monthlyLastYear: [
-    { month: "2025-01", label: "Jan", incomeCents: 480000, expenseCents: 330000, netCents: 150000 },
-    { month: "2025-02", label: "Feb", incomeCents: 490000, expenseCents: 340000, netCents: 150000 },
-    { month: "2025-03", label: "Mar", incomeCents: 500000, expenseCents: 345000, netCents: 155000 },
+    { month: "2025-01", label: "Jan", incomeCents: 480000, expenseCents: 330000, netCents: 150000, budgetCents: 380000 },
+    { month: "2025-02", label: "Feb", incomeCents: 490000, expenseCents: 340000, netCents: 150000, budgetCents: 380000 },
+    { month: "2025-03", label: "Mar", incomeCents: 500000, expenseCents: 345000, netCents: 155000, budgetCents: 380000 },
   ],
   topCategories: [
     { categoryId: "cat-1", label: "Groceries", color: "#27ae60", totalCents: 120000, txnCount: 15 },
@@ -265,9 +265,9 @@ describe("buildReportCsv", () => {
   it("builds a CSV with monthly, category, and merchant sections using dollar amounts", () => {
     const csv = buildReportCsv(REPORT_DATA as never);
     const lines = csv.split("\n");
-    expect(lines[0]).toBe("Section,Label,Income,Expense,Net");
-    expect(lines).toContain("Monthly,Jan,5000.00,3500.00,1500.00");
-    expect(lines).toContain("Monthly,Feb,5200.00,3700.00,1500.00");
+    expect(lines[0]).toBe("Section,Label,Income,Expense,Budget,Net");
+    expect(lines).toContain("Monthly,Jan,5000.00,3500.00,4000.00,1500.00");
+    expect(lines).toContain("Monthly,Feb,5200.00,3700.00,4000.00,1500.00");
     expect(lines).toContain("Section,Category,Amount,Txns");
     expect(lines).toContain('Top category,"Groceries",1200.00,15');
     expect(lines).toContain("Section,Merchant,Amount,Txns");

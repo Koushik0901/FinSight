@@ -24,6 +24,9 @@ pub fn build_baseline(conn: &mut Connection) -> CoreResult<Snapshot> {
             name: g.name,
             remaining_cents: (g.target_cents - g.current_cents).max(0),
             monthly_cents: g.monthly_cents,
+            priority: Some(g.priority.as_db().to_string()),
+            deadline_strictness: Some(g.deadline_strictness.as_db().to_string()),
+            target_date: g.target_date,
         })
         .collect();
 

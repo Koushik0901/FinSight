@@ -9,6 +9,15 @@ import { money } from "../utils/format";
 import { getAccountDisplayName } from "../utils/accounts";
 import { formatCalendarDate } from "../utils/date";
 
+const TYPE_LABELS: Record<string, string> = {
+  "save-by-date": "Save by date",
+  "build-balance": "Build balance",
+  "debt-payoff": "Pay off debt",
+  "spending-cap": "Spending cap",
+  "sinking-fund": "Sinking fund",
+  "needed-for-spending": "Needed for spending",
+};
+
 interface Props {
   open: boolean;
   onClose: () => void;
@@ -21,12 +30,12 @@ export default function GoalDrawer({ open, onClose, goal }: Props) {
   const { data: accounts = [] } = useAccounts();
   const updatePriority = useUpdateGoalPriority();
   const [monthly, setMonthly] = useState("");
+  const [period, setPeriod] = useState("monthly");
   const [purpose, setPurpose] = useState("");
   const [priority, setPriority] = useState("normal");
   const [strictness, setStrictness] = useState("target");
   const [contribAmount, setContribAmount] = useState("");
   const [contribNote, setContribNote] = useState("");
-
   // The contribution ledger only applies to manual goals; account-linked goals
   // derive their balance from the account.
   const isManual = !!goal && !goal.accountId;
@@ -60,15 +69,16 @@ export default function GoalDrawer({ open, onClose, goal }: Props) {
   useDrawerSeed(open, goal?.id, () => {
     if (!goal) {
       setMonthly("");
+      setPeriod("monthly");
       setPurpose("");
       return;
     }
     setMonthly(String((goal.monthlyCents / 100).toFixed(2)));
+    setPeriod((goal as unknown as { period?: string }).period || "monthly");
     setPurpose(goal.purpose ?? "");
     setPriority(goal.priority || "normal");
     setStrictness(goal.deadlineStrictness || "target");
   });
-
   const linkedAccount = useMemo(
     () => accounts.find((account) => account.id === goal?.accountId) ?? null,
     [accounts, goal?.accountId]
@@ -80,11 +90,15 @@ export default function GoalDrawer({ open, onClose, goal }: Props) {
     const nextPurpose = purpose.trim();
     const currentMonthly = goal.monthlyCents / 100;
     const currentPurpose = goal.purpose ?? "";
+    const currentPeriod = (goal as unknown as { period?: string }).period || "monthly";
 
     try {
       const tasks: Promise<unknown>[] = [];
-      if (Number.isFinite(nextMonthly) && nextMonthly !== currentMonthly) {
-        tasks.push(updateMonthly.mutateAsync({ id: goal.id, monthlyCents: Math.round(nextMonthly * 100) }));
+      const monthlyChanged = Number.isFinite(nextMonthly) && nextMonthly !== currentMonthly;
+      const periodChanged = period !== currentPeriod;
+      if (monthlyChanged || periodChanged) {
+        const cents = Number.isFinite(nextMonthly) ? Math.round(nextMonthly * 100) : goal.monthlyCents;
+        tasks.push(updateMonthly.mutateAsync({ id: goal.id, monthlyCents: cents, period }));
       }
       if (nextPurpose !== currentPurpose) {
         tasks.push(updatePurpose.mutateAsync({ id: goal.id, purpose: nextPurpose || null }));
@@ -122,12 +136,16 @@ export default function GoalDrawer({ open, onClose, goal }: Props) {
         <div className="drawer-form">
           <div className="card tight" style={{ padding: 16, background: "var(--surface-2)" }}>
             <div className="row row-sm wrap" style={{ marginBottom: 10 }}>
-              <span className="chip">{goal.goalType}</span>
+              <span className="chip">{TYPE_LABELS[goal.goalType] || goal.goalType}</span>
+              {goal.goalType === "needed-for-spending" && <span className="chip accent">Refills</span>}
               {goal.targetDate && <span className="chip">Target {formatCalendarDate(goal.targetDate, { month: "short", year: "numeric" })}</span>}
             </div>
             <div className="muted">{goal.targetCents > 0 ? `Goal size ${money(goal.targetCents)}` : "No target amount"}</div>
             <div className="muted" style={{ marginTop: 4 }}>{goal.currentCents > 0 ? `Current balance ${money(goal.currentCents)}` : "No current balance recorded"}</div>
             {linkedAccount && <div className="muted" style={{ marginTop: 4 }}>Linked account: {getAccountDisplayName(linkedAccount)}</div>}
+            {goal.goalType === "needed-for-spending" && (
+              <div className="muted" style={{ marginTop: 8, fontSize: 12 }}>Needed for spending — tracks funded (contributions + balance) minus spent in period. After the due date it refills for the next period (default every 6 months). Available caps at target.</div>
+            )}
           </div>
 
           {isManual && (
@@ -164,9 +182,24 @@ export default function GoalDrawer({ open, onClose, goal }: Props) {
           )}
 
           <label>
-            Monthly contribution ($)
+            Contribution ($)
             <input type="number" step="0.01" value={monthly} onChange={(e) => setMonthly(e.target.value)} />
           </label>
+
+          <label>
+            Cadence
+            <select value={period} onChange={(e) => setPeriod(e.target.value)}>
+              <option value="monthly">Monthly</option>
+              <option value="weekly">Weekly</option>
+              <option value="biweekly">Biweekly</option>
+            </select>
+          </label>
+          {/* Weekly/biweekly contributions are converted to monthly equivalent (weekly ×52/12, biweekly ×26/12) for ETAs and budgeting. */}
+          {period !== "monthly" && monthly && Number(monthly) > 0 && (
+            <p className="muted" style={{ fontSize: 12, marginTop: -8 }}>
+              ≈ {money(Math.round(Number(monthly) * 100 * (period === "weekly" ? 52 / 12 : 26 / 12)))}/mo
+            </p>
+          )}
 
           <label>
             Priority

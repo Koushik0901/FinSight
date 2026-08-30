@@ -36,7 +36,7 @@ use utoipa::ToSchema;
 
 pub const DEFAULT_HORIZON_DAYS: i64 = 30;
 const MIN_HORIZON_DAYS: i64 = 7;
-const MAX_HORIZON_DAYS: i64 = 90;
+const MAX_HORIZON_DAYS: i64 = 180;
 /// Detection window for recurring items — over a year, so annual bills that
 /// haven't recurred inside the horizon are still known and can be flagged.
 const RECURRING_WINDOW_DAYS: i64 = 400;
@@ -133,6 +133,29 @@ pub struct CashflowForecast {
     /// False when there's too little history (or no known balance) for the
     /// forecast to be trusted as precise. Consumers must say so, not imply rigor.
     pub reliable: bool,
+    /// Bills/subscriptions detected but not feeding the projection (low confidence
+    /// or irregular cadence) — surfaced so the user can force-include them via
+    /// the checkbox list. They are not counted until the user opts in.
+    #[serde(default)]
+    pub overlooked_candidates: Vec<OverlookedBill>,
+}
+
+/// A detected bill/subscription that is currently excluded from the projection
+/// but can be force-included by the user. This is the "overlooked bill"
+/// surface — low-confidence or irregular bills the detector found but the
+/// projection gate (`is_projection_obligation`) left out so safe-to-spend
+/// wouldn't be quietly moved by a weak signal. The user opts in per bill;
+/// `build_forecast` then treats it as a dated obligation.
+#[derive(Debug, Clone, PartialEq, Serialize, Type, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct OverlookedBill {
+    pub merchant_key: String,
+    pub label: String,
+    pub amount_cents: i64,
+    pub kind: CashflowEventKind,
+    pub confidence: f64,
+    pub next_expected: Option<String>,
+    pub cadence: String,
 }
 
 /// Temporary what-if overlay: a user-chosen safety buffer plus an optional
@@ -224,6 +247,7 @@ fn project(
         upcoming_events: upcoming,
         warnings: Vec::new(),
         reliable: true,
+        overlooked_candidates: Vec::new(),
     }
 }
 
@@ -280,13 +304,16 @@ fn covered_by_planned(
 /// Build the daily cash-flow forecast from the user's real data plus an optional
 /// what-if overlay. Assembles dated events (recurring income/bills/subs rolled
 /// forward + planned transactions), computes the residual smooth burn, then
-/// hands everything to the pure [`project`].
+/// hands everything to the pure [`project`]. `include_merchant_keys` force-includes
+/// overlooked bills (low-confidence bills/subs normally gated by
+/// `is_projection_obligation`) as dated events inside the horizon — the
+/// checkbox list in the Cashflow screen feeds this.
 pub fn build_forecast(
     conn: &mut Connection,
     horizon_days: i64,
     whatif: &WhatIf,
+    include_merchant_keys: &[String],
 ) -> CoreResult<CashflowForecast> {
-    let horizon = horizon_days.clamp(MIN_HORIZON_DAYS, MAX_HORIZON_DAYS);
     let as_of = chrono::Utc::now().date_naive();
     let horizon_end = as_of + Duration::days(horizon);
 
@@ -320,9 +347,6 @@ pub fn build_forecast(
     let mut warnings: Vec<CashflowWarning> = Vec::new();
 
     // Sum of the monthly-equivalent of the DATED obligations, so the smooth burn
-    // can subtract them and they aren't counted twice.
-    let mut dated_obligation_monthly: i64 = 0;
-
     for item in &items {
         let Some(next) = item
             .next_expected
@@ -332,23 +356,33 @@ pub fn build_forecast(
             continue;
         };
         let gap = item.avg_gap_days.round() as i64;
+        let forced = include_merchant_keys.contains(&item.merchant_key);
 
-        let (kind, include) = match item.kind {
-            RecurringKind::Income
-                if item.confidence >= recurring::PROJECTION_CONFIDENCE_THRESHOLD =>
-            {
-                (CashflowEventKind::Income, true)
-            }
-            RecurringKind::Bill if item.is_projection_obligation() => {
-                (CashflowEventKind::Bill, true)
-            }
-            RecurringKind::Subscription if item.is_projection_obligation() => {
-                (CashflowEventKind::Subscription, true)
-            }
-            // Transfers (internal / card payments) and irregular repeat purchases
-            // are never projected as dated events — the latter feed the smooth burn.
-            _ => (CashflowEventKind::Bill, false),
-        };
+        let (kind, include) =
+            if forced && matches!(item.kind, RecurringKind::Bill | RecurringKind::Subscription) {
+                let k = match item.kind {
+                    RecurringKind::Subscription => CashflowEventKind::Subscription,
+                    _ => CashflowEventKind::Bill,
+                };
+                (k, true)
+            } else {
+                match item.kind {
+                    RecurringKind::Income
+                        if item.confidence >= recurring::PROJECTION_CONFIDENCE_THRESHOLD =>
+                    {
+                        (CashflowEventKind::Income, true)
+                    }
+                    RecurringKind::Bill if item.is_projection_obligation() => {
+                        (CashflowEventKind::Bill, true)
+                    }
+                    RecurringKind::Subscription if item.is_projection_obligation() => {
+                        (CashflowEventKind::Subscription, true)
+                    }
+                    // Transfers (internal / card payments) and irregular repeat purchases
+                    // are never projected as dated events — the latter feed the smooth burn.
+                    _ => (CashflowEventKind::Bill, false),
+                }
+            };
         if !include {
             near_horizon_warning(item, next, gap, horizon_end, &mut warnings);
             continue;
@@ -474,8 +508,38 @@ pub fn build_forecast(
         });
     }
 
+    // Overlooked bills for the force-include checklist: detected bill/subscription
+    // items not currently feeding the projection (low confidence / irregular).
+    let mut overlooked_candidates: Vec<OverlookedBill> = Vec::new();
+    for item in &items {
+        if !matches!(item.kind, RecurringKind::Bill | RecurringKind::Subscription) {
+            continue;
+        }
+        if item.is_projection_obligation() {
+            continue;
+        }
+        if item.last_amount_cents >= 0 {
+            continue;
+        }
+        let kind = match item.kind {
+            RecurringKind::Subscription => CashflowEventKind::Subscription,
+            _ => CashflowEventKind::Bill,
+        };
+        overlooked_candidates.push(OverlookedBill {
+            merchant_key: item.merchant_key.clone(),
+            label: item.display_merchant.clone(),
+            amount_cents: item.last_amount_cents,
+            kind,
+            confidence: item.confidence,
+            next_expected: item.next_expected.clone(),
+            cadence: item.cadence.clone(),
+        });
+    }
+    overlooked_candidates.sort_by(|a, b| a.label.cmp(&b.label));
+
     forecast.warnings = warnings;
     forecast.reliable = reliable;
+    forecast.overlooked_candidates = overlooked_candidates;
     Ok(forecast)
 }
 
@@ -639,7 +703,7 @@ mod tests {
         .unwrap();
         assert_eq!(planned.status, "planned");
 
-        let forecast = build_forecast(&mut conn, 30, &WhatIf::default()).unwrap();
+        let forecast = build_forecast(&mut conn, 30, &WhatIf::default(), &[]).unwrap();
         assert!(forecast.upcoming_events.iter().any(|event| {
             event.kind == CashflowEventKind::Planned
                 && event.label == "Rent deposit"
@@ -747,7 +811,7 @@ mod tests {
             true,
         );
 
-        let f = build_forecast(&mut conn, 30, &WhatIf::default()).unwrap();
+        let f = build_forecast(&mut conn, 30, &WhatIf::default(), &[]).unwrap();
 
         // (a) The smooth burn equals conservative expense minus the dated obligations'
         // monthly equivalent — so the bill is counted once, on its date, not also
@@ -799,7 +863,7 @@ mod tests {
 
         // (d) With a 7-day horizon the bill (due ~25 days out) is beyond the
         // window, so it must be disclosed as a heads-up rather than ignored.
-        let short = build_forecast(&mut conn, 7, &WhatIf::default()).unwrap();
+        let short = build_forecast(&mut conn, 7, &WhatIf::default(), &[]).unwrap();
         assert!(
             short
                 .warnings
@@ -837,7 +901,7 @@ mod tests {
             -12_000,
             false,
         );
-        let burn_before = build_forecast(&mut conn, 30, &WhatIf::default())
+        let burn_before = build_forecast(&mut conn, 30, &WhatIf::default(), &[])
             .unwrap()
             .daily_burn_cents;
         assert!(burn_before > 0);
@@ -853,7 +917,7 @@ mod tests {
             -60_000,
             false,
         );
-        let burn_after = build_forecast(&mut conn, 30, &WhatIf::default())
+        let burn_after = build_forecast(&mut conn, 30, &WhatIf::default(), &[])
             .unwrap()
             .daily_burn_cents;
 
@@ -905,7 +969,7 @@ mod tests {
             conservative,
             recent_mean
         );
-        let f = build_forecast(&mut conn, 30, &WhatIf::default()).unwrap();
+        let f = build_forecast(&mut conn, 30, &WhatIf::default(), &[]).unwrap();
         let obligations_monthly: i64 =
             recurring::projection_obligations(&conn, RECURRING_WINDOW_DAYS)
                 .unwrap()

@@ -169,6 +169,17 @@ fn validate_month(month: i32) -> Result<(), finsight_core::CoreError> {
     }
 }
 
+/// Soft-lock check: returns true when `month` ("YYYY-MM") has a completed
+/// close. Callers (set_budget, add_contribution) must surface a drift warning
+/// and require an explicit Reopen before retrying — the lock is advisory, not
+/// a hard reject, so the message must guide the Reopen flow.
+pub fn is_locked(
+    conn: &rusqlite::Connection,
+    month: &str,
+) -> Result<bool, finsight_core::CoreError> {
+    finsight_core::repos::month_close::is_locked(conn, month)
+}
+
 /// Compute the month's snapshot from live data. Degrades safely: a sparse month
 /// with no budgets, goals, or debt yields zeros and empty lists, never an error.
 fn compute_snapshot(

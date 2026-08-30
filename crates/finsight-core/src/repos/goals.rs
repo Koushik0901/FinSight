@@ -82,6 +82,56 @@ impl DeadlineStrictness {
     }
 }
 
+/// Cadence of the contribution amount stored in `monthly_cents`.
+///
+/// The canonical example is a paycheck cadence: a user paid weekly who enters
+/// "$100" means $100/week, whose monthly equivalent is $100 * 52/12. Before
+/// this existed every goal assumed "monthly", so that same entry was modeled
+/// as $100/month — ~4× too slow.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GoalPeriod {
+    Monthly,
+    Weekly,
+    Biweekly,
+}
+
+impl GoalPeriod {
+    pub fn from_db(raw: &str) -> Self {
+        match raw.trim().to_ascii_lowercase().as_str() {
+            "weekly" => Self::Weekly,
+            "biweekly" | "bi-weekly" => Self::Biweekly,
+            _ => Self::Monthly,
+        }
+    }
+
+    pub fn as_db(self) -> &'static str {
+        match self {
+            Self::Weekly => "weekly",
+            Self::Biweekly => "biweekly",
+            Self::Monthly => "monthly",
+        }
+    }
+
+    pub fn periods_per_year(self) -> u32 {
+        match self {
+            Self::Weekly => 52,
+            Self::Biweekly => 26,
+            Self::Monthly => 12,
+        }
+    }
+
+    /// Monthly equivalent of a per-period amount. Mirrors
+    /// `finsight_agent::finance::calculate_goal_eta`'s
+    /// `(amount * periods_per_year / 12).round()` so the same $100/week is
+    /// $433/month everywhere it is budgeted.
+    pub fn monthly_equivalent_cents(self, amount_cents: i64) -> i64 {
+        if amount_cents <= 0 {
+            return 0;
+        }
+        ((amount_cents as f64 * self.periods_per_year() as f64) / 12.0).round() as i64
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Goal {
     pub id: String,
@@ -99,8 +149,8 @@ pub struct Goal {
     pub account_id: Option<String>,
     pub priority: GoalPriority,
     pub deadline_strictness: DeadlineStrictness,
+    pub period: GoalPeriod,
 }
-
 impl Goal {
     /// What the deadline actually means, reconciling the stored strictness with
     /// whether a date exists at all.
@@ -114,6 +164,15 @@ impl Goal {
             None | Some("") => DeadlineStrictness::None,
             Some(_) => self.deadline_strictness,
         }
+    }
+
+    /// Monthly equivalent of the stored per-period contribution.
+    ///
+    /// The stored `monthly_cents` is the amount per `period`; the monthly
+    /// equivalent is what every projection divides by. For `monthly` the two
+    /// coincide, so existing rows keep exact prior behaviour.
+    pub fn monthly_equivalent_cents(&self) -> i64 {
+        self.period.monthly_equivalent_cents(self.monthly_cents)
     }
 
     /// Ordering key for "what should I fund first": priority, then whether the
@@ -146,6 +205,7 @@ pub struct NewGoal {
     /// does not care about priority does not have to think about it.
     pub priority: Option<GoalPriority>,
     pub deadline_strictness: Option<DeadlineStrictness>,
+    pub period: Option<GoalPeriod>,
 }
 
 // `GoalPatch` used to live here. It was dead — declared, never constructed,
@@ -159,7 +219,7 @@ pub fn list(conn: &mut Connection) -> CoreResult<Vec<Goal>> {
     let mut stmt = conn.prepare(
         "SELECT id, name, type, target_cents, current_cents, monthly_cents, \
                 target_date, color, notes, purpose, sort_order, created_at, \
-                account_id, priority, deadline_strictness \
+                account_id, priority, deadline_strictness, period \
          FROM goals WHERE archived_at IS NULL ORDER BY sort_order, created_at",
     )?;
     let rows = stmt.query_map([], |r| {
@@ -179,6 +239,7 @@ pub fn list(conn: &mut Connection) -> CoreResult<Vec<Goal>> {
             account_id: r.get(12)?,
             priority: GoalPriority::from_db(&r.get::<_, String>(13)?),
             deadline_strictness: DeadlineStrictness::from_db(&r.get::<_, String>(14)?),
+            period: GoalPeriod::from_db(&r.get::<_, String>(15)?),
         })
     })?;
     let mut out = Vec::new();
@@ -187,12 +248,11 @@ pub fn list(conn: &mut Connection) -> CoreResult<Vec<Goal>> {
     }
     Ok(out)
 }
-
 pub fn get_by_id(conn: &mut Connection, id: &str) -> CoreResult<Goal> {
     let mut stmt = conn.prepare(
         "SELECT id, name, type, target_cents, current_cents, monthly_cents, \
                 target_date, color, notes, purpose, sort_order, created_at, \
-                account_id, priority, deadline_strictness \
+                account_id, priority, deadline_strictness, period \
          FROM goals WHERE id = ?1 AND archived_at IS NULL",
     )?;
     let mut rows = stmt.query_map(params![id], |r| {
@@ -212,21 +272,21 @@ pub fn get_by_id(conn: &mut Connection, id: &str) -> CoreResult<Goal> {
             account_id: r.get(12)?,
             priority: GoalPriority::from_db(&r.get::<_, String>(13)?),
             deadline_strictness: DeadlineStrictness::from_db(&r.get::<_, String>(14)?),
+            period: GoalPeriod::from_db(&r.get::<_, String>(15)?),
         })
     })?;
     rows.next()
         .transpose()?
         .ok_or_else(|| rusqlite::Error::QueryReturnedNoRows.into())
 }
-
 pub fn insert(conn: &mut Connection, g: NewGoal) -> CoreResult<Goal> {
     let id = Uuid::new_v4().to_string();
     let now = Utc::now().to_rfc3339();
     conn.execute(
         "INSERT INTO goals(id, name, type, target_cents, current_cents, monthly_cents, \
                            target_date, color, notes, purpose, sort_order, created_at, \
-                           account_id, priority, deadline_strictness)
-         VALUES(?1, ?2, ?3, ?4, 0, ?5, ?6, ?7, ?8, ?9, 0, ?10, ?11, ?12, ?13)",
+                           account_id, priority, deadline_strictness, period)
+         VALUES(?1, ?2, ?3, ?4, 0, ?5, ?6, ?7, ?8, ?9, 0, ?10, ?11, ?12, ?13, ?14)",
         params![
             id,
             g.name,
@@ -242,7 +302,8 @@ pub fn insert(conn: &mut Connection, g: NewGoal) -> CoreResult<Goal> {
             g.priority.unwrap_or(GoalPriority::Normal).as_db(),
             g.deadline_strictness
                 .unwrap_or(DeadlineStrictness::Target)
-                .as_db()
+                .as_db(),
+            g.period.unwrap_or(GoalPeriod::Monthly).as_db()
         ],
     )?;
     let goal = Goal {
@@ -261,6 +322,7 @@ pub fn insert(conn: &mut Connection, g: NewGoal) -> CoreResult<Goal> {
         account_id: g.account_id,
         priority: g.priority.unwrap_or(GoalPriority::Normal),
         deadline_strictness: g.deadline_strictness.unwrap_or(DeadlineStrictness::Target),
+        period: g.period.unwrap_or(GoalPeriod::Monthly),
     };
 
     if let Some(account_id) = goal.account_id.as_deref() {
@@ -417,11 +479,31 @@ pub fn archive(conn: &mut Connection, id: &str) -> CoreResult<()> {
     )?;
     Ok(())
 }
-
 pub fn set_monthly_cents(conn: &mut Connection, id: &str, monthly_cents: i64) -> CoreResult<()> {
     conn.execute(
         "UPDATE goals SET monthly_cents = ?1 WHERE id = ?2",
         params![monthly_cents, id],
+    )?;
+    Ok(())
+}
+
+pub fn set_period(conn: &mut Connection, id: &str, period: GoalPeriod) -> CoreResult<()> {
+    conn.execute(
+        "UPDATE goals SET period = ?1 WHERE id = ?2",
+        params![period.as_db(), id],
+    )?;
+    Ok(())
+}
+
+pub fn set_monthly_cents_and_period(
+    conn: &mut Connection,
+    id: &str,
+    monthly_cents: i64,
+    period: GoalPeriod,
+) -> CoreResult<()> {
+    conn.execute(
+        "UPDATE goals SET monthly_cents = ?1, period = ?2 WHERE id = ?3",
+        params![monthly_cents, period.as_db(), id],
     )?;
     Ok(())
 }

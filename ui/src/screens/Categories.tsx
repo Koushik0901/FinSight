@@ -14,6 +14,7 @@ import {
   useCategoryGroups,
   useCreateCategoryGroup,
   useSetCategoryGroup,
+  useSetCategoryRollover,
 } from "../api/hooks/transactions";
 import type { CategoryWithSpending } from "../api/openapiClient";
 import { money } from "../utils/format";
@@ -60,6 +61,7 @@ export default function Categories() {
   const { data: groups = [] } = useCategoryGroups();
   const createGroup = useCreateCategoryGroup();
   const setCategoryGroup = useSetCategoryGroup();
+  const setCategoryRollover = useSetCategoryRollover();
   const [savingId, setSavingId] = useState<string | null>(null);
   const [openColorId, setOpenColorId] = useState<string | null>(null);
   const [manageId, setManageId] = useState<string | null>(null);
@@ -386,6 +388,47 @@ export default function Categories() {
                       >
                         {groups.map((g) => <option key={g.id} value={g.id}>{g.label}</option>)}
                       </select>
+                      <label className="eyebrow" style={{ marginTop: 12, display: "block" }}>Rollover</label>
+                      <label
+                        htmlFor={`rollover-${category.id}`}
+                        className="row row-sm"
+                        style={{
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          gap: 12,
+                          padding: "10px 12px",
+                          borderRadius: 8,
+                          border: "1px solid var(--line)",
+                          background: "var(--surface)",
+                          cursor: "pointer",
+                        }}
+                      >
+                        <span>
+                          <span style={{ fontSize: 13, fontWeight: 600 }}>Rollover unspent</span>
+                          <span className="muted" style={{ display: "block", fontSize: 12, marginTop: 2 }}>
+                            {category.rolloverEnabled ? "Unspent rolls into next month" : "Resets to zero each month"}
+                          </span>
+                        </span>
+                        <input
+                          id={`rollover-${category.id}`}
+                          type="checkbox"
+                          role="switch"
+                          aria-label={`Rollover for ${category.label}`}
+                          aria-checked={category.rolloverEnabled}
+                          checked={category.rolloverEnabled}
+                          disabled={setCategoryRollover.isPending}
+                          onChange={async (e) => {
+                            const next = e.target.checked;
+                            try {
+                              await setCategoryRollover.mutateAsync({ id: category.id, rolloverEnabled: next });
+                              toast.success(next ? "Rollover enabled" : "Rollover disabled — envelope will reset monthly");
+                            } catch {
+                              toast.error("Could not update rollover");
+                            }
+                          }}
+                          style={{ width: 44, height: 24, accentColor: "var(--accent)" }}
+                        />
+                      </label>
                       <label className="eyebrow" htmlFor={`guidance-${category.id}`} style={{ marginTop: 8 }}>Categorizer &amp; Copilot guidance</label>
                       <div className="muted" style={{ fontSize: 12 }}>Tell the AI when to use this category — merchant hints, exclusions, intent. The categorizer and Copilot follow it.</div>
                       <textarea id={`guidance-${category.id}`} className="control" rows={3} value={guidanceDraft} onChange={(e) => setGuidanceDraft(e.target.value)} placeholder="e.g. Use for coffee shops and cafés; exclude grocery stores and restaurants." style={{ width: "100%", resize: "vertical" }} />

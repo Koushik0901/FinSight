@@ -15,6 +15,7 @@ export const COMMAND_NAMES = [
   "list_category_groups",
   "create_category_group",
   "set_category_group",
+  "set_category_rollover",
   "add_category_example",
   "remove_category_example",
   "list_category_examples",

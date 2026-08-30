@@ -3,10 +3,21 @@ import {
   usePlanNextMonthData,
   useApplyNextMonthPlan,
   useUpdateGoalMonthly,
+  useSetHold,
 } from "../api/hooks/budget";
 import { type CategoryPlanRow, type PlanAssignment } from "../api/openapiClient";
 import { toast } from "sonner";
 import { money } from "../utils/format";
+
+/** Next month "YYYY-MM" in UTC — must match backend's `Utc::now()` month math in `apply_next_month_plan`. */
+function nextMonthStr(): string {
+  const now = new Date();
+  const y = now.getUTCFullYear();
+  const m = now.getUTCMonth() + 1; // 1-12
+  const ny = m === 12 ? y + 1 : y;
+  const nm = m === 12 ? 1 : m + 1;
+  return `${ny}-${String(nm).padStart(2, "0")}`;
+}
 
 interface Props {
   onClose: () => void;
@@ -42,6 +53,7 @@ export default function PlanNextMonthModal({ onClose }: Props) {
   const { data, isLoading } = usePlanNextMonthData();
   const apply = useApplyNextMonthPlan();
   const updateGoalMonthly = useUpdateGoalMonthly();
+  const setHold = useSetHold();
   const [step, setStepRaw] = useState(0);
   const [reachedSteps, setReachedSteps] = useState<Set<number>>(new Set([0]));
   // Category budget assignments: categoryId → cents.
@@ -85,8 +97,16 @@ export default function PlanNextMonthModal({ onClose }: Props) {
     .reduce((sum, c) => sum + (assignments[c.categoryId] ?? c.budgetCents ?? 0), 0);
   const sinkingTotal = Object.values(sinkingAssignments).reduce((sum, v) => sum + v, 0);
   const goalTotal = Object.values(goalAssignments).reduce((sum, v) => sum + v, 0);
-  const planned = fixedTotal + sinkingTotal + buffer + goalTotal;
-  const remainingCents = data.incomeCents - planned;
+  // Preview reuses `available_funds` logic from `crates/finsight-core/src/repos/budgets.rs`:
+  //   available_funds(month) = income - budgeted - hold_current + hold_prev
+  // For the wizard, `budgeted` is the sum of category + sinking + goal allocations for next month,
+  // `hold_current` is the buffer parked for next month, and `hold_prev` is 0 in the fresh preview
+  // (no prior hold has rolled forward yet). Thus `remainingCents` doubles as next month's
+  // `available_funds` preview after the hold is persisted.
+  const totalAllocated = fixedTotal + sinkingTotal + goalTotal;
+  const holdPrev = 0;
+  const availableFundsPreview = data.incomeCents - totalAllocated - buffer + holdPrev;
+  const remainingCents = availableFundsPreview;
 
   const handleApply = async () => {
     const categoryAssignments: PlanAssignment[] = Object.entries(assignments)
@@ -97,6 +117,12 @@ export default function PlanNextMonthModal({ onClose }: Props) {
       const monthlyUpdates = [...Object.entries(sinkingAssignments), ...Object.entries(goalAssignments)];
       for (const [id, monthlyCents] of monthlyUpdates) {
         await updateGoalMonthly.mutateAsync({ id, monthlyCents });
+      }
+      // Buffer is not ephemeral wizard state — persist as a Hold for next month so it
+      // appears as `available_funds` in the following month (Actual's "Hold for Next Month").
+      if (buffer > 0) {
+        const nextMonth = nextMonthStr();
+        await setHold.mutateAsync({ month: nextMonth, amountCents: buffer });
       }
       toast.success("Next month's budget applied!");
       onClose();

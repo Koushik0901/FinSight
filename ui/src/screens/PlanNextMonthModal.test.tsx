@@ -5,11 +5,13 @@ import { createWrapper } from "../test-utils";
 
 const applyMutate = vi.fn();
 const updateGoalMonthlyMutate = vi.fn();
+const setHoldMutate = vi.fn();
 
 vi.mock("../api/hooks/budget", () => ({
   usePlanNextMonthData: vi.fn(() => ({ data: undefined, isLoading: true })),
   useApplyNextMonthPlan: vi.fn(() => ({ mutateAsync: applyMutate, isPending: false })),
   useUpdateGoalMonthly: vi.fn(() => ({ mutateAsync: updateGoalMonthlyMutate, isPending: false })),
+  useSetHold: vi.fn(() => ({ mutateAsync: setHoldMutate, isPending: false })),
   useBudgetEnvelopes: vi.fn(() => ({ data: [] })),
   useBudgetHistory: vi.fn(() => ({ data: [] })),
 }));
@@ -74,6 +76,10 @@ describe("PlanNextMonthModal", () => {
       mutateAsync: updateGoalMonthlyMutate,
       isPending: false,
     } as unknown as ReturnType<typeof budget.useUpdateGoalMonthly>);
+    vi.mocked(budget.useSetHold).mockReturnValue({
+      mutateAsync: setHoldMutate,
+      isPending: false,
+    } as unknown as ReturnType<typeof budget.useSetHold>);
   });
 
   it("renders the Look back step by default", () => {

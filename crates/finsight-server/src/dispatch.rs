@@ -283,13 +283,12 @@ rpc_routes!(api, events, cmd, p, c:
         },
         "get_uncelebrated_milestones" => ok(c::assets::get_uncelebrated_milestones(api).await?),
 
-        // ── budget ──
-        "list_budget_envelopes" => ok(c::budget::list_budget_envelopes(api).await?),
+        "list_budget_envelopes" => ok(c::budget::list_budget_envelopes(api, arg(&p, "month")?).await?),
         "list_member_budget_envelopes" => {
             ok(c::budget::list_member_budget_envelopes(api, arg(&p, "memberId")?).await?)
         },
         "set_budget" => {
-            ok(c::budget::set_budget(api, arg(&p, "categoryId")?, arg(&p, "amountCents")?).await?)
+            ok(c::budget::set_budget(api, arg(&p, "categoryId")?, arg(&p, "amountCents")?, arg::<Option<bool>>(&p, "allowOverAssign")?, arg(&p, "month")?).await?)
         },
         "get_hold" => ok(c::budget::get_hold(api, arg(&p, "month")?).await?),
         "set_hold" => {
@@ -407,7 +406,12 @@ rpc_routes!(api, events, cmd, p, c:
                     .await?,
             )
         },
-
+        "set_category_rollover" => {
+            ok(
+                c::categories::set_category_rollover(api, arg(&p, "id")?, arg(&p, "rolloverEnabled")?)
+                    .await?,
+            )
+        },
         // ── category examples (#91) ──
         "add_category_example" => ok(c::category_examples::add_category_example(
             api,
@@ -633,6 +637,7 @@ rpc_routes!(api, events, cmd, p, c:
             arg(&p, "bufferCents")?,
             arg(&p, "extraExpenseCents")?,
             arg(&p, "extraExpenseDate")?,
+            arg(&p, "includeMerchantKeys")?,
         )
         .await?),
         "household_net_worth_breakdown" => {

@@ -8,6 +8,8 @@ export interface CashflowParams {
   bufferCents: number;
   /** Hypothetical one-off spend to test; 0 = none. */
   extraExpenseCents: number;
+  /** Merchant keys of overlooked bills the user has opted to force-include. */
+  includeMerchantKeys?: string[];
 }
 
 /**
@@ -17,14 +19,16 @@ export interface CashflowParams {
  * changing them just refetches a fresh projection.
  */
 export function useCashflowForecast(params: CashflowParams) {
+  const keys = params.includeMerchantKeys ?? [];
   return useQuery<CashflowForecast>({
-    queryKey: ["cashflow-forecast", params.horizonDays, params.bufferCents, params.extraExpenseCents],
+    queryKey: ["cashflow-forecast", params.horizonDays, params.bufferCents, params.extraExpenseCents, keys.join(",")],
     queryFn: async () => {
       return unwrap(api.getCashflowForecast(
         params.horizonDays,
         params.bufferCents,
         params.extraExpenseCents > 0 ? params.extraExpenseCents : null,
         null,
+        keys.length > 0 ? keys : null,
       ));
     },
     staleTime: 30_000,

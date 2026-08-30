@@ -390,7 +390,7 @@ pub fn get_safe_to_spend() -> Arc<dyn Tool> {
                 extra_expense_date: None,
                 extra_expense_label: None,
             };
-            let f = cashflow::build_forecast(ctx.conn, horizon, &whatif)
+            let f = cashflow::build_forecast(ctx.conn, horizon, &whatif, &[])
                 .map_err(|e| anyhow::anyhow!(e.to_string()))?;
             // Summarize (omit the full daily array): the decision-driving figures,
             // the dated events, and the caveats.

@@ -82,7 +82,11 @@ fn custom_report_splits_by_payee_and_month() {
     )
     .unwrap();
     assert_eq!(r.rows.len(), 2, "expected 2 payee rows, got {:?}", r.rows);
-    assert!(r.rows.iter().any(|row| row.label == "Groceries"));
+    // Payee now groups by canonical_merchant_key (lowercased, deduped) rather than raw.
+    assert!(r
+        .rows
+        .iter()
+        .any(|row| row.label.to_lowercase() == "groceries"));
 }
 
 #[test]

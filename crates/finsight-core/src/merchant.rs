@@ -138,6 +138,41 @@ pub fn subscription_vendor_hint(normalized: &str) -> Option<&'static str> {
     VENDORS.iter().copied().find(|v| normalized.contains(v))
 }
 
+/// Fee / penalty / surcharge vendors whose charges are "fees" — bank fees,
+/// overdraft/NSF, ATM, late/annual surcharges. This is reference vocabulary
+/// for fee detection, not a subscription/bill list. Matching is token-based
+/// (word boundaries) so "fee" does not match inside "coffee".
+pub fn fee_vendor_hint(normalized: &str) -> Option<&'static str> {
+    const HINTS: &[&str] = &[
+        "fee",
+        "nsf",
+        "overdraft",
+        "atm",
+        "surcharge",
+        "late",
+        "annual",
+    ];
+    // Tokenize on non-alphanumeric boundaries and match whole tokens only.
+    // This keeps "coffee" (one token) from matching "fee".
+    let tokens: Vec<&str> = normalized
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|t| !t.is_empty())
+        .collect();
+    for hint in HINTS {
+        if tokens.iter().any(|t| *t == *hint) {
+            return Some(hint);
+        }
+    }
+    None
+}
+
+/// True when a descriptor looks like a fee/penalty — vocabulary, not a vendor
+/// list. Convenience wrapper over [`fee_vendor_hint`] for callers that only
+/// need a boolean.
+pub fn is_fee_like(descriptor_lower: &str) -> bool {
+    fee_vendor_hint(descriptor_lower).is_some()
+}
+
 /// Telecom / utility vendors whose recurring charges are *bills* (regular,
 /// sometimes larger, sometimes variable within a band).
 pub fn bill_vendor_hint(normalized: &str) -> Option<&'static str> {

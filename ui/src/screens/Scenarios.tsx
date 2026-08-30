@@ -392,6 +392,7 @@ function RevisePanel({
   const [incomePct, setIncomePct] = useState(base?.incomeDeltaPct ?? 0);
   const [expenseDollars, setExpenseDollars] = useState((base?.monthlyExpenseDeltaCents ?? 0) / 100);
   const [oneTimeDollars, setOneTimeDollars] = useState((base?.oneTimeCents ?? 0) / 100);
+  const [startOffset, setStartOffset] = useState(base?.startMonthOffset ?? 0);
 
   const current = scenario.currentResult ?? scenario.originalResult;
   const revised = scenario.revisedResult;
@@ -403,13 +404,15 @@ function RevisePanel({
     orig && o !== r ? <span style={{ color: "var(--ink-faint)" }}> · was {o}%</span> : null;
   const wasMoney = (oCents: number | undefined, rCents: number | undefined) =>
     orig && oCents !== rCents ? <span style={{ color: "var(--ink-faint)" }}> · was {fmt(oCents ?? 0)}</span> : null;
+  const wasOffset = (o: number | undefined, r: number | undefined) =>
+    orig && o !== r ? <span style={{ color: "var(--ink-faint)" }}> · was {o}mo</span> : null;
 
   const submit = () => {
     onRevise({
       incomeDeltaPct: Math.round(incomePct),
       monthlyExpenseDeltaCents: Math.round(expenseDollars * 100),
       oneTimeCents: Math.round(oneTimeDollars * 100),
-      startMonthOffset: base?.startMonthOffset ?? 0,
+      startMonthOffset: Math.max(0, Math.round(startOffset)),
       label: base?.label ?? scenario.description,
     });
   };
@@ -435,6 +438,10 @@ function RevisePanel({
         <label className="stack stack-xs">
           <span className="muted" style={{ fontSize: 12 }}>One-time amount ($){wasMoney(orig?.oneTimeCents, scenario.revisedParams?.oneTimeCents)}</span>
           <input className="control" type="number" style={{ width: 150 }} value={oneTimeDollars} onChange={(e) => setOneTimeDollars(Number(e.target.value))} />
+        </label>
+        <label className="stack stack-xs">
+          <span className="muted" style={{ fontSize: 12 }}>Start month offset{wasOffset(orig?.startMonthOffset, scenario.revisedParams?.startMonthOffset)}</span>
+          <input className="control" type="number" min={0} style={{ width: 120 }} value={startOffset} onChange={(e) => setStartOffset(Number(e.target.value))} />
         </label>
       </div>
       <div className="row-sm wrap">
@@ -508,6 +515,31 @@ export default function Scenarios() {
     [diningMonthly]
   );
 
+  // ── Multi-variable composition ───────────────────────────────────────
+  // Chips are single-axis presets; selecting several merges them into one
+  // composite ScenarioParamsInput so e.g. "Cut income 50% + Eliminate dining"
+  // runs as a single projection (incomePct, expense delta, one-time, offset
+  // summed together). This keeps the forecast engine's composable math
+  // observable from the UI without touching the LLM path.
+  const [selected, setSelected] = useState<Set<number>>(() => new Set<number>());
+  const toggleCombine = (idx: number) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(idx)) next.delete(idx);
+      else next.add(idx);
+      return next;
+    });
+  const combined = useMemo<ScenarioParamsInput | null>(() => {
+    if (selected.size === 0) return null;
+    const picked = [...selected].map((i) => chips[i]!);
+    const incomeDeltaPct = picked.reduce((s, c) => s + c.params.incomeDeltaPct, 0);
+    const monthlyExpenseDeltaCents = picked.reduce((s, c) => s + c.params.monthlyExpenseDeltaCents, 0);
+    const oneTimeCents = picked.reduce((s, c) => s + c.params.oneTimeCents, 0);
+    const startMonthOffset = picked.reduce((m, c) => Math.max(m, c.params.startMonthOffset), 0);
+    const label = picked.map((c) => c.label).join(" + ");
+    return { incomeDeltaPct, monthlyExpenseDeltaCents, oneTimeCents, startMonthOffset, label };
+  }, [selected, chips]);
+
   const runWith = async (description: string, params: ScenarioParamsInput | null) => {
     try {
       const ran = await run.mutateAsync({ description, months: 24, params });
@@ -524,6 +556,10 @@ export default function Scenarios() {
         });
       }
     }
+  };
+  const runCombined = async () => {
+    if (!combined) return;
+    await runWith(combined.label, combined);
   };
 
   return (
@@ -566,6 +602,40 @@ export default function Scenarios() {
             </button>
           ))}
         </div>
+      </div>
+
+      <div className="stack stack-sm" style={{ marginTop: 16 }}>
+        <div className="screen-eyebrow">Combine variables</div>
+        <p className="muted" style={{ fontSize: 12.5, lineHeight: 1.5, margin: 0 }}>
+          Select multiple starting points to run together — e.g., cut income 50% and eliminate dining as one scenario.
+        </p>
+        <div className="row-sm wrap">
+          {chips.map((c, idx) => {
+            const on = selected.has(idx);
+            return (
+              <button
+                key={`${c.label}-combine`}
+                className={`chip ${on ? "accent" : ""}`}
+                aria-pressed={on}
+                onClick={() => toggleCombine(idx)}
+              >
+                {on ? <I.Check style={{ width: 12, height: 12 }} /> : null}
+                {c.label}
+              </button>
+            );
+          })}
+        </div>
+        {combined && (
+          <div className="row-sm wrap" style={{ alignItems: "center", gap: 8 }}>
+            <Button variant="primary" size="sm" disabled={run.isPending} onClick={() => void runCombined()}>
+              Run combined ({selected.size})
+            </Button>
+            <span className="muted" style={{ fontSize: 12 }}>{combined.label}</span>
+            <Button variant="ghost" size="sm" onClick={() => setSelected(new Set<number>())}>
+              Clear
+            </Button>
+          </div>
+        )}
       </div>
 
       {active && (
