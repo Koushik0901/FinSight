@@ -1798,6 +1798,40 @@
   from { transform: translateX(16px); opacity: 0; }
 }
 
+/* Mobile: drawer becomes a bottom sheet — thumb-reachable, full-width, rounded top */
+@media (max-width: 640px) {
+  .drawer-root { justify-content: center; align-items: flex-end; }
+  .drawer-panel {
+    width: 100% !important;
+    max-width: 100% !important;
+    height: min(88vh, 640px);
+    max-height: 88vh;
+    border-left: none;
+    border-top: 1px solid var(--line-2);
+    border-radius: 20px 20px 0 0;
+    box-shadow: 0 -12px 40px rgba(0,0,0,0.35);
+    animation: drawer-in-mobile .28s cubic-bezier(.2,.7,.2,1);
+  }
+  @keyframes drawer-in-mobile {
+    from { transform: translateY(100%); }
+  }
+  .drawer-header { padding: 14px 16px 12px; }
+  .drawer-header::before {
+    content: "";
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 36px;
+    height: 4px;
+    border-radius: 999px;
+    background: var(--line-2);
+  }
+  .drawer-header h2 { font-size: 17px; }
+  .drawer-body { padding: 16px; padding-bottom: max(16px, env(safe-area-inset-bottom)); }
+  /* Touch targets already 44px via --touch-target, but make drawer selects/inputs more thumb-friendly */
+  .drawer-form input, .drawer-form select { min-height: 44px; font-size: 16px; } /* 16px prevents iOS zoom */
+}
 .drawer-header {
   display: flex;
   align-items: center;
@@ -5444,8 +5478,33 @@ body {
     align-items: stretch;
     flex-direction: column;
   }
-}
 
+  /* Reports: mobile is a thumb-first card stack, not a squeezed desktop */
+  .screen-reports .page-header { gap: 12px; }
+  .screen-reports .page-header-title { font-size: 22px; line-height: 1.15; }
+  .screen-reports .page-header-description { font-size: 13px; }
+  .screen-reports .stat-row { gap: 10px; }
+  /* Widget cards: larger grip, thumb targets, softer shadow */
+  .screen-reports [role="listitem"] > .card { border-radius: 16px; }
+  .screen-reports [aria-label^="Drag to reorder"] {
+    width: 44px !important;
+    height: 44px !important;
+    border-radius: 12px !important;
+  }
+  /* On phone, the grip is the primary reorder affordance — Up/Down are secondary, hide them to de-clutter */
+  .screen-reports [aria-label^="Move"] { display: none !important; }
+  /* Bottom nav: more breathing, larger hit area, blur */
+  .bottom-nav {
+    height: 72px;
+    padding-bottom: max(6px, env(safe-area-inset-bottom));
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    background: color-mix(in oklab, var(--surface) 92%, transparent);
+    border-top: 1px solid var(--hairline);
+  }
+  .bottom-nav-item { gap: 3px; font-size: 10px; min-width: 0; flex: 1; }
+  .bottom-nav-ico-wrap { width: 28px; height: 28px; }
+}
 @media (max-width: 400px) {
   .today-balance-summary .stat,
   .account-summary .stat {
