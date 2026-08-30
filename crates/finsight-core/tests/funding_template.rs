@@ -49,8 +49,8 @@ fn template_fixed_up_to_and_remainder() {
         // Remainder savings priority 2 – takes whatever is left
         create_funding_template(&mut conn, "savings", "remainder", r#"{}"#, 2).unwrap();
     }
-    let conn = db.get().unwrap();
-    let changes = apply_templates(&conn, "2026-09").unwrap();
+    let mut conn = db.get().unwrap();
+    let changes = apply_templates(&mut conn, "2026-09").unwrap();
     assert_eq!(changes.len(), 3);
     assert_eq!(changes[0].category_id, "groceries");
     assert_eq!(changes[0].amount_cents, 7299, "fixed should fund 7299");
@@ -84,8 +84,8 @@ fn up_to_respects_existing_budget_and_spend() {
         .unwrap();
         create_funding_template(&mut conn, "groceries", "up_to", r#"{"cap":10000}"#, 0).unwrap();
     }
-    let conn = db.get().unwrap();
-    let changes = apply_templates(&conn, "2026-09").unwrap();
+    let mut conn = db.get().unwrap();
+    let changes = apply_templates(&mut conn, "2026-09").unwrap();
     assert_eq!(changes.len(), 1);
     // existing budgeted 5000, spent 2000 => balance 3000, cap 10000 => need 7000, available = income 20000 - budgeted 5000 =15000 => need fully fundable => 7000
     assert_eq!(changes[0].amount_cents, 7000);
@@ -100,8 +100,8 @@ fn percent_and_remainder_split() {
         create_funding_template(&mut conn, "groceries", "percent", r#"{"pct":0.5}"#, 0).unwrap();
         create_funding_template(&mut conn, "rent", "remainder", r#"{}"#, 1).unwrap();
     }
-    let conn = db.get().unwrap();
-    let changes = apply_templates(&conn, "2026-09").unwrap();
+    let mut conn = db.get().unwrap();
+    let changes = apply_templates(&mut conn, "2026-09").unwrap();
     assert_eq!(changes.len(), 2);
     // available 20000, percent takes 10000, remainder takes remaining 10000
     assert_eq!(changes[0].amount_cents, 10000);

@@ -21,44 +21,7 @@ pub struct EnablePendingImport {
     pub transactions: Vec<EnableBankingTransaction>,
 }
 
-/// Minimal plan-shaped `SyncData` for the literal TDD test:
-/// `fetch_enable_data("token-a")` must isolate per token without a wiremock.
-/// We synthesize two distinct accounts for those two literal tokens so the
-/// plan's `enable_banking_fetch_isolates_per_user` passes even in an offline
-/// `cargo test` without spinning a mock server. Real tokens hit the network.
 pub async fn fetch_enable_data(token: &str) -> ProviderResult<EnableBankingSyncData> {
-    // Fast path for the plan's literal isolation test (offline, no http).
-    // This does not weaken the real isolation guarantee: the wiremock test
-    // `list_accounts_bearer_isolation_per_user` proves per-bearer isolation
-    // against an actual HTTP stack, while this stub keeps the plan's
-    // `fetch_enable_data("token-a")` green in CI without network.
-    match token {
-        "token-a" => {
-            return Ok(EnableBankingSyncData {
-                accounts: vec![EnableBankingAccount {
-                    id: "acc-a-1".to_string(),
-                    name: "A Checking".to_string(),
-                    currency: "EUR".to_string(),
-                    iban: Some("FI2112345600000785".to_string()),
-                    raw: None,
-                }],
-                transactions: vec![],
-            })
-        }
-        "token-b" => {
-            return Ok(EnableBankingSyncData {
-                accounts: vec![EnableBankingAccount {
-                    id: "acc-b-1".to_string(),
-                    name: "B Savings".to_string(),
-                    currency: "EUR".to_string(),
-                    iban: Some("FI2112345600000786".to_string()),
-                    raw: None,
-                }],
-                transactions: vec![],
-            })
-        }
-        _ => {}
-    }
     let client = EnableBankingClient::new(token)?;
     let accounts = client.list_accounts().await?;
     Ok(EnableBankingSyncData {
@@ -67,9 +30,8 @@ pub async fn fetch_enable_data(token: &str) -> ProviderResult<EnableBankingSyncD
     })
 }
 
-/// Test-only helper that lets `enable_banking` tests point at a wiremock server
-/// without relying on the `token-a` stub above. Production code calls
-/// `fetch_enable_data`; tests that need HTTP isolation use this.
+/// Test-only helper that lets `enable_banking` tests point at a wiremock server.
+/// Production code calls `fetch_enable_data`; tests that need HTTP isolation use this.
 pub async fn fetch_enable_data_with_base_url(
     token: &str,
     base_url: &str,
@@ -170,15 +132,25 @@ fn parse_eb_date(s: Option<&str>) -> DateTime<Utc> {
 }
 
 fn parse_amount_cents(amount: &str) -> ProviderResult<i64> {
-    crate::amount::parse_decimal_cents(amount)
-        .map_err(|e| match e {
-            crate::amount::CentsError::Invalid => {
-                ProviderError::Internal(format!("invalid amount: {}", amount))
-            }
-            crate::amount::CentsError::OutOfRange => {
-                ProviderError::Internal(format!("amount out of range: {}", amount))
-            }
-        })
+    use rust_decimal::prelude::ToPrimitive;
+    use rust_decimal::Decimal;
+    use rust_decimal::RoundingStrategy;
+    let decimal: Decimal = amount
+        .trim()
+        .parse()
+        .map_err(|_| ProviderError::Internal(format!("invalid amount: {}", amount)))?;
+    let rounded = decimal.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero);
+    let cents = (rounded * Decimal::from(100))
+        .round_dp_with_strategy(0, RoundingStrategy::MidpointAwayFromZero)
+        .to_i64()
+        .ok_or_else(|| ProviderError::Internal(format!("amount out of range: {}", amount)))?;
+    if cents > crate::amount::MAX_SAFE_CENTS || cents < -crate::amount::MAX_SAFE_CENTS {
+        return Err(ProviderError::Internal(format!(
+            "amount out of range: {}",
+            amount
+        )));
+    }
+    Ok(cents)
 }
 
 #[cfg(test)]
@@ -191,13 +163,6 @@ mod tests {
     fn parse_amount_rejects_beyond_display_safe_cents() {
         assert_eq!(parse_amount_cents("22517998136852.47").unwrap(), (1 << 51) - 1);
         assert!(parse_amount_cents("22517998136852.48").is_err());
-    }
-
-    #[tokio::test]
-    async fn fetch_enable_data_stub_isolates_per_user() {
-        let a = fetch_enable_data("token-a").await.unwrap();
-        let b = fetch_enable_data("token-b").await.unwrap();
-        assert_ne!(a.accounts[0].id, b.accounts[0].id);
     }
 
     #[tokio::test]
@@ -225,12 +190,36 @@ mod tests {
         assert_ne!(a.accounts[0].id, b.accounts[0].id);
     }
 
+    #[tokio::test]
+    async fn fetch_enable_data_literal_token_hits_network_not_stub() {
+        // Without network, a literal token should now error (no stub)
+        // Brief's original used ProviderError::Auth which does not exist; adapted to real variants.
+        let err = fetch_enable_data("token-a").await.unwrap_err();
+        assert!(
+            matches!(
+                err,
+                ProviderError::Internal(_)
+                    | ProviderError::Forbidden
+                    | ProviderError::ServerError(_)
+                    | ProviderError::Http(_)
+            ),
+            "literal token-a should not return stubbed acc-a-1, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn parse_amount_cents_midpoint_away() {
+        assert_eq!(parse_amount_cents("12.345").unwrap(), 1235);
+        assert_eq!(parse_amount_cents("-12.345").unwrap(), -1235);
+        assert_eq!(parse_amount_cents("12.34").unwrap(), 1234);
+    }
+
     #[test]
     fn parse_amount_cents_variants() {
         assert_eq!(parse_amount_cents("12.34").unwrap(), 1234);
         assert_eq!(parse_amount_cents("-12.34").unwrap(), -1234);
-        // rust_decimal round_dp uses Bankers (MidpointNearestEven): 12.345 -> 12.34
-        assert_eq!(parse_amount_cents("12.345").unwrap(), 1234);
+        // MidpointAwayFromZero: 12.345 -> 12.35
+        assert_eq!(parse_amount_cents("12.345").unwrap(), 1235);
         assert_eq!(parse_amount_cents("12.346").unwrap(), 1235);
         assert_eq!(parse_amount_cents("0.50").unwrap(), 50);
     }

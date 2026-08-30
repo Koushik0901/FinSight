@@ -12,6 +12,7 @@ vi.mock("../api/openapiClient", () => ({
   },
   api: {
     customReport: vi.fn(),
+    getReportData: vi.fn(),
   },
 }));
 
@@ -50,10 +51,10 @@ describe("ReportBuilder", () => {
     await waitFor(() => expect(api.customReport).toHaveBeenCalled());
     vi.mocked(api.customReport).mockClear();
     const select = screen.getByLabelText("Split by") as HTMLSelectElement;
-    fireEvent.change(select, { target: { value: "Payee" } });
+    fireEvent.change(select, { target: { value: "payee" } });
     await waitFor(() =>
       expect(api.customReport).toHaveBeenCalledWith(
-        expect.objectContaining({ splitBy: "Payee" })
+        expect.objectContaining({ splitBy: "payee" })
       )
     );
   });
@@ -64,5 +65,19 @@ describe("ReportBuilder", () => {
     // money formatting may vary, but we check txn count text is present
     expect(screen.getByText(/2 txns/)).toBeInTheDocument();
     expect(screen.getByText(/1 txns/)).toBeInTheDocument();
+  });
+
+  it("splitBy Month respects includeArchived and is_transfer=false", async () => {
+    render(<ReportBuilder />, { wrapper: createWrapper() });
+    await screen.findByText("Groceries");
+    await waitFor(() => expect(api.customReport).toHaveBeenCalled());
+    vi.mocked(api.customReport).mockClear();
+    const select = screen.getByLabelText("Split by") as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: "month" } });
+    await waitFor(() =>
+      expect(api.customReport).toHaveBeenCalledWith(
+        expect.objectContaining({ splitBy: "month", includeArchived: false, includeTransfers: false })
+      )
+    );
   });
 });

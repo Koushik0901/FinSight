@@ -4,6 +4,8 @@ use utoipa::ToSchema;
 
 /// How to slice the expense pie.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type, ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
 pub enum SplitBy {
     Category,
     Group,

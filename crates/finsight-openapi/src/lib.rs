@@ -179,7 +179,7 @@ pub const COMMANDS: &[&str] = &[
     "promote_scenario",
     "purge_simplefin_data",
     "recompute_anomalies",
-    "reconcileBases",
+    "reconcile_bases",
     "record_net_worth_snapshot",
     "reject_action_item",
     "reject_category_proposal",
@@ -232,7 +232,6 @@ pub const COMMANDS: &[&str] = &[
     "test_completion_provider",
     "toggle_rule",
     "transfer_budget",
-    "transfer_envelope",
     "trigger_categorize",
     "trigger_recategorize_low_confidence",
     "trigger_recipe",
@@ -265,7 +264,6 @@ pub const COMMANDS: &[&str] = &[
         finsight_api::commands::budget::apply_templates,
         finsight_api::commands::budget::list_budget_transfers,
         finsight_api::commands::budget::transfer_budget,
-        finsight_api::commands::budget::transfer_envelope,
         finsight_api::commands::transactions::apply_transfer_verdict_to_similar,
         finsight_api::commands::copilot::approve_action_item,
         finsight_api::commands::accounts::archive_account,
@@ -1060,5 +1058,24 @@ mod tests {
             !s.contains("text/plain"),
             "openapi must not contain text/plain — all bodies should be application/json, found text/plain in spec"
         );
+    }
+
+    #[test]
+    fn commands_sorted_snake() {
+        assert!(COMMANDS.windows(2).all(|w| w[0] < w[1]), "COMMANDS must be sorted");
+        for c in COMMANDS {
+            assert!(c.chars().all(|ch| ch.is_ascii_lowercase() || ch == '_' || ch.is_ascii_digit()), "cmd {c} must be snake_case");
+        }
+        assert!(!COMMANDS.contains(&"reconcileBases"), "camelCase reconcileBases must be gone");
+        assert!(!COMMANDS.contains(&"transfer_envelope"), "alias must be gone");
+    }
+
+    #[test]
+    fn openapi_splitby_camelcase() {
+        let v = build_openapi_value();
+        let schema = &v["components"]["schemas"]["SplitBy"];
+        let vals = schema["enum"].as_array().unwrap();
+        assert!(vals.iter().any(|x| x == "category"));
+        assert!(!vals.iter().any(|x| x == "Category"));
     }
 }

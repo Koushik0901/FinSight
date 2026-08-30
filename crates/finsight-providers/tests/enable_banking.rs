@@ -6,10 +6,22 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 #[tokio::test]
 async fn enable_banking_fetch_isolates_per_user() {
-    // two users, two tokens, no cross-read — plan's literal TDD test
-    let a = fetch_enable_data("token-a").await.unwrap();
-    let b = fetch_enable_data("token-b").await.unwrap();
-    assert_ne!(a.accounts[0].id, b.accounts[0].id);
+    // stub removed (C2): literal tokens now hit network and fail rather than returning stubbed accounts
+    let a = fetch_enable_data("token-a").await.unwrap_err();
+    let b = fetch_enable_data("token-b").await.unwrap_err();
+    use finsight_providers::ProviderError;
+    for err in [a, b] {
+        assert!(
+            matches!(
+                err,
+                ProviderError::Forbidden
+                    | ProviderError::ServerError(_)
+                    | ProviderError::Http(_)
+                    | ProviderError::Internal(_)
+            ),
+            "literal token should error via network, got {err:?}"
+        );
+    }
 }
 
 #[tokio::test]

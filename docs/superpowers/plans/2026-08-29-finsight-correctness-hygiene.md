@@ -342,8 +342,8 @@ git commit -m "fix(openapi): hard rename reconcileBases->reconcile_bases, drop t
 - Test: `crates/finsight-core/src/repos/budgets.rs` `#[cfg(test)]`
 
 **Interfaces:**
-- Consumes: `category_spent`/`category_available` (Task 1), `to_budget`/`get_hold`, `set_budget` helper
-- Produces: `pub fn apply_templates_tx(conn: &mut Connection, month: &str, templates: Vec<FundingTemplate>) -> CoreResult<Vec<BudgetChange>>` transactional
+- Consumes: `category_spent`/`category_available` (Task 1), `available_funds`/`get_hold` (`available_funds = income - budgeted - hold_current + hold_prev` — diverges from spec §3 `to_budget` intentionally), `set_budget` helper
+- Produces: `pub fn apply_templates_tx(conn: &mut Connection, month: &str, templates: Vec<FundingTemplate>) -> CoreResult<Vec<BudgetChange>>` transactional (single `available` tracking, `remainder` collapsed)
 
 - [ ] **Step 1: Write failing test for write + idempotence**
 ```rust
@@ -388,8 +388,8 @@ pub fn apply_templates(conn: &mut Connection, month: &str) -> CoreResult<Vec<Bud
     let res: CoreResult<Vec<BudgetChange>> = (|| {
         let mut templates = list_funding_templates(conn)?;
         templates.sort_by_key(|t| (t.priority, t.id.clone()));
-        let mut available = available_funds(conn, month)?; // to_budget aware
-        let mut remainder = available;
+        let mut available = available_funds(conn, month)?; // diverges from spec §3: includes prev_hold
+        // remainder collapsed into available single tracking (see task-4 review)
         let mut out = Vec::new();
         for tmpl in templates {
             let cat_avail = category_available(conn, &tmpl.category_id, month)?;

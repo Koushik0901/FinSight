@@ -4522,7 +4522,7 @@
         }
       }
     },
-    "/api/rpc/reconcileBases": {
+    "/api/rpc/reconcile_bases": {
       "post": {
         "tags": [
           "finsight_api::commands::copilot"
@@ -5797,36 +5797,6 @@
           "finsight_api::commands::budget"
         ],
         "operationId": "transfer_budget",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/TransferBudgetRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BudgetTransfer"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/rpc/transfer_envelope": {
-      "post": {
-        "tags": [
-          "finsight_api::commands::budget"
-        ],
-        "operationId": "transfer_envelope",
         "requestBody": {
           "content": {
             "application/json": {
@@ -17047,11 +17017,11 @@
         "type": "string",
         "description": "How to slice the expense pie.",
         "enum": [
-          "Category",
-          "Group",
-          "Payee",
-          "Account",
-          "Month"
+          "category",
+          "group",
+          "payee",
+          "account",
+          "month"
         ]
       },
       "SplitInputDto": {

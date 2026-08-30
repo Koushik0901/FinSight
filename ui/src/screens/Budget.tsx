@@ -23,7 +23,8 @@ function envelopeStatus(env: BudgetEnvelope) {
   if (available <= 0 && env.budgetCents <= 0) return { label: "No budget set", tone: "warning" as const, severity: 2 };
   const pct = available > 0 ? (env.spentCents / available) * 100 : 100;
   if (env.spentCents > available) {
-    return { label: `Over by ${money(env.spentCents - available)}`, tone: "negative" as const, severity: 3 };
+    const remaining = available - env.spentCents;
+    return { label: `Over by ${money(remaining, { decimals: 2 })}`, tone: "negative" as const, severity: 3 };
   }
   if (pct > 90) return { label: "Almost used", tone: "warning" as const, severity: 2 };
   if (pct > 60) return { label: "Watch", tone: "accent" as const, severity: 1 };
@@ -97,11 +98,11 @@ function EnvelopeCard({ env, editing, onEdit, donor, memberShareCents, memberNam
             <span className="muted" style={{ fontSize: 12 }}>{env.txnCount} txn{env.txnCount === 1 ? "" : "s"}</span>
           </div>
           <div className="figure money" style={{ fontSize: 34, lineHeight: 1, color: remaining < 0 ? "var(--negative)" : "var(--ink)" }}>
-            {money(Math.abs(remaining))}
+            {money(remaining)}
           </div>
           <div className="muted" style={{ fontSize: 12.5, marginTop: 6 }}>{remaining < 0 ? "over budget" : "left to spend"}</div>
         </div>
-        <span className={`chip ${toneClass}${status.label.includes("$") ? " blurable" : ""}`}>{status.label}</span>
+        <span className={`chip ${toneClass}${status.label.includes("$") ? " money" : ""}`}>{status.label}</span>
       </div>
 
       <div className="goal-bar" style={{ marginTop: 16, height: 7 }}>
@@ -553,7 +554,7 @@ export default function Budget() {
           <div>
             <div className="eyebrow"><span className="dot" />Month progress</div>
             <div className="hero-num">
-              <div className="figure money" style={{ fontSize: 56, lineHeight: 1, color: remaining < 0 ? "var(--negative)" : "var(--accent)" }}>{money(Math.abs(remaining))}</div>
+              <div className="figure money" style={{ fontSize: 56, lineHeight: 1, color: remaining < 0 ? "var(--negative)" : "var(--accent)" }}>{money(remaining)}</div>
               <div className="muted">{remaining < 0 ? "over the current plan" : "left to spend"}</div>
             </div>
             <div className="budget-progress-track" style={{ position: "relative", height: 10, background: "var(--surface-2)", borderRadius: 999, overflow: "hidden", marginTop: 4 }}>
@@ -935,4 +936,13 @@ export default function Budget() {
       {showPlan && <PlanNextMonthModal onClose={() => setShowPlan(false)} />}
     </div>
   );
+}
+
+export function BudgetEnvelopeChip({ remaining }: { remaining: number }) {
+  const label =
+    remaining < 0
+      ? `Over by ${money(remaining, { decimals: 2 })}`
+      : `Left ${money(remaining, { decimals: 2 })}`;
+  const usesMoney = true;
+  return <span className={`chip ${usesMoney ? "money" : ""}`}>{label}</span>;
 }
