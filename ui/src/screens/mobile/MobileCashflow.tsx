@@ -83,6 +83,12 @@ function ProjectedBalanceChart({
         <path d={linePath} fill="none" stroke="var(--accent)" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
         <circle cx={x(lowIdx)} cy={y(forecast.lowestBalanceCents)} r={5} fill="var(--negative)" stroke="var(--bg)" strokeWidth={2} />
       </svg>
+      {/* 3 readable x-labels instead of every-day tiny ticks */}
+      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6, fontSize: 11, color: "var(--ink-faint)", fontWeight: 600 }}>
+        <span>{shortDate(days[0]!.date)}</span>
+        <span>{shortDate(days[Math.floor(days.length / 2)]!.date)}</span>
+        <span>{shortDate(days[days.length - 1]!.date)}</span>
+      </div>
       {/* Single-line caption instead of multi-item tiny legend */}
       <div
         style={{
