@@ -1081,6 +1081,36 @@
         }
       }
     },
+    "/api/rpc/create_report_widget": {
+      "post": {
+        "tags": [
+          "finsight_api::commands::report_widgets"
+        ],
+        "operationId": "create_report_widget",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateReportWidgetRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportWidget"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/rpc/create_restoration_envelope": {
       "post": {
         "tags": [
@@ -1433,6 +1463,36 @@
         "responses": {
           "200": {
             "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/rpc/delete_report_widget": {
+      "post": {
+        "tags": [
+          "finsight_api::commands::report_widgets"
+        ],
+        "operationId": "delete_report_widget",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeleteReportWidgetRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "boolean"
+                }
+              }
+            }
           }
         }
       }
@@ -3937,6 +3997,29 @@
         }
       }
     },
+    "/api/rpc/list_report_widgets": {
+      "post": {
+        "tags": [
+          "finsight_api::commands::report_widgets"
+        ],
+        "operationId": "list_report_widgets",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ReportWidget"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/rpc/list_restoration_envelopes": {
       "post": {
         "tags": [
@@ -4699,6 +4782,39 @@
         "responses": {
           "200": {
             "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/rpc/reorder_report_widgets": {
+      "post": {
+        "tags": [
+          "finsight_api::commands::report_widgets"
+        ],
+        "operationId": "reorder_report_widgets",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReorderReportWidgetsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ReportWidget"
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -6140,6 +6256,41 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AgentRecipe"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rpc/update_report_widget": {
+      "post": {
+        "tags": [
+          "finsight_api::commands::report_widgets"
+        ],
+        "operationId": "update_report_widget",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateReportWidgetRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ReportWidget"
+                    }
+                  ],
+                  "nullable": true
                 }
               }
             }
@@ -10836,6 +10987,41 @@
           }
         }
       },
+      "CreateReportWidgetRequest": {
+        "type": "object",
+        "description": "Request for `POST /api/rpc/create_report_widget`.",
+        "required": [
+          "title",
+          "chartType",
+          "splitBy",
+          "period"
+        ],
+        "properties": {
+          "chartType": {
+            "type": "string"
+          },
+          "filtersJson": {
+            "type": "string",
+            "description": "Optional filters JSON. When absent/empty, defaults to `{}`.",
+            "nullable": true
+          },
+          "period": {
+            "type": "string"
+          },
+          "position": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Optional explicit position. When absent, appends at end.",
+            "nullable": true
+          },
+          "splitBy": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
       "CreateRestorationEnvelopeRequest": {
         "type": "object",
         "required": [
@@ -10950,14 +11136,55 @@
         "type": "object",
         "description": "Parameters for the custom report query — filters + split.",
         "properties": {
+          "accountIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "categoryIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "groupIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "includeArchived": {
             "type": "boolean"
           },
           "includeTransfers": {
             "type": "boolean"
           },
+          "maxAmountCents": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "memberId": {
+            "type": "string",
+            "description": "Optional household member id to scope the report to a single person.",
+            "nullable": true
+          },
+          "minAmountCents": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "payee": {
+            "type": "string",
+            "nullable": true
+          },
           "period": {
             "$ref": "#/components/schemas/Period"
+          },
+          "spendingType": {
+            "type": "string",
+            "nullable": true
           },
           "splitBy": {
             "$ref": "#/components/schemas/SplitBy"
@@ -11261,6 +11488,18 @@
       },
       "DeleteRecipeRequest": {
         "type": "object",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        }
+      },
+      "DeleteReportWidgetRequest": {
+        "type": "object",
+        "description": "Request for `POST /api/rpc/delete_report_widget`.",
         "required": [
           "id"
         ],
@@ -15377,6 +15616,22 @@
           }
         }
       },
+      "ReorderReportWidgetsRequest": {
+        "type": "object",
+        "description": "Request for `POST /api/rpc/reorder_report_widgets`.",
+        "required": [
+          "orderedIds"
+        ],
+        "properties": {
+          "orderedIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Ordered widget ids, first = position 0."
+          }
+        }
+      },
       "ReportData": {
         "type": "object",
         "required": [
@@ -15431,6 +15686,56 @@
           "txnCount": {
             "type": "integer",
             "format": "int64"
+          }
+        }
+      },
+      "ReportWidget": {
+        "type": "object",
+        "description": "One customizable Reports canvas widget — vertical-stack reorderable.\n\nMirrors Actual's freeform report widget: pick any slice of the ledger\n(`split_by` + `period` + `filters_json`) and render it as any `chart_type`.\nPersisted per-user in the encrypted DB (table `report_widgets` V067).",
+        "required": [
+          "id",
+          "position",
+          "title",
+          "chartType",
+          "splitBy",
+          "period",
+          "filtersJson",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "chartType": {
+            "type": "string",
+            "description": "'table' | 'bar' | 'barStacked' | 'line' | 'area' | 'donut'"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "filtersJson": {
+            "type": "string",
+            "description": "JSON object with widget filters: `{ includeTransfers,bool, includeArchived,bool,\naccountIds: string[], categoryIds: string[], groupIds: string[], payee?: string,\nspendingType?: string, memberId?: string|null }`\nStored verbatim; parsed only when executing the widget query."
+          },
+          "id": {
+            "type": "string"
+          },
+          "period": {
+            "type": "string",
+            "description": "'Last1Month' | 'Last3Months' | 'Last6Months' | 'YTD' | 'All'"
+          },
+          "position": {
+            "type": "integer",
+            "format": "int64",
+            "description": "0-based display order. Canonical order is `ORDER BY position ASC, id ASC`."
+          },
+          "splitBy": {
+            "type": "string",
+            "description": "'category' | 'group' | 'payee' | 'account' | 'month' | 'spendingType'"
+          },
+          "title": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
           }
         }
       },
@@ -17021,7 +17326,8 @@
           "group",
           "payee",
           "account",
-          "month"
+          "month",
+          "spendingType"
         ]
       },
       "SplitInputDto": {
@@ -17927,6 +18233,38 @@
           },
           "title": {
             "type": "string"
+          }
+        }
+      },
+      "UpdateReportWidgetRequest": {
+        "type": "object",
+        "description": "Request for `POST /api/rpc/update_report_widget`.",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "chartType": {
+            "type": "string",
+            "nullable": true
+          },
+          "filtersJson": {
+            "type": "string",
+            "nullable": true
+          },
+          "id": {
+            "type": "string"
+          },
+          "period": {
+            "type": "string",
+            "nullable": true
+          },
+          "splitBy": {
+            "type": "string",
+            "nullable": true
+          },
+          "title": {
+            "type": "string",
+            "nullable": true
           }
         }
       },

@@ -12,8 +12,9 @@ pub enum SplitBy {
     Payee,
     Account,
     Month,
+    #[serde(alias = "spending_type", alias = "spendingtype")]
+    SpendingType,
 }
-
 impl Default for SplitBy {
     fn default() -> Self {
         Self::Category
@@ -54,6 +55,23 @@ pub struct CustomReportParams {
     pub include_transfers: bool,
     #[serde(default, alias = "include_archived")]
     pub include_archived: bool,
+    /// Optional household member id to scope the report to a single person.
+    #[serde(default, alias = "member_id")]
+    pub member_id: Option<String>,
+    #[serde(default, alias = "account_ids")]
+    pub account_ids: Vec<String>,
+    #[serde(default, alias = "category_ids")]
+    pub category_ids: Vec<String>,
+    #[serde(default, alias = "group_ids")]
+    pub group_ids: Vec<String>,
+    #[serde(default, alias = "payee")]
+    pub payee: Option<String>,
+    #[serde(default, alias = "spending_type")]
+    pub spending_type: Option<String>,
+    #[serde(default, alias = "min_amount_cents")]
+    pub min_amount_cents: Option<i64>,
+    #[serde(default, alias = "max_amount_cents")]
+    pub max_amount_cents: Option<i64>,
 }
 
 impl Default for CustomReportParams {
@@ -63,6 +81,14 @@ impl Default for CustomReportParams {
             period: Period::default(),
             include_transfers: false,
             include_archived: false,
+            member_id: None,
+            account_ids: Vec::new(),
+            category_ids: Vec::new(),
+            group_ids: Vec::new(),
+            payee: None,
+            spending_type: None,
+            min_amount_cents: None,
+            max_amount_cents: None,
         }
     }
 }

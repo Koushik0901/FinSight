@@ -963,7 +963,24 @@ pub fn custom_report(conn: &Connection, p: CustomReportParams) -> CoreResult<Cus
             "",
             "strftime('%Y-%m', t.posted_at)",
         ),
+        SplitBy::SpendingType => (
+            // 'Untagged' distinguishes null spending_type (custom/untagged) from
+            // 'Uncategorized' (no category). Separate from Category's bucket.
+            "COALESCE(c.spending_type, 'Untagged')",
+            " LEFT JOIN categories c ON c.id = t.category_id",
+            "COALESCE(c.spending_type, 'Untagged')",
+        ),
     };
+    // Ensure joins for filters that need them, regardless of split_by
+    let mut join_clause = join_clause.to_string();
+    if !p.category_ids.is_empty() || !p.group_ids.is_empty() || p.spending_type.is_some() {
+        if !join_clause.contains("categories c") {
+            join_clause.push_str(" LEFT JOIN categories c ON c.id = t.category_id");
+        }
+    }
+    if !p.group_ids.is_empty() && !join_clause.contains("category_groups g") {
+        join_clause.push_str(" LEFT JOIN category_groups g ON g.id = c.group_id");
+    }
 
     // Build WHERE clause dynamically.
     let mut sql = format!(
@@ -978,7 +995,7 @@ pub fn custom_report(conn: &Connection, p: CustomReportParams) -> CoreResult<Cus
     }
     if !p.include_archived {
         match p.split_by {
-            SplitBy::Category | SplitBy::Group => {
+            SplitBy::Category | SplitBy::Group | SplitBy::SpendingType => {
                 sql.push_str(" AND (c.archived_at IS NULL OR c.id IS NULL)");
             }
             SplitBy::Account => {
@@ -986,6 +1003,56 @@ pub fn custom_report(conn: &Connection, p: CustomReportParams) -> CoreResult<Cus
             }
             _ => {}
         }
+    }
+    if let Some(member_id) = &p.member_id {
+        let mid = member_id.trim();
+        if !mid.is_empty() {
+            sql.push_str(" AND EXISTS (SELECT 1 FROM account_owners ao WHERE ao.account_id = t.account_id AND ao.member_id = ?)");
+            binds.push(mid.to_string());
+        }
+    }
+    if !p.account_ids.is_empty() {
+        let placeholders = p.account_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        sql.push_str(&format!(" AND t.account_id IN ({})", placeholders));
+        for id in &p.account_ids {
+            binds.push(id.clone());
+        }
+    }
+    if !p.category_ids.is_empty() {
+        let placeholders = p.category_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        sql.push_str(&format!(" AND t.category_id IN ({})", placeholders));
+        for id in &p.category_ids {
+            binds.push(id.clone());
+        }
+    }
+    if !p.group_ids.is_empty() {
+        let placeholders = p.group_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        sql.push_str(&format!(" AND g.id IN ({})", placeholders));
+        for id in &p.group_ids {
+            binds.push(id.clone());
+        }
+    }
+    if let Some(payee) = &p.payee {
+        let trimmed = payee.trim();
+        if !trimmed.is_empty() {
+            sql.push_str(" AND lower(t.merchant_raw) LIKE lower(?)");
+            binds.push(format!("%{}%", trimmed));
+        }
+    }
+    if let Some(st) = &p.spending_type {
+        let trimmed = st.trim();
+        if !trimmed.is_empty() {
+            sql.push_str(" AND c.spending_type = ?");
+            binds.push(trimmed.to_string());
+        }
+    }
+    if let Some(min) = p.min_amount_cents {
+        sql.push_str(" AND ABS(t.amount_cents) >= CAST(? AS INTEGER)");
+        binds.push(min.to_string());
+    }
+    if let Some(max) = p.max_amount_cents {
+        sql.push_str(" AND ABS(t.amount_cents) <= CAST(? AS INTEGER)");
+        binds.push(max.to_string());
     }
     if let Some(s) = &start {
         sql.push_str(" AND t.posted_at >= ?");
@@ -1237,6 +1304,8 @@ mod tests {
             split_by: SplitBy::Category,
             include_archived: true,
             include_transfers: false,
+            member_id: None,
+            ..Default::default()
         };
         let res = custom_report(&conn, params).unwrap();
         assert_eq!(res.total_cents, 3000, "expense - reimbursement, income ignored");
@@ -1253,12 +1322,13 @@ mod tests {
         }
         insert_tx(&conn, "food", -1000, "2025-01-15", 0);
         // Use wall-clock now is 2026-08-29, but anchor is 2025-01-15
-        // Last1Month from anchor should include Jan row; from wall-clock would be empty
         let params = CustomReportParams {
             period: Period::Last1Month,
             split_by: SplitBy::Category,
             include_archived: true,
             include_transfers: false,
+            member_id: None,
+            ..Default::default()
         };
         let res = custom_report(&conn, params).unwrap();
         assert_eq!(res.total_cents, 1000);
@@ -1281,6 +1351,8 @@ mod tests {
             split_by: SplitBy::Category,
             include_archived: true,
             include_transfers: false,
+            member_id: None,
+            ..Default::default()
         };
         let res = custom_report(&conn, params).unwrap();
         assert_eq!(res.total_cents, 1000, "future row excluded by end bound");
@@ -1505,6 +1577,8 @@ mod tests {
                 split_by: SplitBy::Month,
                 include_archived: true,
                 include_transfers: false,
+                member_id: None,
+                ..Default::default()
             },
         )
         .unwrap();
@@ -1522,6 +1596,82 @@ mod tests {
         // Tighten: total must not include the 9999 transfer
         assert_ne!(fixed_sum, 19_800 + 9_999, "is_transfer=1 row must be excluded");
         assert_ne!(custom.total_cents, 19_800 + 9_999);
+    }
+
+    #[test]
+    fn custom_report_filters_by_account_category_payee_and_amount() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        seed_category(&mut conn, "food");
+        seed_category(&mut conn, "travel");
+        conn.execute("UPDATE categories SET spending_type='Need' WHERE id='food'", []).unwrap();
+        conn.execute("UPDATE categories SET spending_type='Want' WHERE id='travel'", []).unwrap();
+        conn.execute(
+            "INSERT OR IGNORE INTO accounts(id, owner, bank, type, name, currency, color, created_at) VALUES('acc1','Me','Bank','Checking','Acc1','USD','#fff',datetime('now'))",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT OR IGNORE INTO accounts(id, owner, bank, type, name, currency, color, created_at) VALUES('acc2','Me','Bank','Checking','Acc2','USD','#fff',datetime('now'))",
+            [],
+        )
+        .unwrap();
+        let now = Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+        conn.execute(
+            "INSERT INTO transactions(id, account_id, posted_at, amount_cents, merchant_raw, category_id, status, is_anomaly, is_transfer, settle_up, created_at) VALUES(?1,'acc1',?2,-5000,'Whole Foods','food','cleared',0,0,0,?2)",
+            params![Uuid::new_v4().to_string(), now],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO transactions(id, account_id, posted_at, amount_cents, merchant_raw, category_id, status, is_anomaly, is_transfer, settle_up, created_at) VALUES(?1,'acc2',?2,-3000,'Chipotle','travel','cleared',0,0,0,?2)",
+            params![Uuid::new_v4().to_string(), now],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO transactions(id, account_id, posted_at, amount_cents, merchant_raw, category_id, status, is_anomaly, is_transfer, settle_up, created_at) VALUES(?1,'acc1',?2,-100,'Starbucks','food','cleared',0,0,0,?2)",
+            params![Uuid::new_v4().to_string(), now],
+        )
+        .unwrap();
+        let params = CustomReportParams {
+            period: Period::All,
+            split_by: SplitBy::Category,
+            include_archived: true,
+            include_transfers: false,
+            account_ids: vec!["acc1".to_string()],
+            ..Default::default()
+        };
+        let res = custom_report(&conn, params).unwrap();
+        assert_eq!(res.total_cents, 5100, "acc1 should have 5000+100");
+        let params = CustomReportParams {
+            period: Period::All,
+            split_by: SplitBy::Category,
+            include_archived: true,
+            include_transfers: false,
+            payee: Some("Whole".to_string()),
+            ..Default::default()
+        };
+        let res = custom_report(&conn, params).unwrap();
+        assert_eq!(res.total_cents, 5000);
+        let params = CustomReportParams {
+            period: Period::All,
+            split_by: SplitBy::Category,
+            include_archived: true,
+            include_transfers: false,
+            min_amount_cents: Some(1000),
+            ..Default::default()
+        };
+        let res = custom_report(&conn, params).unwrap();
+        assert_eq!(res.total_cents, 8000, "only >=1000 should be 5000+3000");
+        let params = CustomReportParams {
+            period: Period::All,
+            split_by: SplitBy::Category,
+            include_archived: true,
+            include_transfers: false,
+            spending_type: Some("Need".to_string()),
+            ..Default::default()
+        };
+        let res = custom_report(&conn, params).unwrap();
+        assert_eq!(res.total_cents, 5100, "Need should be food only");
     }
 
     #[test]

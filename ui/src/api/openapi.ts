@@ -644,6 +644,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/rpc/create_report_widget": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["create_report_widget"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/rpc/create_restoration_envelope": {
         parameters: {
             query?: never;
@@ -862,6 +878,22 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["delete_recipe"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/rpc/delete_report_widget": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["delete_report_widget"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2420,6 +2452,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/rpc/list_report_widgets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["list_report_widgets"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/rpc/list_restoration_envelopes": {
         parameters: {
             query?: never;
@@ -2935,6 +2983,22 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["rename_category"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/rpc/reorder_report_widgets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["reorder_report_widgets"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3869,6 +3933,22 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["update_recipe"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/rpc/update_report_widget": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["update_report_widget"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5482,6 +5562,20 @@ export interface components {
             recipeKind: string;
             title: string;
         };
+        /** @description Request for `POST /api/rpc/create_report_widget`. */
+        CreateReportWidgetRequest: {
+            chartType: string;
+            /** @description Optional filters JSON. When absent/empty, defaults to `{}`. */
+            filtersJson?: string | null;
+            period: string;
+            /**
+             * Format: int64
+             * @description Optional explicit position. When absent, appends at end.
+             */
+            position?: number | null;
+            splitBy: string;
+            title: string;
+        };
         CreateRestorationEnvelopeRequest: {
             input: components["schemas"]["RestorationEnvelopeInput"];
         };
@@ -5511,9 +5605,20 @@ export interface components {
         };
         /** @description Parameters for the custom report query — filters + split. */
         CustomReportParams: {
+            accountIds?: string[];
+            categoryIds?: string[];
+            groupIds?: string[];
             includeArchived?: boolean;
             includeTransfers?: boolean;
+            /** Format: int64 */
+            maxAmountCents?: number | null;
+            /** @description Optional household member id to scope the report to a single person. */
+            memberId?: string | null;
+            /** Format: int64 */
+            minAmountCents?: number | null;
+            payee?: string | null;
             period?: components["schemas"]["Period"];
+            spendingType?: string | null;
             splitBy?: components["schemas"]["SplitBy"];
         };
         CustomReportRequest: {
@@ -5609,6 +5714,10 @@ export interface components {
             endpoint: string;
         };
         DeleteRecipeRequest: {
+            id: string;
+        };
+        /** @description Request for `POST /api/rpc/delete_report_widget`. */
+        DeleteReportWidgetRequest: {
             id: string;
         };
         DeleteRestorationEnvelopeRequest: {
@@ -7248,6 +7357,11 @@ export interface components {
             id: string;
             label: string;
         };
+        /** @description Request for `POST /api/rpc/reorder_report_widgets`. */
+        ReorderReportWidgetsRequest: {
+            /** @description Ordered widget ids, first = position 0. */
+            orderedIds: string[];
+        };
         ReportData: {
             monthly: components["schemas"]["MonthSummary"][];
             monthlyLastYear: components["schemas"]["MonthSummary"][];
@@ -7261,6 +7375,37 @@ export interface components {
             totalCents: number;
             /** Format: int64 */
             txnCount: number;
+        };
+        /**
+         * @description One customizable Reports canvas widget — vertical-stack reorderable.
+         *
+         *     Mirrors Actual's freeform report widget: pick any slice of the ledger
+         *     (`split_by` + `period` + `filters_json`) and render it as any `chart_type`.
+         *     Persisted per-user in the encrypted DB (table `report_widgets` V067).
+         */
+        ReportWidget: {
+            /** @description 'table' | 'bar' | 'barStacked' | 'line' | 'area' | 'donut' */
+            chartType: string;
+            createdAt: string;
+            /**
+             * @description JSON object with widget filters: `{ includeTransfers,bool, includeArchived,bool,
+             *     accountIds: string[], categoryIds: string[], groupIds: string[], payee?: string,
+             *     spendingType?: string, memberId?: string|null }`
+             *     Stored verbatim; parsed only when executing the widget query.
+             */
+            filtersJson: string;
+            id: string;
+            /** @description 'Last1Month' | 'Last3Months' | 'Last6Months' | 'YTD' | 'All' */
+            period: string;
+            /**
+             * Format: int64
+             * @description 0-based display order. Canonical order is `ORDER BY position ASC, id ASC`.
+             */
+            position: number;
+            /** @description 'category' | 'group' | 'payee' | 'account' | 'month' | 'spendingType' */
+            splitBy: string;
+            title: string;
+            updatedAt: string;
         };
         RestorationEnvelope: {
             closedAt?: string | null;
@@ -7825,7 +7970,7 @@ export interface components {
          * @description How to slice the expense pie.
          * @enum {string}
          */
-        SplitBy: "category" | "group" | "payee" | "account" | "month";
+        SplitBy: "category" | "group" | "payee" | "account" | "month" | "spendingType";
         SplitInputDto: {
             /** Format: int64 */
             amountCents: number;
@@ -8156,6 +8301,15 @@ export interface components {
             id: string;
             promptTemplate: string;
             title: string;
+        };
+        /** @description Request for `POST /api/rpc/update_report_widget`. */
+        UpdateReportWidgetRequest: {
+            chartType?: string | null;
+            filtersJson?: string | null;
+            id: string;
+            period?: string | null;
+            splitBy?: string | null;
+            title?: string | null;
         };
         UpdateTransactionRequest: {
             id: string;
@@ -9068,6 +9222,29 @@ export interface operations {
             };
         };
     };
+    create_report_widget: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateReportWidgetRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportWidget"];
+                };
+            };
+        };
+    };
     create_restoration_envelope: {
         parameters: {
             query?: never;
@@ -9375,6 +9552,29 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    delete_report_widget: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeleteReportWidgetRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": boolean;
+                };
             };
         };
     };
@@ -11366,6 +11566,25 @@ export interface operations {
             };
         };
     };
+    list_report_widgets: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportWidget"][];
+                };
+            };
+        };
+    };
     list_restoration_envelopes: {
         parameters: {
             query?: never;
@@ -12024,6 +12243,29 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    reorder_report_widgets: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReorderReportWidgetsRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportWidget"][];
+                };
             };
         };
     };
@@ -13300,6 +13542,29 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AgentRecipe"];
+                };
+            };
+        };
+    };
+    update_report_widget: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateReportWidgetRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportWidget"] | null;
                 };
             };
         };

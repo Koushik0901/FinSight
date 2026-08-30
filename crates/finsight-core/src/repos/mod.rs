@@ -23,6 +23,7 @@ pub mod net_worth;
 pub mod planned_transactions;
 pub mod push;
 pub mod recipes;
+pub mod report_widgets;
 pub mod reset;
 pub mod restoration;
 pub mod rule_proposals;

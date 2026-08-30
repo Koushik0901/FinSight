@@ -11,6 +11,7 @@ pub mod budget_hold;
 pub mod budget_transfer;
 pub mod custom_report;
 pub mod funding_template;
+pub mod report_widget;
 mod holding;
 mod household;
 mod import_candidate;
@@ -25,7 +26,6 @@ mod security;
 mod sync_run;
 mod transaction;
 mod transfer;
-
 pub use account::{
     effective_apr_pct, promo_expiry_warning, Account, AccountBalancePoint, AccountBalanceTimeline,
     AccountPatch, AccountSparkline, AccountSummary, AccountType, BalanceAnchorQuality,
@@ -66,6 +66,11 @@ pub use planned_transaction::{
     NewPlannedTransaction, PlannedTransaction, PlannedTransactionPatch, PlannedTxnFilter,
 };
 pub use recipes::{AgentRecipe, AgentRecipeRun};
+pub use report_widget::{
+    CreateReportWidgetRequest, DeleteReportWidgetRequest, ReportWidget,
+    ReorderReportWidgetsRequest, UpdateReportWidgetRequest, CHART_TYPES, PERIODS, SPLIT_BYS,
+    WidgetFilters,
+};
 pub use rule::{NewRule, Rule};
 pub use rule_proposal::RuleProposal;
 pub use security::Security;

@@ -758,6 +758,29 @@ rpc_routes!(api, events, cmd, p, c:
         "get_month_totals" => ok(c::reports::get_month_totals(api).await?),
         "get_savings_rate_history" => ok(c::reports::get_savings_rate_history(api).await?),
         "custom_report" => ok(c::reports::custom_report(api, arg(&p, "params")?).await?),
+        "list_report_widgets" => ok(c::report_widgets::list_report_widgets(api).await?),
+        "create_report_widget" => ok(c::report_widgets::create_report_widget(
+            api,
+            arg(&p, "title")?,
+            arg(&p, "chartType")?,
+            arg(&p, "splitBy")?,
+            arg(&p, "period")?,
+            arg(&p, "filtersJson")?,
+            arg(&p, "position")?,
+        )
+        .await?),
+        "update_report_widget" => ok(c::report_widgets::update_report_widget(
+            api,
+            arg(&p, "id")?,
+            arg(&p, "title")?,
+            arg(&p, "chartType")?,
+            arg(&p, "splitBy")?,
+            arg(&p, "period")?,
+            arg(&p, "filtersJson")?,
+        )
+        .await?),
+        "delete_report_widget" => ok(c::report_widgets::delete_report_widget(api, arg(&p, "id")?).await?),
+        "reorder_report_widgets" => ok(c::report_widgets::reorder_report_widgets(api, arg(&p, "orderedIds")?).await?),
         // ── month-end close (#59) ──
         "get_month_close" => {
             ok(c::month_close::get_month_close(api, arg(&p, "year")?, arg(&p, "month")?).await?)

@@ -35,3 +35,4 @@ pub mod settings;
 pub mod simplefin;
 pub mod spending;
 pub mod transactions;
+pub mod report_widgets;
