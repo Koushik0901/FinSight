@@ -1341,8 +1341,7 @@ pub fn calculate_goal_eta(
         "monthly" => 12,
         _ => 12,
     };
-    let monthly_equivalent_cents =
-        ((contribution_cents.max(0) as f64) * periods_per_year as f64 / 12.0).round() as i64;
+    let monthly_equivalent_cents = (contribution_cents.max(0) * periods_per_year as i64 + 6) / 12;
     let eta_months = if monthly_equivalent_cents > 0 && goal.remaining_cents > 0 {
         Some(div_ceil(goal.remaining_cents, monthly_equivalent_cents))
     } else if goal.remaining_cents == 0 {
@@ -2783,22 +2782,24 @@ fn div_ceil(n: i64, d: i64) -> i64 {
     (n + d - 1) / d
 }
 
-fn goal_period_factor(period: &str) -> f64 {
-    let ppy = match period.trim().to_ascii_lowercase().as_str() {
+fn goal_periods_per_year(period: &str) -> i64 {
+    match period.trim().to_ascii_lowercase().as_str() {
         "weekly" => 52,
         "biweekly" | "bi-weekly" => 26,
         _ => 12,
-    };
-    ppy as f64 / 12.0
+    }
+}
+
+fn goal_period_factor(period: &str) -> f64 {
+    goal_periods_per_year(period) as f64 / 12.0
 }
 
 fn monthly_equivalent_cents(period: &str, amount_cents: i64) -> i64 {
     if amount_cents <= 0 {
         return 0;
     }
-    ((amount_cents as f64 * goal_period_factor(period)).round()) as i64
+    (amount_cents * goal_periods_per_year(period) + 6) / 12
 }
-
 // ── "Explain this recommendation" — issue #71 ───────────────────────────────
 //
 // Debt payoff and goal completion are recommendations produced HERE — above

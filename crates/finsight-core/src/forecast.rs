@@ -280,10 +280,11 @@ pub fn project(s: &Snapshot, p: &ScenarioParams, months: u32) -> Projection {
             if g.remaining_cents <= 0 {
                 continue;
             }
-            extra_by_name.insert(g.name.clone(), drain_remaining);
-            drain_remaining = 0;
+            let cap = g.remaining_cents;
+            let to_assign = drain_remaining.min(cap);
+            extra_by_name.insert(g.name.clone(), to_assign);
+            drain_remaining -= to_assign;
         }
-
         for g in &sorted {
             if g.monthly_cents <= 0 || g.remaining_cents <= 0 {
                 continue;

@@ -41,22 +41,27 @@ const STRICTNESS_LABELS: Record<string, string> = {
   none: "No real deadline",
 };
 /** Periods per year for cadence conversion. */
-export function periodFactor(period: string | null | undefined): number {
+export function periodsPerYear(period: string | null | undefined): number {
   switch ((period ?? "monthly").trim().toLowerCase()) {
     case "weekly":
-      return 52 / 12;
+      return 52;
     case "biweekly":
     case "bi-weekly":
-      return 26 / 12;
+      return 26;
     default:
-      return 1;
+      return 12;
   }
+}
+
+export function periodFactor(period: string | null | undefined): number {
+  return periodsPerYear(period) / 12;
 }
 
 export function monthlyEquivalentCents(goal: { monthlyCents: number; period?: string | null }): number {
   if (goal.monthlyCents <= 0) return 0;
   const rawPeriod = typeof goal.period === "string" ? goal.period : "monthly";
-  return Math.round(goal.monthlyCents * periodFactor(rawPeriod));
+  const ppy = periodsPerYear(rawPeriod);
+  return Math.floor((goal.monthlyCents * ppy + 6) / 12);
 }
 
 function paceLabel(goal: GoalDto) {

@@ -314,9 +314,9 @@ pub fn build_forecast(
     whatif: &WhatIf,
     include_merchant_keys: &[String],
 ) -> CoreResult<CashflowForecast> {
+    let horizon = horizon_days.clamp(MIN_HORIZON_DAYS, MAX_HORIZON_DAYS);
     let as_of = chrono::Utc::now().date_naive();
     let horizon_end = as_of + Duration::days(horizon);
-
     let balances = metrics::balance_breakdown(conn)?;
     let rolling = metrics::rolling_averages(conn, EXPENSE_WINDOW_DAYS)?;
     let (recent_mean_expense, _sufficient) =

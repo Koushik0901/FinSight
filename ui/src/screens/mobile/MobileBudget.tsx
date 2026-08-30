@@ -1,8 +1,7 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useBudgetEnvelopes, useSetBudget } from "../../api/hooks/budget";
+import { useHold, useSetHold } from "../../api/hooks/budgetHolds";
 import { useTransactions } from "../../api/hooks/transactions";
-import type { BudgetEnvelope } from "../../api/openapiClient";
-import { money } from "../../utils/format";
 import { toast } from "sonner";
 import * as I from "../../components/Icons";
 import { MobileStat, MobileStatRow } from "../../components/mobile/MobileStat";
@@ -28,12 +27,21 @@ function envelopeStatus(env: BudgetEnvelope) {
 type Filter = "all" | "over" | "watch" | "ok";
 
 export default function MobileBudget() {
-  const { data: envelopes = [], isLoading } = useBudgetEnvelopes();
+  const todayMonth = new Date().toISOString().slice(0, 7);
+  const [viewMonth, setViewMonth] = useState(todayMonth);
+  const monthBefore = (m: string, n: number) => {
+    const [y, mo] = m.split("-").map(Number);
+    const d = new Date(y, mo - 1 - n, 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  };
+  const monthAfter = (m: string, n: number) => monthBefore(m, -n);
+  const displayMonth = new Date(viewMonth + "-01T00:00:00").toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  const { data: envelopes = [], isLoading } = useBudgetEnvelopes(viewMonth);
+  const { data: holdCents = 0 } = useHold(viewMonth);
+  const setHold = useSetHold();
+  const [holdInput, setHoldInput] = useState("");
+  useEffect(() => { setHoldInput(holdCents > 0 ? String(Math.round(holdCents / 100)) : ""); }, [holdCents]);
   const [filter, setFilter] = useState<Filter>("all");
-  const [detail, setDetail] = useState<BudgetEnvelope | null>(null);
-  const [adjust, setAdjust] = useState(false);
-  const [adjustValue, setAdjustValue] = useState("");
-  const setBudget = useSetBudget();
 
   const primaryCurrency = "USD";
 
@@ -86,15 +94,20 @@ export default function MobileBudget() {
     );
   }
 
-  const handleAdjust = async () => {
+  const handleAdjust = async (allow = false) => {
     if (!detail) return;
     const amountCents = Math.round(Number(adjustValue || 0) * 100);
     try {
-      await setBudget.mutateAsync({ categoryId: detail.categoryId, amountCents });
+      await setBudget.mutateAsync({ categoryId: detail.categoryId, amountCents, month: viewMonth, allowOverAssign: allow });
       toast.success("Budget saved", { description: `${detail.categoryLabel} · ${money(amountCents)}` });
       setAdjust(false);
       setAdjustValue("");
-    } catch {
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (!allow && msg.toLowerCase().includes("over-assigned")) {
+        toast.error(msg, { description: "Over-assign anyway?", action: { label: "Over-assign", onClick: () => void handleAdjust(true) } });
+        return;
+      }
       toast.error("Failed to save budget");
     }
   };
@@ -121,6 +134,57 @@ export default function MobileBudget() {
         <MobileStat label="Envelopes" value={String(envelopes.length)} sub={`${filtered.length} shown`} />
         <MobileStat label="Over budget" value={String(envelopes.filter((e) => envelopeStatus(e).tone === "negative").length)} sub="Need attention" />
       </MobileStatRow>
+      <MobileSection title={`Hold for ${monthAfter(viewMonth, 1).slice(0, 7)}`} description="Parks unassigned money for next month — mirrors desktop Hold.">
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <input
+            className="control"
+            type="number"
+            min="0"
+            step="10"
+            value={holdInput}
+            onChange={(e) => setHoldInput(e.target.value)}
+            placeholder="0"
+            aria-label={`Hold amount for ${monthAfter(viewMonth, 1)}`}
+            style={{ flex: 1, minHeight: 44 }}
+          />
+          <button
+            className="btn primary"
+            type="button"
+            style={{ minHeight: 44 }}
+            onClick={async () => {
+              const cents = Math.round(Number(holdInput || 0) * 100);
+              try {
+                await setHold.mutateAsync({ month: viewMonth, amountCents: cents });
+                toast.success(cents > 0 ? `Hold $${(cents / 100).toFixed(0)} for ${monthAfter(viewMonth, 1)}` : "Hold cleared");
+              } catch {
+                toast.error("Failed to save hold");
+              }
+            }}
+          >
+            Save
+          </button>
+          {holdCents > 0 ? (
+            <button
+              className="btn"
+              type="button"
+              style={{ minHeight: 44 }}
+              onClick={async () => {
+                try {
+                  await setHold.mutateAsync({ month: viewMonth, amountCents: 0 });
+                  toast.success("Hold cleared");
+                } catch {
+                  toast.error("Failed to clear hold");
+                }
+              }}
+            >
+              Clear
+            </button>
+          ) : null}
+        </div>
+        <div style={{ fontSize: 12, color: "var(--ink-mute)", marginTop: 6 }}>
+          {holdCents > 0 ? `Holding ${money(holdCents)} for next month — reduces this month's To Budget, adds to next month's available.` : "No hold set — To Budget is income minus budgeted."}
+        </div>
+      </MobileSection>
 
       {/* Filter */}
       <SegmentedControl

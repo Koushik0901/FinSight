@@ -106,13 +106,23 @@ fn budget_envelopes_for_month(
         })?
         .collect::<Result<std::collections::HashMap<_, _>, _>>()?;
 
+    // Rollover map: single query for all categories, avoids N+1 per-envelope
+    // SELECT rollover_enabled. COALESCE to 1 for pre-migration rows.
+    let rollover_map: std::collections::HashMap<String, i64> = conn
+        .prepare(
+            "SELECT id, COALESCE(rollover_enabled,1) FROM categories WHERE archived_at IS NULL",
+        )?
+        .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))?
+        .collect::<Result<std::collections::HashMap<_, _>, _>>()?;
+
     let mut out = Vec::new();
     for (cat_id, label, color, group_label, spent, txn_count, budget) in rows {
         if !finsight_core::categorize::is_budgetable_category(&cat_id) {
             continue;
         }
-        let carryover_cents = budgets::carryover_into_month(conn, &cat_id, month)?;
-        // Net cover ledger for this month: +in - out. Uses the same month as the
+        let rollover_enabled = rollover_map.get(&cat_id).copied().unwrap_or(1) != 0;
+        let carryover_cents =
+            budgets::carryover_into_month_fast(conn, &cat_id, month, rollover_enabled)?;
         // envelope, so a cover in April does not smear into May's carryover —
         // it stays an auditable per-month move. Transfers are now fetched via
         // the two grouped maps above (≤2 queries total) and joined in Rust.
@@ -276,7 +286,7 @@ pub async fn set_budget(
     run(&db, move |conn| {
         if crate::commands::month_close::is_locked(conn, &effective_month)? {
             return Err(finsight_core::CoreError::Validation(format!(
-                "This month is closed — editing will cause drift. Reopen to continue. (month {})",
+                "MONTH_LOCKED: This month is closed — editing will cause drift. Reopen to continue. (month {})",
                 effective_month
             )));
         }
@@ -853,7 +863,7 @@ pub async fn contribute_to_goal(
         let cur_month = chrono::Utc::now().format("%Y-%m").to_string();
         if crate::commands::month_close::is_locked(conn, &cur_month)? {
             return Err(finsight_core::CoreError::Validation(format!(
-                "This month is closed — editing will cause drift. Reopen to continue. (month {})",
+                "MONTH_LOCKED: This month is closed — editing will cause drift. Reopen to continue. (month {})",
                 cur_month
             )));
         }

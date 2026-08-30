@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useCallback } from "react";
+import FocusLock from "react-focus-lock";
 import { createPortal } from "react-dom";
-
 interface BottomSheetProps {
   open: boolean;
   onClose: () => void;
@@ -67,13 +67,17 @@ export function BottomSheet({
     if (!open) return;
     const prev = document.body.style.overflow;
     const prevPad = document.body.style.paddingRight;
-    // Compensate for scrollbar disappearance so desktop trigger doesn't shift
     const scrollbarW = window.innerWidth - document.documentElement.clientWidth;
     document.body.style.overflow = "hidden";
     if (scrollbarW > 0) document.body.style.paddingRight = `${scrollbarW}px`;
+    // inert the main shell so background is not reachable via Tab or screen reader
+    const shell = document.querySelector(".mobile-shell") as HTMLElement | null;
+    const prevInert = shell?.hasAttribute("inert");
+    if (shell) shell.setAttribute("inert", "");
     return () => {
       document.body.style.overflow = prev;
       document.body.style.paddingRight = prevPad;
+      if (shell && !prevInert) shell.removeAttribute("inert");
     };
   }, [open]);
 
@@ -112,49 +116,51 @@ export function BottomSheet({
   if (!open) return null;
 
   const content = (
-    <div
-      className={`mobile-sheet-root${open ? " open" : ""}`}
-      aria-hidden={open ? undefined : true}
-    >
-      {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */}
+    <FocusLock returnFocus={false} disabled={!open}>
       <div
-        className="mobile-sheet-backdrop"
-        onClick={onClose}
-        data-testid="bottom-sheet-backdrop"
-      />
-      <div
-        ref={panelRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        aria-describedby={description ? descId : undefined}
-        tabIndex={-1}
-        className={`mobile-sheet-panel${fullHeight ? " full" : ""}`}
-        onTouchStart={onTouchStart}
-        onTouchMove={onTouchMove}
-        onTouchEnd={onTouchEnd}
-        style={{ outline: "none" }}
+        className={`mobile-sheet-root${open ? " open" : ""}`}
+        aria-hidden={open ? undefined : true}
       >
-        {!hideHandle && !fullHeight && <div className="mobile-sheet-handle" aria-hidden="true" />}
-        <div className="mobile-sheet-header">
-          <h2 id={titleId}>{title}</h2>
-          <button
-            type="button"
-            className="mobile-sheet-close"
-            aria-label="Close"
-            onClick={onClose}
-          >
-            ×
-          </button>
+        {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */}
+        <div
+          className="mobile-sheet-backdrop"
+          onClick={onClose}
+          data-testid="bottom-sheet-backdrop"
+        />
+        <div
+          ref={panelRef}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={titleId}
+          aria-describedby={description ? descId : undefined}
+          tabIndex={-1}
+          className={`mobile-sheet-panel${fullHeight ? " full" : ""}`}
+          onTouchStart={onTouchStart}
+          onTouchMove={onTouchMove}
+          onTouchEnd={onTouchEnd}
+          style={{ outline: "none" }}
+        >
+          {!hideHandle && !fullHeight && <div className="mobile-sheet-handle" aria-hidden="true" />}
+          <div className="mobile-sheet-header">
+            <h2 id={titleId}>{title}</h2>
+            <button
+              type="button"
+              className="mobile-sheet-close"
+              aria-label="Close"
+              onClick={onClose}
+            >
+              ×
+            </button>
+          </div>
+          {description ? (
+            <p id={descId} className="sr-only">
+              {description}
+            </p>
+          ) : null}
+          <div className="mobile-sheet-body">{children}</div>
         </div>
-        {description ? (
-          <p id={descId} className="sr-only">
-            {description}
-          </p>
-        ) : null}
-        <div className="mobile-sheet-body">{children}</div>
       </div>
-    </div>
+    </FocusLock>
   );
 
   return createPortal(content, document.body);

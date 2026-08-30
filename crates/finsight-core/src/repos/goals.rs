@@ -122,13 +122,13 @@ impl GoalPeriod {
 
     /// Monthly equivalent of a per-period amount. Mirrors
     /// `finsight_agent::finance::calculate_goal_eta`'s
-    /// `(amount * periods_per_year / 12).round()` so the same $100/week is
-    /// $433/month everywhere it is budgeted.
+    /// `(amount * periods_per_year + 6) / 12` integer rounding so the same $100/week is
+    /// $433/month everywhere it is budgeted, without float drift.
     pub fn monthly_equivalent_cents(self, amount_cents: i64) -> i64 {
         if amount_cents <= 0 {
             return 0;
         }
-        ((amount_cents as f64 * self.periods_per_year() as f64) / 12.0).round() as i64
+        (amount_cents * self.periods_per_year() as i64 + 6) / 12
     }
 }
 

@@ -1,16 +1,11 @@
 use crate::error::{CoreError, CoreResult};
 use crate::merchant::canonical_merchant_key;
+use crate::metrics::{non_investment_txn_predicate, primary_currency_clause};
 use crate::models::{
     BudgetChange, BudgetTransfer, CustomReportParams, CustomReportResult, FundingTemplate, Period,
     ReportRow, SplitBy,
 };
 use chrono::{Datelike, Utc};
-use rusqlite::{params, Connection, OptionalExtension};
-use serde::Serialize;
-use specta::Type;
-use utoipa::ToSchema;
-use uuid::Uuid;
-
 /// Tolerance for to-budget validation: allow $0.50 over-assign before blocking.
 pub const TO_BUDGET_TOLERANCE_CENTS: i64 = 50;
 
@@ -43,6 +38,14 @@ pub fn validate_to_budget(
         )));
     }
     Ok(())
+}
+
+/// Returns true if the month is over-assigned beyond tolerance, even when
+/// income == 0. Used by the UI to surface a warning when the guard was
+/// bypassed at set-time but later income makes to_budget negative.
+pub fn is_over_assigned(conn: &Connection, month: &str) -> CoreResult<bool> {
+    let tb = to_budget(conn, month)?;
+    Ok(tb < -TO_BUDGET_TOLERANCE_CENTS)
 }
 
 /// Set (upsert) a budget for a category in a given month (format: "YYYY-MM").
@@ -598,765 +601,826 @@ fn cron_dow_matches(field: &str, dow_sunday0: u32) -> bool {
                     }
                     return (dow_sunday0 - start_n) % step == 0;
                 } else {
-                    // wrapped range: valid if >=start or <=end
-                    if dow_sunday0 >= start_n || dow_sunday0 <= end_n {
-                        // step logic for wrapped is complex; fallback to true if in range
-                        return true;
+                    // wrapped range: generate circular sequence  start..end  (e.g. 5-1 → 5,6,0,1) then step
+                    let mut vals = Vec::new();
+                    let mut cur = start_n;
+                    loop {
+                        vals.push(cur);
+                        if cur == end_n {
+                            break;
+                        }
+                        cur = (cur + 1) % 7;
+                        if vals.len() > 7 {
+                            break;
+                        }
+                    }
+                    if let Some(pos) = vals.iter().position(|&v| v == dow_sunday0) {
+                        return pos % step as usize == 0;
                     }
                     return false;
                 }
             }
-        }
-        if let Ok(start) = base.parse::<u32>() {
-            let start_n = if start == 7 { 0 } else { start };
-            if dow_sunday0 < start_n {
-                return false;
+            if let Ok(start) = base.parse::<u32>() {
+                let start_n = if start == 7 { 0 } else { start };
+                if dow_sunday0 < start_n {
+                    return false;
+                }
+                return (dow_sunday0 - start_n) % step == 0;
             }
-            return (dow_sunday0 - start_n) % step == 0;
+            return false;
         }
-        return false;
+        if let Some((s, e)) = field.split_once('-') {
+            let start: u32 = s.trim().parse().unwrap_or(0);
+            let end: u32 = e.trim().parse().unwrap_or(7);
+            let (start_n, end_n) = (
+                if start == 7 { 0 } else { start },
+                if end == 7 { 0 } else { end },
+            );
+            let dow_n = dow_sunday0;
+            if start_n <= end_n {
+                return dow_n >= start_n && dow_n <= end_n;
+            } else {
+                return dow_n >= start_n || dow_n <= end_n;
+            }
+        }
+        if let Ok(n) = field.parse::<u32>() {
+            let n_n = if n == 7 { 0 } else { n };
+            return dow_sunday0 == n_n;
+        }
+        false
     }
-    if let Some((s, e)) = field.split_once('-') {
-        let start: u32 = s.trim().parse().unwrap_or(0);
-        let end: u32 = e.trim().parse().unwrap_or(7);
-        let (start_n, end_n) = (
-            if start == 7 { 0 } else { start },
-            if end == 7 { 0 } else { end },
-        );
-        let dow_n = dow_sunday0;
-        if start_n <= end_n {
-            return dow_n >= start_n && dow_n <= end_n;
+
+    fn cron_is_due_in_month(cron_str: &str, month: &str) -> bool {
+        let parts: Vec<&str> = cron_str.split_whitespace().collect();
+        // Accept 5 fields (min hour dom mon dow) or 6 with seconds prefix
+        let (dom_str, mon_str, dow_str) = if parts.len() == 5 {
+            (parts[2], parts[3], parts[4])
+        } else if parts.len() == 6 {
+            (parts[3], parts[4], parts[5])
         } else {
-            return dow_n >= start_n || dow_n <= end_n;
-        }
-    }
-    if let Ok(n) = field.parse::<u32>() {
-        let n_n = if n == 7 { 0 } else { n };
-        return dow_sunday0 == n_n;
-    }
-    false
-}
-
-fn cron_is_due_in_month(cron_str: &str, month: &str) -> bool {
-    let parts: Vec<&str> = cron_str.split_whitespace().collect();
-    // Accept 5 fields (min hour dom mon dow) or 6 with seconds prefix
-    let (dom_str, mon_str, dow_str) = if parts.len() == 5 {
-        (parts[2], parts[3], parts[4])
-    } else if parts.len() == 6 {
-        (parts[3], parts[4], parts[5])
-    } else {
-        return false;
-    };
-    let year: i32 = month[0..4].parse().unwrap_or(1970);
-    let mon: u32 = month[5..7].parse().unwrap_or(1);
-    if mon < 1 || mon > 12 {
-        return false;
-    }
-    // month field must match the target month
-    if !cron_field_matches(mon_str, mon, 1, 12) {
-        return false;
-    }
-    let dim = days_in_month(year, mon);
-    let dom_is_star = dom_str.trim() == "*";
-    let dow_is_star = dow_str.trim() == "*";
-    for day in 1..=dim {
-        let dom_match = cron_field_matches(dom_str, day, 1, 31);
-        let date = chrono::NaiveDate::from_ymd_opt(year, mon, day).unwrap();
-        let dow_sunday0 = date.weekday().num_days_from_sunday();
-        let dow_match = cron_dow_matches(dow_str, dow_sunday0);
-        let day_match = match (dom_is_star, dow_is_star) {
-            (true, true) => true,
-            (true, false) => dow_match,
-            (false, true) => dom_match,
-            (false, false) => dom_match || dow_match,
+            return false;
         };
-        if day_match {
-            // verify hour/min are not impossible? we ignore them; any day match suffices
-            return true;
+        let year: i32 = month[0..4].parse().unwrap_or(1970);
+        let mon: u32 = month[5..7].parse().unwrap_or(1);
+        if mon < 1 || mon > 12 {
+            return false;
         }
+        // month field must match the target month
+        if !cron_field_matches(mon_str, mon, 1, 12) {
+            return false;
+        }
+        let dim = days_in_month(year, mon);
+        let dom_is_star = dom_str.trim() == "*";
+        let dow_is_star = dow_str.trim() == "*";
+        for day in 1..=dim {
+            let dom_match = cron_field_matches(dom_str, day, 1, 31);
+            let date = chrono::NaiveDate::from_ymd_opt(year, mon, day).unwrap();
+            let dow_sunday0 = date.weekday().num_days_from_sunday();
+            let dow_match = cron_dow_matches(dow_str, dow_sunday0);
+            let day_match = match (dom_is_star, dow_is_star) {
+                (true, true) => true,
+                (true, false) => dow_match,
+                (false, true) => dom_match,
+                (false, false) => dom_match || dow_match,
+            };
+            if day_match {
+                // verify hour/min are not impossible? we ignore them; any day match suffices
+                return true;
+            }
+        }
+        false
     }
-    false
-}
 
-fn interval_days_from_str(s: &str) -> Option<u32> {
-    let lower = s.to_lowercase();
-    let trimmed = lower.trim();
-    // explicit keyword mappings first (without number)
-    if trimmed == "daily" || trimmed == "day" || trimmed == "every day" || trimmed == "everyday" {
-        return Some(1);
-    }
-    if trimmed == "weekly" || trimmed == "every week" || trimmed == "week" {
-        return Some(7);
-    }
-    if trimmed == "biweekly"
-        || trimmed == "bi-weekly"
-        || trimmed == "fortnightly"
-        || trimmed == "every 2 weeks"
-        || trimmed == "every fortnight"
-    {
-        return Some(14);
-    }
-    if trimmed == "monthly"
-        || trimmed == "every month"
-        || trimmed == "month"
-        || trimmed == "once a month"
-    {
-        return Some(30);
-    }
-    if trimmed == "quarterly" || trimmed == "every quarter" || trimmed == "every 3 months" {
-        return Some(90);
-    }
-    if trimmed == "semiannually" || trimmed == "semi-annually" || trimmed == "every 6 months" {
-        return Some(180);
-    }
-    if trimmed == "yearly"
-        || trimmed == "annually"
-        || trimmed == "annual"
-        || trimmed == "every year"
-        || trimmed == "every 12 months"
-    {
-        return Some(365);
-    }
-    // Try to extract "<number> <unit>" pattern
-    // Find all numbers and their following unit
-    let chars: Vec<char> = lower.chars().collect();
-    let mut i = 0;
-    while i < chars.len() {
-        if chars[i].is_ascii_digit() {
-            let start = i;
-            while i < chars.len() && chars[i].is_ascii_digit() {
+    fn interval_days_from_str(s: &str) -> Option<u32> {
+        let lower = s.to_lowercase();
+        let trimmed = lower.trim();
+        // explicit keyword mappings first (without number)
+        if trimmed == "daily" || trimmed == "day" || trimmed == "every day" || trimmed == "everyday"
+        {
+            return Some(1);
+        }
+        if trimmed == "weekly" || trimmed == "every week" || trimmed == "week" {
+            return Some(7);
+        }
+        if trimmed == "biweekly"
+            || trimmed == "bi-weekly"
+            || trimmed == "fortnightly"
+            || trimmed == "every 2 weeks"
+            || trimmed == "every fortnight"
+        {
+            return Some(14);
+        }
+        if trimmed == "monthly"
+            || trimmed == "every month"
+            || trimmed == "month"
+            || trimmed == "once a month"
+        {
+            return Some(30);
+        }
+        if trimmed == "quarterly" || trimmed == "every quarter" || trimmed == "every 3 months" {
+            return Some(90);
+        }
+        if trimmed == "semiannually" || trimmed == "semi-annually" || trimmed == "every 6 months" {
+            return Some(180);
+        }
+        if trimmed == "yearly"
+            || trimmed == "annually"
+            || trimmed == "annual"
+            || trimmed == "every year"
+            || trimmed == "every 12 months"
+        {
+            return Some(365);
+        }
+        // Try to extract "<number> <unit>" pattern
+        // Find all numbers and their following unit
+        let chars: Vec<char> = lower.chars().collect();
+        let mut i = 0;
+        while i < chars.len() {
+            if chars[i].is_ascii_digit() {
+                let start = i;
+                while i < chars.len() && chars[i].is_ascii_digit() {
+                    i += 1;
+                }
+                let num_str: String = chars[start..i].iter().collect();
+                if let Ok(num) = num_str.parse::<u32>() {
+                    // skip spaces
+                    let mut j = i;
+                    while j < chars.len() && chars[j].is_whitespace() {
+                        j += 1;
+                    }
+                    let rest: String = chars[j..].iter().collect();
+                    if rest.starts_with("day") {
+                        return Some(num);
+                    } else if rest.starts_with("week") {
+                        return Some(num * 7);
+                    } else if rest.starts_with("month") {
+                        return Some(num * 30);
+                    } else if rest.starts_with("year") {
+                        return Some(num * 365);
+                    } else if rest.starts_with('d')
+                        && (rest.len() == 1 || rest[1..].starts_with(|c: char| !c.is_alphabetic()))
+                    {
+                        return Some(num);
+                    } else if rest.starts_with('w') {
+                        return Some(num * 7);
+                    } else if rest.len() == 0 {
+                        // bare number like "14" -> treat as days
+                        return Some(num);
+                    }
+                }
+            } else {
                 i += 1;
             }
-            let num_str: String = chars[start..i].iter().collect();
-            if let Ok(num) = num_str.parse::<u32>() {
-                // skip spaces
-                let mut j = i;
-                while j < chars.len() && chars[j].is_whitespace() {
-                    j += 1;
-                }
-                let rest: String = chars[j..].iter().collect();
-                if rest.starts_with("day") {
-                    return Some(num);
-                } else if rest.starts_with("week") {
-                    return Some(num * 7);
-                } else if rest.starts_with("month") {
-                    return Some(num * 30);
-                } else if rest.starts_with("year") {
-                    return Some(num * 365);
-                } else if rest.starts_with('d')
-                    && (rest.len() == 1 || rest[1..].starts_with(|c: char| !c.is_alphabetic()))
-                {
-                    return Some(num);
-                } else if rest.starts_with('w') {
-                    return Some(num * 7);
-                } else if rest.len() == 0 {
-                    // bare number like "14" -> treat as days
-                    return Some(num);
-                }
-            }
-        } else {
-            i += 1;
         }
+        // Also handle phrases like "every 2 weeks" where 'every' prefix already consumed
+        // If still not found, try to detect keyword substrings with implied 1
+        if lower.contains("daily") {
+            return Some(1);
+        }
+        if lower.contains("weekly") {
+            return Some(7);
+        }
+        if lower.contains("monthly") {
+            return Some(30);
+        }
+        None
     }
-    // Also handle phrases like "every 2 weeks" where 'every' prefix already consumed
-    // If still not found, try to detect keyword substrings with implied 1
-    if lower.contains("daily") {
-        return Some(1);
-    }
-    if lower.contains("weekly") {
-        return Some(7);
-    }
-    if lower.contains("monthly") {
-        return Some(30);
-    }
-    None
-}
 
-fn interval_is_due_in_month(interval_str: &str, month: &str) -> Option<bool> {
-    let days = interval_days_from_str(interval_str)?;
-    let mon: u32 = month[5..7].parse().unwrap_or(1);
-    // Map interval days to due logic reusing recurring::cadence buckets (weekly/biweekly/monthly etc.)
-    //   <=31 => monthly or more frequent => always due
-    //   <=92 => quarterly bucket
-    //   <=185 => semi-annual
-    //   else annual
-    // This mirrors recurring::cadence_label thresholds: weekly<10, biweekly<20, monthly<45, quarterly<100, annual else
-    let due = if days <= 45 {
-        // weekly/biweekly/monthly — always due within any month
-        true
-    } else if days <= 100 {
-        // quarterly: due in Jan, Apr, Jul, Oct
-        mon % 3 == 1
-    } else if days <= 200 {
-        // semi-annual: Jan, Jul
-        mon % 6 == 1
-    } else {
-        // annual: only Jan
-        mon == 1
-    };
-    Some(due)
-}
-
-pub fn schedule_is_due(schedule_str: &str, month: &str) -> bool {
-    let s = schedule_str.trim();
-    if s.is_empty() {
-        return false;
+    fn interval_is_due_in_month(interval_str: &str, month: &str) -> Option<bool> {
+        let days = interval_days_from_str(interval_str)?;
+        let mon: u32 = month[5..7].parse().unwrap_or(1);
+        // Map interval days to due logic reusing recurring::cadence buckets (weekly/biweekly/monthly etc.)
+        //   <=31 => monthly or more frequent => always due
+        //   <=92 => quarterly bucket
+        //   <=185 => semi-annual
+        //   else annual
+        // This mirrors recurring::cadence_label thresholds: weekly<10, biweekly<20, monthly<45, quarterly<100, annual else
+        let due = if days <= 45 {
+            // weekly/biweekly/monthly — always due within any month
+            true
+        } else if days <= 100 {
+            // quarterly: due in Jan, Apr, Jul, Oct
+            mon % 3 == 1
+        } else if days <= 200 {
+            // semi-annual: Jan, Jul
+            mon % 6 == 1
+        } else {
+            // annual: only Jan
+            mon == 1
+        };
+        Some(due)
     }
-    // Cron-like strings contain '*' or '/' or have 5+ whitespace-separated tokens
-    let is_cron_like = s.contains('*') || s.contains('/') || s.split_whitespace().count() >= 5;
-    if is_cron_like {
-        // Try cron first; if it looks like cron but invalid, treat as unparseable
-        // Cron must have 5 or 6 fields to be valid
-        let parts = s.split_whitespace().count();
-        if parts == 5 || parts == 6 {
+
+    pub fn schedule_is_due(schedule_str: &str, month: &str) -> bool {
+        let s = schedule_str.trim();
+        if s.is_empty() {
+            return false;
+        }
+        let parts: Vec<&str> = s.split_whitespace().collect();
+        let is_cron_like = (parts.len() == 5 || parts.len() == 6)
+            && s.contains('*')
+            && parts.iter().all(|p| {
+                p.chars()
+                    .all(|c| c.is_ascii_digit() || matches!(c, '*' | '/' | '-' | ','))
+            });
+        if is_cron_like {
             return cron_is_due_in_month(s, month);
         }
-        // fallback to interval parsing
+        // Try interval keywords / numeric intervals
+        if let Some(due) = interval_is_due_in_month(s, month) {
+            return due;
+        }
+        // Reuse recurring logic: if string looks like a cadence name, map via interval parser already
+        // Otherwise attempt cron fallback for things like "0 0 1 * *"
+        cron_is_due_in_month(s, month)
     }
-    // Try interval keywords / numeric intervals
-    if let Some(due) = interval_is_due_in_month(s, month) {
-        return due;
-    }
-    // Reuse recurring logic: if string looks like a cadence name, map via interval parser already
-    // Otherwise attempt cron fallback for things like "0 0 1 * *"
-    cron_is_due_in_month(s, month)
-}
 
-pub fn category_spent(
-    conn: &Connection,
-    category_id: &str,
-    from: &str,
-    to: &str,
-) -> CoreResult<i64> {
-    let v: i64 = conn.query_row(
-        "SELECT COALESCE(SUM(CASE WHEN t.settle_up=1 THEN -t.amount_cents \
+    pub fn category_spent(
+        conn: &Connection,
+        category_id: &str,
+        from: &str,
+        to: &str,
+    ) -> CoreResult<i64> {
+        let v: i64 = conn.query_row(
+            "SELECT COALESCE(SUM(CASE WHEN t.settle_up=1 THEN -t.amount_cents \
          WHEN t.amount_cents < 0 THEN -t.amount_cents ELSE 0 END),0) \
          FROM transactions t \
          WHERE t.category_id=?1 AND t.posted_at >= ?2 AND t.posted_at < ?3 AND t.is_transfer=0",
-        params![category_id, from, to],
-        |r| r.get(0),
-    )?;
-    Ok(v)
-}
-
-pub fn period_bounds(conn: &Connection, period: Period) -> CoreResult<(Option<String>, String)> {
-    let anchor: Option<String> =
-        conn.query_row("SELECT MAX(date(posted_at)) FROM transactions", [], |r| {
-            r.get(0)
-        })?;
-    let mut anchor_date = anchor
-        .as_deref()
-        .and_then(|s| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok())
-        .unwrap_or_else(|| Utc::now().date_naive());
-    // Future guard (I8): if the data's max is in the future relative to wall-clock,
-    // clamp to today so future-dated rows are excluded by the end bound. This keeps
-    // the anchor data-driven for historical imports but prevents a single future
-    // row from sliding the window forward and hiding current-month spend.
-    let today = Utc::now().date_naive();
-    if anchor_date > today {
-        anchor_date = today;
+            params![category_id, from, to],
+            |r| r.get(0),
+        )?;
+        Ok(v)
     }
-    let end = (anchor_date + chrono::Duration::days(1))
-        .format("%Y-%m-%d")
-        .to_string();
-    let start = match period {
-        Period::All => None,
-        Period::Last1Month => Some(
-            (anchor_date - chrono::Months::new(1))
-                .format("%Y-%m-%d")
-                .to_string(),
-        ),
-        Period::Last3Months => Some(
-            (anchor_date - chrono::Months::new(3))
-                .format("%Y-%m-%d")
-                .to_string(),
-        ),
-        Period::Last6Months => Some(
-            (anchor_date - chrono::Months::new(6))
-                .format("%Y-%m-%d")
-                .to_string(),
-        ),
-        Period::YTD => Some(format!("{}-01-01", anchor_date.year())),
-    };
-    let start_rfc = start.map(|s| format!("{s}T00:00:00Z"));
-    Ok((start_rfc, format!("{end}T00:00:00Z")))
-}
-/// Carryover helper that works on `&Connection` (read-only). Mirrors
-/// `carryover_into_month(&mut Connection)` but without requiring mut.
-fn carryover_for(conn: &Connection, category_id: &str, month: &str) -> CoreResult<i64> {
-    // B-P1-1: per-category rollover toggle. When `rollover_enabled = 0` the
-    // envelope resets each month — no budgeted-spent from prior months carries
-    // forward. Check the category row directly so we respect the toggle even
-    // before any budgeted-then-spent history has accumulated. COALESCE defaults
-    // to 1 for pre-migration rows or missing categories so existing data keeps
-    // prior behaviour.
-    let rollover: Option<i64> = conn
-        .query_row(
-            "SELECT rollover_enabled FROM categories WHERE id = ?1",
+
+    pub fn period_bounds(
+        conn: &Connection,
+        period: Period,
+    ) -> CoreResult<(Option<String>, String)> {
+        let anchor: Option<String> =
+            conn.query_row("SELECT MAX(date(posted_at)) FROM transactions", [], |r| {
+                r.get(0)
+            })?;
+        let mut anchor_date = anchor
+            .as_deref()
+            .and_then(|s| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok())
+            .unwrap_or_else(|| Utc::now().date_naive());
+        // Future guard (I8): if the data's max is in the future relative to wall-clock,
+        // clamp to today so future-dated rows are excluded by the end bound. This keeps
+        // the anchor data-driven for historical imports but prevents a single future
+        // row from sliding the window forward and hiding current-month spend.
+        let today = Utc::now().date_naive();
+        if anchor_date > today {
+            anchor_date = today;
+        }
+        let end = (anchor_date + chrono::Duration::days(1))
+            .format("%Y-%m-%d")
+            .to_string();
+        let start = match period {
+            Period::All => None,
+            Period::Last1Month => Some(
+                (anchor_date - chrono::Months::new(1))
+                    .format("%Y-%m-%d")
+                    .to_string(),
+            ),
+            Period::Last3Months => Some(
+                (anchor_date - chrono::Months::new(3))
+                    .format("%Y-%m-%d")
+                    .to_string(),
+            ),
+            Period::Last6Months => Some(
+                (anchor_date - chrono::Months::new(6))
+                    .format("%Y-%m-%d")
+                    .to_string(),
+            ),
+            Period::YTD => Some(format!("{}-01-01", anchor_date.year())),
+        };
+        let start_rfc = start.map(|s| format!("{s}T00:00:00Z"));
+        Ok((start_rfc, format!("{end}T00:00:00Z")))
+    }
+    /// Carryover helper that works on `&Connection` (read-only). Mirrors
+    /// `carryover_into_month(&mut Connection)` but without requiring mut.
+    fn carryover_for(conn: &Connection, category_id: &str, month: &str) -> CoreResult<i64> {
+        // B-P1-1: per-category rollover toggle. When `rollover_enabled = 0` the
+        // envelope resets each month — no budgeted-spent from prior months carries
+        // forward. Check the category row directly so we respect the toggle even
+        // before any budgeted-then-spent history has accumulated. COALESCE defaults
+        // to 1 for pre-migration rows or missing categories so existing data keeps
+        // prior behaviour.
+        let rollover: Option<i64> = conn
+            .query_row(
+                "SELECT rollover_enabled FROM categories WHERE id = ?1",
+                params![category_id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if rollover.map(|v| v == 0).unwrap_or(false) {
+            return Ok(0);
+        }
+        let first_budgeted: Option<String> = conn.query_row(
+            "SELECT MIN(month) FROM budgets WHERE category_id = ?1 AND amount_cents > 0",
             params![category_id],
             |r| r.get(0),
-        )
-        .optional()?;
-    if rollover.map(|v| v == 0).unwrap_or(false) {
-        return Ok(0);
-    }
-    let first_budgeted: Option<String> = conn.query_row(
-        "SELECT MIN(month) FROM budgets WHERE category_id = ?1 AND amount_cents > 0",
-        params![category_id],
-        |r| r.get(0),
-    )?;
-    let Some(first_budgeted) = first_budgeted else {
-        return Ok(0);
-    };
-    if first_budgeted.as_str() >= month {
-        return Ok(0);
-    }
-    let earliest_allowed = month_before(month, 24);
-    let start = if first_budgeted.as_str() > earliest_allowed.as_str() {
-        first_budgeted
-    } else {
-        earliest_allowed
-    };
-    let budgeted: i64 = conn.query_row(
-        "SELECT COALESCE(SUM(amount_cents), 0) FROM budgets \
+        )?;
+        let Some(first_budgeted) = first_budgeted else {
+            return Ok(0);
+        };
+        if first_budgeted.as_str() >= month {
+            return Ok(0);
+        }
+        let earliest_allowed = month_before(month, 24);
+        let start = if first_budgeted.as_str() > earliest_allowed.as_str() {
+            first_budgeted
+        } else {
+            earliest_allowed
+        };
+        let budgeted: i64 = conn.query_row(
+            "SELECT COALESCE(SUM(amount_cents), 0) FROM budgets \
           WHERE category_id = ?1 AND month >= ?2 AND month < ?3",
-        params![category_id, start, month],
-        |r| r.get(0),
-    )?;
-    let start_date = format!("{start}-01");
-    let month_date = format!("{month}-01");
-    let spent = category_spent(conn, category_id, &start_date, &month_date)?;
-    Ok(budgeted - spent)
-}
-/// Mirrors the envelope `available = budgeted + carryover - spent_in_month`
-/// without transfer ledger (transfers are Task 4). For templates, `UpTo` needs this.
-fn category_available(conn: &Connection, category_id: &str, month: &str) -> CoreResult<i64> {
-    let budgeted: i64 = conn.query_row(
+            params![category_id, start, month],
+            |r| r.get(0),
+        )?;
+        let start_date = format!("{start}-01");
+        let month_date = format!("{month}-01");
+        let spent = category_spent(conn, category_id, &start_date, &month_date)?;
+        Ok(budgeted - spent)
+    }
+    /// Mirrors the envelope `available = budgeted + carryover - spent_in_month`
+    /// without transfer ledger (transfers are Task 4). For templates, `UpTo` needs this.
+    fn category_available(conn: &Connection, category_id: &str, month: &str) -> CoreResult<i64> {
+        let budgeted: i64 = conn.query_row(
         "SELECT COALESCE(SUM(amount_cents), 0) FROM budgets WHERE category_id = ?1 AND month = ?2",
         params![category_id, month],
         |r| r.get(0),
     )?;
-    let carry = carryover_for(conn, category_id, month)?;
-    let start = format!("{month}-01");
-    let next = month_before(month, -1);
-    let next_start = format!("{next}-01");
-    let spent = category_spent(conn, category_id, &start, &next_start)?;
-    Ok(budgeted + carry - spent)
-}
-
-fn months_between(from_month: &str, to_month: &str) -> i64 {
-    // Parse YYYY-MM
-    let fy: i32 = from_month[0..4].parse().unwrap_or(1970);
-    let fm: i32 = from_month[5..7].parse().unwrap_or(1);
-    let ty: i32 = to_month[0..4].parse().unwrap_or(1970);
-    let tm: i32 = to_month[5..7].parse().unwrap_or(1);
-    ((ty - fy) * 12 + (tm - fm)) as i64
-}
-
-fn average_spending(
-    conn: &Connection,
-    category_id: &str,
-    month: &str,
-    months: u32,
-) -> CoreResult<i64> {
-    if months == 0 {
-        return Ok(0);
-    }
-    let mut total: i64 = 0;
-    for i in 1..=months as i32 {
-        let m = month_before(month, i);
-        let start = format!("{m}-01");
-        let next = month_before(&m, -1);
+        let carry = carryover_for(conn, category_id, month)?;
+        let start = format!("{month}-01");
+        let next = month_before(month, -1);
         let next_start = format!("{next}-01");
         let spent = category_spent(conn, category_id, &start, &next_start)?;
-        total += spent;
+        Ok(budgeted + carry - spent)
     }
-    Ok(total / months as i64)
-}
 
-/// List all funding templates ordered by priority ASC, id ASC.
-// M4: no WHERE category_id — verified via grep, so category_priority index not needed
-pub fn list_funding_templates(conn: &Connection) -> CoreResult<Vec<FundingTemplate>> {
-    let mut stmt = conn.prepare(
-        "SELECT id, category_id, kind, params_json, priority, created_at \
-          FROM funding_templates ORDER BY priority ASC, id ASC",
-    )?;
-    let rows = stmt.query_map([], |r| {
-        Ok(FundingTemplate {
-            id: r.get(0)?,
-            category_id: r.get(1)?,
-            kind: r.get(2)?,
-            params_json: r.get(3)?,
-            priority: r.get(4)?,
-            created_at: r.get(5)?,
-        })
-    })?;
-    let mut out = Vec::new();
-    for row in rows {
-        out.push(row?);
+    fn months_between(from_month: &str, to_month: &str) -> i64 {
+        // Parse YYYY-MM
+        let fy: i32 = from_month[0..4].parse().unwrap_or(1970);
+        let fm: i32 = from_month[5..7].parse().unwrap_or(1);
+        let ty: i32 = to_month[0..4].parse().unwrap_or(1970);
+        let tm: i32 = to_month[5..7].parse().unwrap_or(1);
+        ((ty - fy) * 12 + (tm - fm)) as i64
     }
-    Ok(out)
-}
 
-/// Get a single template by id.
-pub fn get_funding_template(conn: &Connection, id: &str) -> CoreResult<Option<FundingTemplate>> {
-    let v = conn
-        .query_row(
-            "SELECT id, category_id, kind, params_json, priority, created_at \
-              FROM funding_templates WHERE id = ?1",
-            params![id],
-            |r| {
-                Ok(FundingTemplate {
-                    id: r.get(0)?,
-                    category_id: r.get(1)?,
-                    kind: r.get(2)?,
-                    params_json: r.get(3)?,
-                    priority: r.get(4)?,
-                    created_at: r.get(5)?,
-                })
-            },
-        )
-        .optional()?;
-    Ok(v)
-}
-
-/// Create a funding template. Validates `kind` and that `category_id` exists.
-/// `params_json` defaults to `{}` when empty; `priority` defaults to 0.
-pub fn create_funding_template(
-    conn: &mut Connection,
-    category_id: &str,
-    kind: &str,
-    params_json: &str,
-    priority: i64,
-) -> CoreResult<FundingTemplate> {
-    validate_funding_kind(kind)?;
-    let pj = if params_json.trim().is_empty() {
-        "{}".to_string()
-    } else {
-        // Validate it is valid JSON; fallback to {} if parse fails but keep original for debug?
-        if serde_json::from_str::<serde_json::Value>(params_json).is_err() {
-            return Err(CoreError::Validation(format!(
-                "params_json must be valid JSON, got `{params_json}`"
-            )));
+    fn average_spending(
+        conn: &Connection,
+        category_id: &str,
+        month: &str,
+        months: u32,
+    ) -> CoreResult<i64> {
+        if months == 0 {
+            return Ok(0);
         }
-        params_json.to_string()
-    };
-    let id = Uuid::new_v4().to_string();
-    let now = Utc::now().to_rfc3339();
-    conn.execute(
+        let mut total: i64 = 0;
+        for i in 1..=months as i32 {
+            let m = month_before(month, i);
+            let start = format!("{m}-01");
+            let next = month_before(&m, -1);
+            let next_start = format!("{next}-01");
+            let spent = category_spent(conn, category_id, &start, &next_start)?;
+            total += spent;
+        }
+        Ok(total / months as i64)
+    }
+
+    /// List all funding templates ordered by priority ASC, id ASC.
+    // M4: no WHERE category_id — verified via grep, so category_priority index not needed
+    pub fn list_funding_templates(conn: &Connection) -> CoreResult<Vec<FundingTemplate>> {
+        let mut stmt = conn.prepare(
+            "SELECT id, category_id, kind, params_json, priority, created_at \
+          FROM funding_templates ORDER BY priority ASC, id ASC",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok(FundingTemplate {
+                id: r.get(0)?,
+                category_id: r.get(1)?,
+                kind: r.get(2)?,
+                params_json: r.get(3)?,
+                priority: r.get(4)?,
+                created_at: r.get(5)?,
+            })
+        })?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row?);
+        }
+        Ok(out)
+    }
+
+    /// Get a single template by id.
+    pub fn get_funding_template(
+        conn: &Connection,
+        id: &str,
+    ) -> CoreResult<Option<FundingTemplate>> {
+        let v = conn
+            .query_row(
+                "SELECT id, category_id, kind, params_json, priority, created_at \
+              FROM funding_templates WHERE id = ?1",
+                params![id],
+                |r| {
+                    Ok(FundingTemplate {
+                        id: r.get(0)?,
+                        category_id: r.get(1)?,
+                        kind: r.get(2)?,
+                        params_json: r.get(3)?,
+                        priority: r.get(4)?,
+                        created_at: r.get(5)?,
+                    })
+                },
+            )
+            .optional()?;
+        Ok(v)
+    }
+
+    /// Create a funding template. Validates `kind` and that `category_id` exists.
+    /// `params_json` defaults to `{}` when empty; `priority` defaults to 0.
+    pub fn create_funding_template(
+        conn: &mut Connection,
+        category_id: &str,
+        kind: &str,
+        params_json: &str,
+        priority: i64,
+    ) -> CoreResult<FundingTemplate> {
+        validate_funding_kind(kind)?;
+        let pj = if params_json.trim().is_empty() {
+            "{}".to_string()
+        } else {
+            // Validate it is valid JSON; fallback to {} if parse fails but keep original for debug?
+            if serde_json::from_str::<serde_json::Value>(params_json).is_err() {
+                return Err(CoreError::Validation(format!(
+                    "params_json must be valid JSON, got `{params_json}`"
+                )));
+            }
+            params_json.to_string()
+        };
+        let id = Uuid::new_v4().to_string();
+        let now = Utc::now().to_rfc3339();
+        conn.execute(
         "INSERT INTO funding_templates(id, category_id, kind, params_json, priority, created_at) \
           VALUES(?1, ?2, ?3, ?4, ?5, ?6)",
         params![id, category_id, kind, pj, priority, now],
     )?;
-    Ok(FundingTemplate {
-        id,
-        category_id: category_id.to_string(),
-        kind: kind.to_string(),
-        params_json: pj,
-        priority,
-        created_at: now,
-    })
-}
-
-/// Update a template's fields patch-wise. Returns `None` if not found.
-pub fn update_funding_template(
-    conn: &mut Connection,
-    id: &str,
-    category_id: Option<&str>,
-    kind: Option<&str>,
-    params_json: Option<&str>,
-    priority: Option<i64>,
-) -> CoreResult<Option<FundingTemplate>> {
-    let existing = get_funding_template(conn, id)?;
-    let Some(cur) = existing else {
-        return Ok(None);
-    };
-    let new_category = category_id.unwrap_or(&cur.category_id).to_string();
-    let new_kind = kind.unwrap_or(&cur.kind).to_string();
-    if let Some(k) = kind {
-        validate_funding_kind(k)?;
+        Ok(FundingTemplate {
+            id,
+            category_id: category_id.to_string(),
+            kind: kind.to_string(),
+            params_json: pj,
+            priority,
+            created_at: now,
+        })
     }
-    let new_params = if let Some(pj) = params_json {
-        if pj.trim().is_empty() {
-            "{}".to_string()
-        } else {
-            if serde_json::from_str::<serde_json::Value>(pj).is_err() {
-                return Err(CoreError::Validation(format!(
-                    "params_json must be valid JSON, got `{pj}`"
-                )));
-            }
-            pj.to_string()
+
+    /// Update a template's fields patch-wise. Returns `None` if not found.
+    pub fn update_funding_template(
+        conn: &mut Connection,
+        id: &str,
+        category_id: Option<&str>,
+        kind: Option<&str>,
+        params_json: Option<&str>,
+        priority: Option<i64>,
+    ) -> CoreResult<Option<FundingTemplate>> {
+        let existing = get_funding_template(conn, id)?;
+        let Some(cur) = existing else {
+            return Ok(None);
+        };
+        let new_category = category_id.unwrap_or(&cur.category_id).to_string();
+        let new_kind = kind.unwrap_or(&cur.kind).to_string();
+        if let Some(k) = kind {
+            validate_funding_kind(k)?;
         }
-    } else {
-        cur.params_json.clone()
-    };
-    let new_priority = priority.unwrap_or(cur.priority);
-    conn.execute(
+        let new_params = if let Some(pj) = params_json {
+            if pj.trim().is_empty() {
+                "{}".to_string()
+            } else {
+                if serde_json::from_str::<serde_json::Value>(pj).is_err() {
+                    return Err(CoreError::Validation(format!(
+                        "params_json must be valid JSON, got `{pj}`"
+                    )));
+                }
+                pj.to_string()
+            }
+        } else {
+            cur.params_json.clone()
+        };
+        let new_priority = priority.unwrap_or(cur.priority);
+        conn.execute(
         "UPDATE funding_templates SET category_id=?1, kind=?2, params_json=?3, priority=?4 WHERE id=?5",
         params![new_category, new_kind, new_params, new_priority, id],
     )?;
-    Ok(Some(FundingTemplate {
-        id: id.to_string(),
-        category_id: new_category,
-        kind: new_kind,
-        params_json: new_params,
-        priority: new_priority,
-        created_at: cur.created_at,
-    }))
-}
+        Ok(Some(FundingTemplate {
+            id: id.to_string(),
+            category_id: new_category,
+            kind: new_kind,
+            params_json: new_params,
+            priority: new_priority,
+            created_at: cur.created_at,
+        }))
+    }
 
-/// Delete a template by id. Returns true if a row was deleted.
-pub fn delete_funding_template(conn: &mut Connection, id: &str) -> CoreResult<bool> {
-    let n = conn.execute("DELETE FROM funding_templates WHERE id = ?1", params![id])?;
-    Ok(n > 0)
-}
+    /// Delete a template by id. Returns true if a row was deleted.
+    pub fn delete_funding_template(conn: &mut Connection, id: &str) -> CoreResult<bool> {
+        let n = conn.execute("DELETE FROM funding_templates WHERE id = ?1", params![id])?;
+        Ok(n > 0)
+    }
 
-/// Apply templates for `month` ("YYYY-MM") ordered by priority.
-/// Each template computes `need` from its kind + params, capped by remaining `available`.
-///
-/// `available` starts as `available_funds(month)` (`income - budgeted - hold_current + hold_prev`)
-/// so a hold parked for next month correctly appears as allocatable. This keeps
-/// `apply_templates` from under-allocating by the prior month's hold (see
-/// `available_funds` vs `to_budget` discussion in task-4 review).
-///
-/// Funding is transactional via `crate::repos::atomic` (`BEGIN IMMEDIATE` / `COMMIT` / `ROLLBACK`);
-/// `DELETE FROM budget_holds` propagates errors (no `let _ =`) and `COMMIT` errors are
-/// surfaced, with best-effort `ROLLBACK` on failure. `atomic` provides the
-/// `BEGIN IMMEDIATE` isolation that prevents concurrent double-spend.
-///
-/// Idempotence: a second call in the same month must yield `take == 0` for every
-/// template. `UpTo`/`By` are naturally idempotent via `category_available`/`cat_avail`
-/// caps. `Fixed`/`Schedule` (constant `need`) would double-spend after the hold
-/// is cleared (available recovers by `hold` amount), so they are capped by the
-/// existing budget row: `need = (raw_amount - cur_budget).max(0)`. After the first
-/// call `cur == raw` → `need == 0` → `take == 0` even though `available` may
-/// remain >0. This makes `Fixed` a one-shot “ensure budget hits amount” rather
-/// than an additive increment — the verified semantics for I2.
-/// Kind handling:
-/// - `fixed`: `{"amount":7299}` or `{"amount_cents":7299}` → need = max(0, amount - cur_budget)
-/// - `up_to`: `{"cap":30000}` or `{"amount":30000}` → need = max(0, cap - category_available)
-/// - `by`: `{"target":10000,"by":"2026-12"}` → need = ceil((target - cat_avail)/months_remaining), validates `target`+`by` presence and `params_json` well-formedness
-/// - `average`: `{"months":3}` → need = average spend over N prior months, validates `params_json`
-/// - `percent`: `{"pct":0.5}` or `{"percent":50}` → need = round(available * pct) where `available` is the *remaining* pool before this template (single tracking, `remainder` collapsed into `available`)
-/// - `remainder`: `{"":}` → need = available (takes all remaining)
-/// - `schedule`: `{"amount":5000,"schedule":"0 0 1 * *"} or {"amount":5000,"schedule":"weekly"}` → need = max(0, amount - cur_budget) if schedule is due within `month`, else 0; unparseable schedule ⇒ 0
-pub fn apply_templates(conn: &mut Connection, month: &str) -> CoreResult<Vec<BudgetChange>> {
-    crate::repos::atomic(conn, |conn| {
-        let mut templates = list_funding_templates(conn)?;
-        templates.sort_by_key(|t| (t.priority, t.id.clone()));
-        // diverges from spec §3: available_funds intentionally includes prev_hold
-        // Use available_funds (not to_budget) so prev_hold rolls forward as intended.
-        let mut available = available_funds(conn, month)?;
-        if available < 0 {
-            available = 0;
-        }
-        let mut out = Vec::with_capacity(templates.len());
-        for tmpl in &templates {
-            // Current budgeted amount for this category/month — used to cap Fixed/Schedule for idempotence.
-            let cur: i64 = conn.query_row(
+    /// Apply templates for `month` ("YYYY-MM") ordered by priority.
+    /// Each template computes `need` from its kind + params, capped by remaining `available`.
+    ///
+    /// `available` starts as `available_funds(month)` (`income - budgeted - hold_current + hold_prev`)
+    /// so a hold parked for next month correctly appears as allocatable. This keeps
+    /// `apply_templates` from under-allocating by the prior month's hold (see
+    /// `available_funds` vs `to_budget` discussion in task-4 review).
+    ///
+    /// Funding is transactional via `crate::repos::atomic` (`BEGIN IMMEDIATE` / `COMMIT` / `ROLLBACK`);
+    /// `DELETE FROM budget_holds` propagates errors (no `let _ =`) and `COMMIT` errors are
+    /// surfaced, with best-effort `ROLLBACK` on failure. `atomic` provides the
+    /// `BEGIN IMMEDIATE` isolation that prevents concurrent double-spend.
+    ///
+    /// Idempotence: a second call in the same month must yield `take == 0` for every
+    /// template. `UpTo`/`By` are naturally idempotent via `category_available`/`cat_avail`
+    /// caps. `Fixed`/`Schedule` (constant `need`) would double-spend after the hold
+    /// is cleared (available recovers by `hold` amount), so they are capped by the
+    /// existing budget row: `need = (raw_amount - cur_budget).max(0)`. After the first
+    /// call `cur == raw` → `need == 0` → `take == 0` even though `available` may
+    /// remain >0. This makes `Fixed` a one-shot “ensure budget hits amount” rather
+    /// than an additive increment — the verified semantics for I2.
+    /// Kind handling:
+    /// - `fixed`: `{"amount":7299}` or `{"amount_cents":7299}` → need = max(0, amount - cur_budget)
+    /// - `up_to`: `{"cap":30000}` or `{"amount":30000}` → need = max(0, cap - category_available)
+    /// - `by`: `{"target":10000,"by":"2026-12"}` → need = ceil((target - cat_avail)/months_remaining), validates `target`+`by` presence and `params_json` well-formedness
+    /// - `average`: `{"months":3}` → need = average spend over N prior months, validates `params_json`
+    /// - `percent`: `{"pct":0.5}` or `{"percent":50}` → need = round(available * pct) where `available` is the *remaining* pool before this template (single tracking, `remainder` collapsed into `available`)
+    /// - `remainder`: `{"":}` → need = available (takes all remaining)
+    /// - `schedule`: `{"amount":5000,"schedule":"0 0 1 * *"} or {"amount":5000,"schedule":"weekly"}` → need = max(0, amount - cur_budget) if schedule is due within `month`, else 0; unparseable schedule ⇒ 0
+    pub fn apply_templates(conn: &mut Connection, month: &str) -> CoreResult<Vec<BudgetChange>> {
+        crate::repos::atomic(conn, |conn| {
+            let mut templates = list_funding_templates(conn)?;
+            templates.sort_by_key(|t| (t.priority, t.id.clone()));
+            // diverges from spec §3: available_funds intentionally includes prev_hold
+            // Use available_funds (not to_budget) so prev_hold rolls forward as intended.
+            let mut available = available_funds(conn, month)?;
+            if available < 0 {
+                available = 0;
+            }
+            let mut out = Vec::with_capacity(templates.len());
+            for tmpl in &templates {
+                // Current budgeted amount for this category/month — used to cap Fixed/Schedule for idempotence.
+                let cur: i64 = conn.query_row(
                 "SELECT COALESCE(SUM(amount_cents),0) FROM budgets WHERE category_id=?1 AND month=?2",
                 params![tmpl.category_id, month],
                 |r| r.get(0),
             )?;
-            let cat_avail = category_available(conn, &tmpl.category_id, month)?;
-            let need: i64 = match tmpl.kind.as_str() {
-                "fixed" => {
-                    let raw = parse_amount_from_json(
-                        &tmpl.params_json,
-                        &["amount", "amount_cents", "amountCents", "cap"],
-                    )?;
-                    (raw - cur).max(0)
-                }
-                "up_to" => {
-                    let cap = parse_amount_from_json(
-                        &tmpl.params_json,
-                        &["cap", "amount", "amount_cents", "amountCents", "target"],
-                    )?;
-                    (cap - cat_avail).max(0)
-                }
-                "by" => {
-                    // Malformed params_json must bubble as Validation (previously silent 0 via unwrap_or).
-                    // Missing fields keep previous defaults (target 0, by = current month) to avoid
-                    // breaking existing templates; only truly invalid JSON is surfaced.
-                    let v: serde_json::Value =
-                        serde_json::from_str(&tmpl.params_json).map_err(|e| {
-                            CoreError::Validation(format!(
-                                "invalid params_json for 'by' template {}: {e}",
-                                tmpl.id
-                            ))
-                        })?;
-                    if !v.is_object() {
-                        return Err(CoreError::Validation(format!(
-                            "params_json for 'by' template {} must be a JSON object",
-                            tmpl.id
-                        )));
-                    }
-                    let target = v
-                        .get("target")
-                        .or_else(|| v.get("amount"))
-                        .or_else(|| v.get("cap"))
-                        .and_then(|x| x.as_i64().or_else(|| x.as_f64().map(|f| f.round() as i64)))
-                        .unwrap_or(0);
-                    let by_str = v.get("by").and_then(|x| x.as_str()).unwrap_or(month);
-                    let remaining = target.saturating_sub(cat_avail).max(0);
-                    let months_left = months_between(month, by_str).max(1);
-                    (remaining + months_left - 1) / months_left
-                }
-                "average" => {
-                    let v: serde_json::Value =
-                        serde_json::from_str(&tmpl.params_json).map_err(|e| {
-                            CoreError::Validation(format!(
-                                "invalid params_json for 'average' template {}: {e}",
-                                tmpl.id
-                            ))
-                        })?;
-                    if !v.is_object() {
-                        return Err(CoreError::Validation(format!(
-                            "params_json for 'average' template {} must be a JSON object",
-                            tmpl.id
-                        )));
-                    }
-                    let months = v
-                        .get("months")
-                        .and_then(|x| x.as_u64())
-                        .or_else(|| v.get("months").and_then(|x| x.as_i64().map(|i| i as u64)))
-                        .unwrap_or(3) as u32;
-                    average_spending(conn, &tmpl.category_id, month, months)?
-                }
-                "percent" => {
-                    let pct = parse_pct_from_json(&tmpl.params_json)?;
-                    (available as f64 * pct).round() as i64
-                }
-                "remainder" => available,
-                "schedule" => {
-                    let raw = parse_amount_from_json(
-                        &tmpl.params_json,
-                        &["amount", "amount_cents", "amountCents", "cap"],
-                    )?;
-                    let schedule_str = parse_schedule_string(&tmpl.params_json);
-                    let is_due = match schedule_str {
-                        Some(s) => schedule_is_due(&s, month),
-                        None => false,
-                    };
-                    if is_due {
+                let cat_avail = category_available(conn, &tmpl.category_id, month)?;
+                let need: i64 = match tmpl.kind.as_str() {
+                    "fixed" => {
+                        let raw = parse_amount_from_json(
+                            &tmpl.params_json,
+                            &["amount", "amount_cents", "amountCents", "cap"],
+                        )?;
                         (raw - cur).max(0)
-                    } else {
-                        0
                     }
+                    "up_to" => {
+                        let cap = parse_amount_from_json(
+                            &tmpl.params_json,
+                            &["cap", "amount", "amount_cents", "amountCents", "target"],
+                        )?;
+                        (cap - cat_avail).max(0)
+                    }
+                    "by" => {
+                        // Malformed params_json must bubble as Validation (previously silent 0 via unwrap_or).
+                        // Missing fields keep previous defaults (target 0, by = current month) to avoid
+                        // breaking existing templates; only truly invalid JSON is surfaced.
+                        let v: serde_json::Value = serde_json::from_str(&tmpl.params_json)
+                            .map_err(|e| {
+                                CoreError::Validation(format!(
+                                    "invalid params_json for 'by' template {}: {e}",
+                                    tmpl.id
+                                ))
+                            })?;
+                        if !v.is_object() {
+                            return Err(CoreError::Validation(format!(
+                                "params_json for 'by' template {} must be a JSON object",
+                                tmpl.id
+                            )));
+                        }
+                        let target = v
+                            .get("target")
+                            .or_else(|| v.get("amount"))
+                            .or_else(|| v.get("cap"))
+                            .and_then(|x| {
+                                x.as_i64().or_else(|| x.as_f64().map(|f| f.round() as i64))
+                            })
+                            .unwrap_or(0);
+                        let by_str = v.get("by").and_then(|x| x.as_str()).unwrap_or(month);
+                        let remaining = target.saturating_sub(cat_avail).max(0);
+                        let months_left = months_between(month, by_str).max(1);
+                        (remaining + months_left - 1) / months_left
+                    }
+                    "average" => {
+                        let v: serde_json::Value = serde_json::from_str(&tmpl.params_json)
+                            .map_err(|e| {
+                                CoreError::Validation(format!(
+                                    "invalid params_json for 'average' template {}: {e}",
+                                    tmpl.id
+                                ))
+                            })?;
+                        if !v.is_object() {
+                            return Err(CoreError::Validation(format!(
+                                "params_json for 'average' template {} must be a JSON object",
+                                tmpl.id
+                            )));
+                        }
+                        let months = v
+                            .get("months")
+                            .and_then(|x| x.as_u64())
+                            .or_else(|| v.get("months").and_then(|x| x.as_i64().map(|i| i as u64)))
+                            .unwrap_or(3) as u32;
+                        average_spending(conn, &tmpl.category_id, month, months)?
+                    }
+                    "percent" => {
+                        let pct = parse_pct_from_json(&tmpl.params_json)?;
+                        (available as f64 * pct).round() as i64
+                    }
+                    "remainder" => available,
+                    "schedule" => {
+                        let raw = parse_amount_from_json(
+                            &tmpl.params_json,
+                            &["amount", "amount_cents", "amountCents", "cap"],
+                        )?;
+                        let schedule_str = parse_schedule_string(&tmpl.params_json);
+                        let is_due = match schedule_str {
+                            Some(s) => schedule_is_due(&s, month),
+                            None => false,
+                        };
+                        if is_due {
+                            (raw - cur).max(0)
+                        } else {
+                            0
+                        }
+                    }
+                    _ => 0,
+                };
+                // Single tracking: `available` is the remaining allocatable pool; `remainder`
+                // was redundant (`need.min(available).min(remainder)` was no-op). Percent and
+                // Remainder now read from `available` before `take`.
+                let take = need.min(available).max(0);
+                if take != 0 {
+                    // Inside the outer atomic transaction, use set_raw to avoid nested BEGIN IMMEDIATE.
+                    // Templates are funded from available_funds which already respects holds, so
+                    // over-assign validation is not needed here; use allow=true to skip the
+                    // to_budget guard that is meant for manual envelope edits.
+                    set_raw(conn, &tmpl.category_id, month, cur + take, true)?;
                 }
-                _ => 0,
-            };
-            // Single tracking: `available` is the remaining allocatable pool; `remainder`
-            // was redundant (`need.min(available).min(remainder)` was no-op). Percent and
-            // Remainder now read from `available` before `take`.
-            let take = need.min(available).max(0);
-            if take != 0 {
-                // Inside the outer atomic transaction, use set_raw to avoid nested BEGIN IMMEDIATE.
-                // Templates are funded from available_funds which already respects holds, so
-                // over-assign validation is not needed here; use allow=true to skip the
-                // to_budget guard that is meant for manual envelope edits.
-                set_raw(conn, &tmpl.category_id, month, cur + take, true)?;
+                available -= take;
+                if available < 0 {
+                    available = 0;
+                }
+                out.push(BudgetChange {
+                    category_id: tmpl.category_id.clone(),
+                    amount_cents: take,
+                });
             }
-            available -= take;
-            if available < 0 {
-                available = 0;
+            if out.iter().any(|c| c.amount_cents != 0) {
+                conn.execute("DELETE FROM budget_holds WHERE month=?1", params![month])?;
             }
-            out.push(BudgetChange {
-                category_id: tmpl.category_id.clone(),
-                amount_cents: take,
-            });
-        }
-        if out.iter().any(|c| c.amount_cents != 0) {
-            conn.execute("DELETE FROM budget_holds WHERE month=?1", params![month])?;
-        }
-        Ok(out)
-    })
-}
+            Ok(out)
+        })
+    }
 
-/// Compute carryover *into* `month` ("YYYY-MM") for one category: the running sum
-/// of (budgeted − spent) over every month from the category's first-ever budgeted
-/// month (first `budgets` row with `amount_cents > 0`) up to (not including)
-/// `month`, capped at a 24-month lookback. Returns 0 if the category has never
-/// been budgeted, or if its first budgeted month is `month` or later — the whole
-/// point of the epoch anchor is that carryover only ever reflects money the user
-/// actually earmarked, never spending from before budgeting started.
-pub fn carryover_into_month(
-    conn: &mut Connection,
-    category_id: &str,
-    month: &str,
-) -> CoreResult<i64> {
-    // B-P1-1: same rollover gate as carryover_for — a disabled category never
-    // carries forward, so Budget shows correct available even when prior months
-    // had surplus/deficit.
-    let rollover: Option<i64> = conn
-        .query_row(
-            "SELECT rollover_enabled FROM categories WHERE id = ?1",
+    /// Compute carryover *into* `month` ("YYYY-MM") for one category: the running sum
+    /// of (budgeted − spent) over every month from the category's first-ever budgeted
+    /// month (first `budgets` row with `amount_cents > 0`) up to (not including)
+    /// `month`, capped at a 24-month lookback. Returns 0 if the category has never
+    /// been budgeted, or if its first budgeted month is `month` or later — the whole
+    /// point of the epoch anchor is that carryover only ever reflects money the user
+    /// actually earmarked, never spending from before budgeting started.
+    pub fn carryover_into_month(
+        conn: &mut Connection,
+        category_id: &str,
+        month: &str,
+    ) -> CoreResult<i64> {
+        // B-P1-1: same rollover gate as carryover_for — a disabled category never
+        // carries forward, so Budget shows correct available even when prior months
+        // had surplus/deficit.
+        let rollover: Option<i64> = conn
+            .query_row(
+                "SELECT rollover_enabled FROM categories WHERE id = ?1",
+                params![category_id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if rollover.map(|v| v == 0).unwrap_or(false) {
+            return Ok(0);
+        }
+        let first_budgeted: Option<String> = conn.query_row(
+            "SELECT MIN(month) FROM budgets WHERE category_id = ?1 AND amount_cents > 0",
             params![category_id],
             |r| r.get(0),
-        )
-        .optional()?;
-    if rollover.map(|v| v == 0).unwrap_or(false) {
-        return Ok(0);
-    }
-    let first_budgeted: Option<String> = conn.query_row(
-        "SELECT MIN(month) FROM budgets WHERE category_id = ?1 AND amount_cents > 0",
-        params![category_id],
-        |r| r.get(0),
-    )?;
-    let Some(first_budgeted) = first_budgeted else {
-        return Ok(0);
-    };
-    if first_budgeted.as_str() >= month {
-        return Ok(0);
-    }
+        )?;
+        let Some(first_budgeted) = first_budgeted else {
+            return Ok(0);
+        };
+        if first_budgeted.as_str() >= month {
+            return Ok(0);
+        }
 
-    let earliest_allowed = month_before(month, 24);
-    let start = if first_budgeted.as_str() > earliest_allowed.as_str() {
-        first_budgeted
-    } else {
-        earliest_allowed
-    };
+        let earliest_allowed = month_before(month, 24);
+        let start = if first_budgeted.as_str() > earliest_allowed.as_str() {
+            first_budgeted
+        } else {
+            earliest_allowed
+        };
 
-    let budgeted: i64 = conn.query_row(
-        "SELECT COALESCE(SUM(amount_cents), 0) FROM budgets \
+        let budgeted: i64 = conn.query_row(
+            "SELECT COALESCE(SUM(amount_cents), 0) FROM budgets \
          WHERE category_id = ?1 AND month >= ?2 AND month < ?3",
-        params![category_id, start, month],
-        |r| r.get(0),
-    )?;
-    let start_date = format!("{start}-01");
-    let month_date = format!("{month}-01");
-    let spent = category_spent(conn, category_id, &start_date, &month_date)?;
-    Ok(budgeted - spent)
-}
+            params![category_id, start, month],
+            |r| r.get(0),
+        )?;
+        let start_date = format!("{start}-01");
+        let month_date = format!("{month}-01");
+        let spent = category_spent(conn, category_id, &start_date, &month_date)?;
+        Ok(budgeted - spent)
+    }
 
-/// A single plain-language fact about how `month` went for a budgeted category,
-/// used to open the Plan Next Month wizard. Deterministic, no LLM — the frontend
-/// composes the sentence (and applies the user's money formatting/privacy mode)
-/// from `kind` + `amount_cents`/`streak_months`; this never bakes a formatted
-/// dollar string server-side.
-#[derive(Debug, Clone, Serialize, Type, ToSchema)]
-#[serde(rename_all = "camelCase")]
-#[schema(rename_all = "camelCase")]
-pub struct LookBackFact {
-    pub category_id: String,
-    pub category_label: String,
-    /// "over" | "under" | "streak"
-    pub kind: String,
-    /// Meaningful for "over" (spent − budgeted) and "under" (budgeted − spent); 0 for "streak".
-    pub amount_cents: i64,
-    /// Meaningful for "streak" (consecutive zero-spend months including `month`); 0 otherwise.
-    pub streak_months: i64,
-}
+    /// Batched variant that assumes the caller already checked `rollover_enabled`.
+    /// When `rollover_enabled` is false, returns 0 without any DB hit beyond the
+    /// caller's single batched `SELECT id, rollover_enabled` .
+    pub fn carryover_into_month_fast(
+        conn: &Connection,
+        category_id: &str,
+        month: &str,
+        rollover_enabled: bool,
+    ) -> CoreResult<i64> {
+        if !rollover_enabled {
+            return Ok(0);
+        }
+        // Reuse the same logic as carryover_into_month but without the initial
+        // rollover_enabled SELECT (already checked by caller).
+        let first_budgeted: Option<String> = conn.query_row(
+            "SELECT MIN(month) FROM budgets WHERE category_id = ?1 AND amount_cents > 0",
+            params![category_id],
+            |r| r.get(0),
+        )?;
+        let Some(first_budgeted) = first_budgeted else {
+            return Ok(0);
+        };
+        if first_budgeted.as_str() >= month {
+            return Ok(0);
+        }
+        let earliest_allowed = month_before(month, 24);
+        let start = if first_budgeted.as_str() > earliest_allowed.as_str() {
+            first_budgeted
+        } else {
+            earliest_allowed
+        };
+        let budgeted: i64 = conn.query_row(
+            "SELECT COALESCE(SUM(amount_cents), 0) FROM budgets \
+         WHERE category_id = ?1 AND month >= ?2 AND month < ?3",
+            params![category_id, start, month],
+            |r| r.get(0),
+        )?;
+        let start_date = format!("{start}-01");
+        let month_date = format!("{month}-01");
+        let spent = category_spent(conn, category_id, &start_date, &month_date)?;
+        Ok(budgeted - spent)
+    }
 
-/// Up to 3 facts about `month`: the biggest overage, the biggest underage, and
-/// the longest zero-spend streak (>= 2 consecutive months) — each only among
-/// categories that were actually budgeted (amount_cents > 0) for `month`.
-pub fn look_back_facts(conn: &mut Connection, month: &str) -> CoreResult<Vec<LookBackFact>> {
-    let month_start = format!("{month}-01");
-    let next_month = month_before(month, -1);
-    let next_month_start = format!("{next_month}-01");
+    /// A single plain-language fact about how `month` went for a budgeted category,
+    /// used to open the Plan Next Month wizard. Deterministic, no LLM — the frontend
+    /// composes the sentence (and applies the user's money formatting/privacy mode)
+    /// from `kind` + `amount_cents`/`streak_months`; this never bakes a formatted
+    /// dollar string server-side.
+    #[derive(Debug, Clone, Serialize, Type, ToSchema)]
+    #[serde(rename_all = "camelCase")]
+    #[schema(rename_all = "camelCase")]
+    pub struct LookBackFact {
+        pub category_id: String,
+        pub category_label: String,
+        /// "over" | "under" | "streak"
+        pub kind: String,
+        /// Meaningful for "over" (spent − budgeted) and "under" (budgeted − spent); 0 for "streak".
+        pub amount_cents: i64,
+        /// Meaningful for "streak" (consecutive zero-spend months including `month`); 0 otherwise.
+        pub streak_months: i64,
+    }
 
-    let mut stmt = conn.prepare(
+    /// Up to 3 facts about `month`: the biggest overage, the biggest underage, and
+    /// the longest zero-spend streak (>= 2 consecutive months) — each only among
+    /// categories that were actually budgeted (amount_cents > 0) for `month`.
+    pub fn look_back_facts(conn: &mut Connection, month: &str) -> CoreResult<Vec<LookBackFact>> {
+        let month_start = format!("{month}-01");
+        let next_month = month_before(month, -1);
+        let next_month_start = format!("{next_month}-01");
+
+        let mut stmt = conn.prepare(
         "SELECT c.id, c.label, COALESCE(b.amount_cents, 0),
                 COALESCE(SUM(CASE WHEN t.settle_up=1 THEN -t.amount_cents WHEN t.amount_cents < 0 THEN -t.amount_cents ELSE 0 END), 0)
          FROM categories c
@@ -1365,56 +1429,56 @@ pub fn look_back_facts(conn: &mut Connection, month: &str) -> CoreResult<Vec<Loo
          WHERE c.archived_at IS NULL
          GROUP BY c.id, c.label, b.amount_cents",
     )?;
-    let rows: Vec<(String, String, i64, i64)> = stmt
-        .query_map(params![month, month_start, next_month_start], |r| {
-            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
-        })?
-        .collect::<rusqlite::Result<_>>()?;
-    drop(stmt);
+        let rows: Vec<(String, String, i64, i64)> = stmt
+            .query_map(params![month, month_start, next_month_start], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+            })?
+            .collect::<rusqlite::Result<_>>()?;
+        drop(stmt);
 
-    let mut facts = Vec::new();
+        let mut facts = Vec::new();
 
-    if let Some((id, label, budget, spent)) = rows
-        .iter()
-        .filter(|(_, _, budget, spent)| *budget > 0 && spent > budget)
-        .max_by_key(|(_, _, budget, spent)| spent - budget)
-    {
-        facts.push(LookBackFact {
-            category_id: id.clone(),
-            category_label: label.clone(),
-            kind: "over".to_string(),
-            amount_cents: spent - budget,
-            streak_months: 0,
-        });
-    }
-
-    if let Some((id, label, budget, spent)) = rows
-        .iter()
-        .filter(|(_, _, budget, spent)| *budget > 0 && budget > spent)
-        .max_by_key(|(_, _, budget, spent)| budget - spent)
-    {
-        facts.push(LookBackFact {
-            category_id: id.clone(),
-            category_label: label.clone(),
-            kind: "under".to_string(),
-            amount_cents: budget - spent,
-            streak_months: 0,
-        });
-    }
-
-    let mut best: Option<(String, String, i64)> = None;
-    for (id, label, budget, spent) in &rows {
-        if *budget <= 0 || *spent != 0 {
-            continue;
+        if let Some((id, label, budget, spent)) = rows
+            .iter()
+            .filter(|(_, _, budget, spent)| *budget > 0 && spent > budget)
+            .max_by_key(|(_, _, budget, spent)| spent - budget)
+        {
+            facts.push(LookBackFact {
+                category_id: id.clone(),
+                category_label: label.clone(),
+                kind: "over".to_string(),
+                amount_cents: spent - budget,
+                streak_months: 0,
+            });
         }
-        let mut streak = 1i64;
-        for back in 1..12 {
-            let m = month_before(month, back);
-            // Stop at the first prior month this category wasn't actually
-            // budgeted for — otherwise a category that has simply never been
-            // budgeted (zero spend forever) would read as an N-month streak
-            // instead of "not applicable." Only a budgeted-but-unspent run counts.
-            let was_budgeted: bool = conn
+
+        if let Some((id, label, budget, spent)) = rows
+            .iter()
+            .filter(|(_, _, budget, spent)| *budget > 0 && budget > spent)
+            .max_by_key(|(_, _, budget, spent)| budget - spent)
+        {
+            facts.push(LookBackFact {
+                category_id: id.clone(),
+                category_label: label.clone(),
+                kind: "under".to_string(),
+                amount_cents: budget - spent,
+                streak_months: 0,
+            });
+        }
+
+        let mut best: Option<(String, String, i64)> = None;
+        for (id, label, budget, spent) in &rows {
+            if *budget <= 0 || *spent != 0 {
+                continue;
+            }
+            let mut streak = 1i64;
+            for back in 1..12 {
+                let m = month_before(month, back);
+                // Stop at the first prior month this category wasn't actually
+                // budgeted for — otherwise a category that has simply never been
+                // budgeted (zero spend forever) would read as an N-month streak
+                // instead of "not applicable." Only a budgeted-but-unspent run counts.
+                let was_budgeted: bool = conn
                 .query_row(
                     "SELECT 1 FROM budgets WHERE category_id = ?1 AND month = ?2 AND amount_cents > 0",
                     params![id, m],
@@ -1422,44 +1486,47 @@ pub fn look_back_facts(conn: &mut Connection, month: &str) -> CoreResult<Vec<Loo
                 )
                 .optional()?
                 .unwrap_or(false);
-            if !was_budgeted {
-                break;
+                if !was_budgeted {
+                    break;
+                }
+                let m_start = format!("{m}-01");
+                let m_next = month_before(month, back - 1);
+                let m_next_start = format!("{m_next}-01");
+                let spent_that_month = category_spent(conn, id, &m_start, &m_next_start)?;
+                if spent_that_month == 0 {
+                    streak += 1;
+                } else {
+                    break;
+                }
             }
-            let m_start = format!("{m}-01");
-            let m_next = month_before(month, back - 1);
-            let m_next_start = format!("{m_next}-01");
-            let spent_that_month = category_spent(conn, id, &m_start, &m_next_start)?;
-            if spent_that_month == 0 {
-                streak += 1;
-            } else {
-                break;
+            if streak >= 2 && best.as_ref().map(|(_, _, s)| streak > *s).unwrap_or(true) {
+                best = Some((id.clone(), label.clone(), streak));
             }
         }
-        if streak >= 2 && best.as_ref().map(|(_, _, s)| streak > *s).unwrap_or(true) {
-            best = Some((id.clone(), label.clone(), streak));
+        if let Some((id, label, streak)) = best {
+            facts.push(LookBackFact {
+                category_id: id,
+                category_label: label,
+                kind: "streak".to_string(),
+                amount_cents: 0,
+                streak_months: streak,
+            });
         }
-    }
-    if let Some((id, label, streak)) = best {
-        facts.push(LookBackFact {
-            category_id: id,
-            category_label: label,
-            kind: "streak".to_string(),
-            amount_cents: 0,
-            streak_months: streak,
-        });
+
+        Ok(facts)
     }
 
-    Ok(facts)
-}
+    /// Custom report: group transactions by `split_by`, filtered by `period`,
+    /// transfer/archived flags. Sums are positive cents (expenses flipped).
+    /// Mirrors `metrics::spending_breakdown` transfer exclusion but is otherwise
+    /// a thin grouping query — money math stays in `finsight-core`.
+    pub fn custom_report(
+        conn: &Connection,
+        p: CustomReportParams,
+    ) -> CoreResult<CustomReportResult> {
+        let (start, end) = period_bounds(conn, p.period)?;
 
-/// Custom report: group transactions by `split_by`, filtered by `period`,
-/// transfer/archived flags. Sums are positive cents (expenses flipped).
-/// Mirrors `metrics::spending_breakdown` transfer exclusion but is otherwise
-/// a thin grouping query — money math stays in `finsight-core`.
-pub fn custom_report(conn: &Connection, p: CustomReportParams) -> CoreResult<CustomReportResult> {
-    let (start, end) = period_bounds(conn, p.period)?;
-
-    let (select_label, join_clause, group_by) = match p.split_by {
+        let (select_label, join_clause, group_by) = match p.split_by {
         SplitBy::Category => (
             "COALESCE(c.label, 'Uncategorized')".to_string(),
             " LEFT JOIN categories c ON c.id = t.category_id".to_string(),
@@ -1494,30 +1561,31 @@ pub fn custom_report(conn: &Connection, p: CustomReportParams) -> CoreResult<Cus
             "COALESCE(c.spending_type, 'Untagged')".to_string(),
         ),
     };
-    // Convert to &str for later use, handling owned Strings
-    let select_label = select_label.as_str();
-    let group_by = group_by.as_str();
-    // Ensure joins for filters that need them, regardless of split_by
-    let mut join_clause = join_clause.to_string();
-    if (!p.category_ids.is_empty() || !p.group_ids.is_empty() || p.spending_type.is_some())
-        && !join_clause.contains("categories c")
-    {
-        join_clause.push_str(" LEFT JOIN categories c ON c.id = t.category_id");
-    }
-    if !p.group_ids.is_empty() && !join_clause.contains("category_groups g") {
-        join_clause.push_str(" LEFT JOIN category_groups g ON g.id = c.group_id");
-    }
-    // ── Payee: group by canonical_merchant_key to merge variants (e.g. "WALMART #123" splits)
-    // Mirrors recurring deduplication (recurring.rs groups by canonical_merchant_key).
-    // We fetch raw merchant rows and aggregate in Rust — no need for a SQLite
-    // scalar function and this stays deterministic with the Rust normalizer.
-    if p.split_by == SplitBy::Payee {
-        let metric_kind = p.metric.as_deref().map(|s| s.to_lowercase());
-        let mut sql = format!(
+        // Convert to &str for later use, handling owned Strings
+        let select_label = select_label.as_str();
+        let group_by = group_by.as_str();
+        // Ensure joins for filters that need them, regardless of split_by
+        let mut join_clause = join_clause.to_string();
+        if (!p.category_ids.is_empty() || !p.group_ids.is_empty() || p.spending_type.is_some())
+            && !join_clause.contains("categories c")
+        {
+            join_clause.push_str(" LEFT JOIN categories c ON c.id = t.category_id");
+        }
+        if !p.group_ids.is_empty() && !join_clause.contains("category_groups g") {
+            join_clause.push_str(" LEFT JOIN category_groups g ON g.id = c.group_id");
+        }
+        // ── Payee: group by canonical_merchant_key to merge variants (e.g. "WALMART #123" splits)
+        // Mirrors recurring deduplication (recurring.rs groups by canonical_merchant_key).
+        // We fetch raw merchant rows and aggregate in Rust — no need for a SQLite
+        // scalar function and this stays deterministic with the Rust normalizer.
+        if p.split_by == SplitBy::Payee {
+            let metric_kind = p.metric.as_deref().map(|s| s.to_lowercase());
+            let mut sql = format!(
             "SELECT t.merchant_raw, t.amount_cents, t.settle_up FROM transactions t{join_clause} WHERE 1=1"
         );
-        let mut binds: Vec<String> = Vec::new();
-        if !p.include_transfers {
+            sql.push_str(&format!(" AND {}", non_investment_txn_predicate("t")));
+            sql.push_str(&primary_currency_clause(conn, "t"));
+            let mut binds: Vec<String> = Vec::new();
             sql.push_str(" AND t.is_transfer = 0");
         }
         // No archived filter for payee (mirrors generic branch's _ => {}).
@@ -1672,6 +1740,8 @@ pub fn custom_report(conn: &Connection, p: CustomReportParams) -> CoreResult<Cus
          FROM transactions t{join_clause} WHERE 1=1"
     );
     let mut binds: Vec<String> = Vec::new();
+    sql.push_str(&format!(" AND {}", non_investment_txn_predicate("t")));
+    sql.push_str(&primary_currency_clause(conn, "t"));
     if !p.include_transfers {
         sql.push_str(" AND t.is_transfer = 0");
     }

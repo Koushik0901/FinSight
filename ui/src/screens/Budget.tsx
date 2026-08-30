@@ -45,10 +45,7 @@ function BudgetInput({ envelope, month, onClose }: { envelope: BudgetEnvelope; m
 
   const computedMonth = month ?? `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}`;
 
-  const isClosedLockMessage = (msg: string) => {
-    const l = msg.toLowerCase();
-    return l.includes("closed") && (l.includes("drift") || l.includes("reopen"));
-  };
+  const isClosedLockMessage = (msg: string) => msg.includes("MONTH_LOCKED");
 
   const save = async (allowOverAssign = false) => {
     const amountCents = pendingCents !== null && allowOverAssign ? pendingCents : Math.round(Number(value || 0) * 100);
@@ -870,9 +867,8 @@ export default function Budget() {
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       const lower = msg.toLowerCase();
-      const isLocked = lower.includes("closed") && (lower.includes("drift") || lower.includes("reopen"));
+      const isLocked = msg.includes("MONTH_LOCKED");
       if (isLocked) {
-        setGoalLockedError(msg);
         setGoalLockedPendingGoalId(firstGoal.id);
         setGoalLockedPendingCents(toBudget);
         toast("This month is closed — editing will cause drift.", { description: msg });
