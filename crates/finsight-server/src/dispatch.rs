@@ -1172,4 +1172,27 @@ mod tests {
         let preview: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(preview["rows"][0][0], "date");
     }
+
+    #[tokio::test]
+    async fn unknown_command_transfer_envelope_is_404() {
+        let state = crate::router::tests::test_state();
+        let app = crate::router::build_router(state, &crate::router::tests::test_ui_dir());
+        let cookie = crate::router::tests::setup_and_login(&app).await;
+        let res = app
+            .oneshot(
+                Request::post("/api/rpc/transfer_envelope")
+                    .header("content-type", "application/json")
+                    .header("cookie", cookie)
+                    .body(Body::from("{}"))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::NOT_FOUND);
+        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(v["code"], "rpc.unknown_command");
+    }
 }

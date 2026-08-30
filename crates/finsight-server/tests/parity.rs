@@ -110,6 +110,22 @@ fn openapi_json_files_are_identical() {
     );
 }
 
+#[test]
+fn transfer_envelope_is_unknown_command() {
+    assert!(
+        !finsight_openapi::COMMANDS.contains(&"transfer_envelope"),
+        "transfer_envelope must be absent from openapi COMMANDS (I4) — use transfer_budget"
+    );
+    assert!(
+        !finsight_server::dispatch::SUPPORTED.contains(&"transfer_envelope"),
+        "transfer_envelope must not be in SUPPORTED"
+    );
+    assert!(
+        !finsight_server::dispatch::UNSUPPORTED.contains(&"transfer_envelope"),
+        "transfer_envelope must not be in UNSUPPORTED either — it is deleted"
+    );
+}
+
 /// Event-name contract guard: the generated `ui/src/api/eventNames.ts` must
 /// contain exactly the names in `finsight_api::sink::event_names::ALL`. Catches
 /// a stale generation step after adding/renaming a backend event (the class of

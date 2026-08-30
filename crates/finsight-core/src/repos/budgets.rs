@@ -1449,4 +1449,107 @@ mod tests {
         // Transactional: no budget written, hold untouched if any
         assert_eq!(budget_amount(&conn, "cat_a", "2026-09"), 0);
     }
+
+    // ── Task 7 parity corpus (C1+I3+I8 unified) ──────────────────────────────
+    #[test]
+    fn custom_report_parity_with_fixed_reports() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        // Seed 6 months: mix of expense, income, reimbursement (settle_up)
+        for m in 1..=6 {
+            let cat_id = format!("Cat{m}");
+            seed_category(&mut conn, &cat_id);
+            let month = format!("2026-0{m}");
+            // expense -1000*m (negative) → contributes +1000*m
+            insert_tx(&conn, &cat_id, -1000 * m as i64, &format!("{month}-10"), 0);
+            // income 5000 (positive, non-settle_up) → ignored in expense sums
+            insert_tx(&conn, &cat_id, 5000, &format!("{month}-11"), 0);
+            // reimbursement +200 settle_up=1 nets as -200
+            insert_tx(&conn, &cat_id, 200, &format!("{month}-12"), 1);
+        }
+        // Fixed report total: direct SUM with same CASE + is_transfer=0 + period_bounds,
+        // mimicking reports::get_report_data monthly expense totals for Last6Months.
+        let (start_opt, end) = period_bounds(&conn, Period::Last6Months).unwrap();
+        let start = start_opt.expect("Last6Months should have start bound");
+        let fixed_sum: i64 = conn
+            .query_row(
+                "SELECT COALESCE(SUM(CASE WHEN t.settle_up=1 THEN -t.amount_cents WHEN t.amount_cents < 0 THEN -t.amount_cents ELSE 0 END),0) \
+                 FROM transactions t WHERE t.posted_at >= ?1 AND t.posted_at < ?2 AND t.is_transfer = 0",
+                params![start, end],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let custom = custom_report(
+            &conn,
+            CustomReportParams {
+                period: Period::Last6Months,
+                split_by: SplitBy::Month,
+                include_archived: true,
+                include_transfers: false,
+            },
+        )
+        .unwrap();
+        let custom_sum: i64 = custom.rows.iter().map(|r| r.total_cents).sum();
+        // The brief's invariant: for same 6-month period with reimbursements, sums must equal.
+        // Expected: sum(1000*m -200) for m=1..6 = 19800
+        assert_eq!(custom.total_cents, custom_sum, "custom.total_cents must equal sum of rows");
+        assert_eq!(
+            fixed_sum, custom_sum,
+            "parity: fixed report sum {} != custom_report rows sum {} (custom.total_cents {})",
+            fixed_sum, custom_sum, custom.total_cents
+        );
+        assert_eq!(fixed_sum, custom.total_cents);
+        assert_eq!(fixed_sum, 19_800, "expected 19800 from seeded fixture");
+    }
+
+    #[test]
+    fn carryover_nets_reimbursement() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        seed_category(&mut conn, "Food");
+        set(&mut conn, "Food", "2026-08", 5000).unwrap();
+        insert_tx(&conn, "Food", -3000, "2026-08-10", 0);
+        insert_tx(&conn, "Food", 1000, "2026-08-12", 1); // +1000 settle_up nets as -1000
+        // budgeted 5000 - spent 2000 (3000-1000) = 3000 carryover into 2026-09
+        assert_eq!(carryover_for(&conn, "Food", "2026-09").unwrap(), 3000);
+        assert_eq!(carryover_into_month(&mut conn, "Food", "2026-09").unwrap(), 3000);
+    }
+
+    #[test]
+    fn category_available_nets_reimbursement() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        seed_category(&mut conn, "Food");
+        set(&mut conn, "Food", "2026-08", 5000).unwrap();
+        insert_tx(&conn, "Food", -3000, "2026-08-10", 0);
+        insert_tx(&conn, "Food", 1000, "2026-08-12", 1);
+        // available for 2026-08 = budgeted 5000 - spent 2000 = 3000
+        assert_eq!(category_available(&conn, "Food", "2026-08").unwrap(), 3000);
+        assert_eq!(available(&conn, "Food", "2026-08").unwrap(), 3000);
+        // carryover into Sep same as above ensures available for Sep with no budget reflects net
+        assert_eq!(carryover_for(&conn, "Food", "2026-09").unwrap(), 3000);
+    }
+
+    #[test]
+    fn transfer_optional_insufficient_spare_validation() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        seed_category(&mut conn, "A");
+        seed_category(&mut conn, "B");
+        set(&mut conn, "A", "2026-09", 1000).unwrap();
+        insert_tx(&conn, "A", -900, "2026-09-05", 0);
+        // spare = 100; try transfer 500 → Validation
+        let err = transfer_optional(&mut conn, Some("A"), Some("B"), 500, "2026-09", None).unwrap_err();
+        assert!(
+            matches!(err, crate::error::CoreError::Validation(_)),
+            "expected Validation for insufficient spare, got {:?}",
+            err
+        );
+        // exact spare should succeed
+        let ok = transfer_optional(&mut conn, Some("A"), Some("B"), 100, "2026-09", None).unwrap();
+        assert_eq!(ok.amount_cents, 100);
+        // now spare is 0, further transfer should fail
+        let err2 = transfer_optional(&mut conn, Some("A"), Some("B"), 1, "2026-09", None).unwrap_err();
+        assert!(matches!(err2, crate::error::CoreError::Validation(_)));
+    }
 }
