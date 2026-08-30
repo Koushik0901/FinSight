@@ -638,79 +638,97 @@ pub fn delete_funding_template(conn: &mut Connection, id: &str) -> CoreResult<bo
 /// - `percent`: `{"pct":0.5}` or `{"percent":50}` → need = round(available * pct)
 /// - `remainder`: `{"":}` → need = available (takes all remaining)
 /// - `schedule`: `{"amount":5000}` or pattern → need = amount or 0 if unparseable
-pub fn apply_templates(conn: &Connection, month: &str) -> CoreResult<Vec<BudgetChange>> {
-    let templates = list_funding_templates(conn)?;
-    let mut available = to_budget(conn, month)?;
-    if available < 0 {
-        available = 0;
-    }
-    let mut out = Vec::with_capacity(templates.len());
-    for t in templates {
-        let need: i64 = match t.kind.as_str() {
-            "fixed" => parse_amount_from_json(&t.params_json, &["amount", "amount_cents", "amountCents", "cap"])?,
-            "up_to" => {
-                let cap = parse_amount_from_json(&t.params_json, &["cap", "amount", "amount_cents", "amountCents", "target"])?;
-                let balance = category_available(conn, &t.category_id, month)?;
-                (cap - balance).max(0)
-            }
-            "by" => {
-                // Expect {"target":X, "by":"YYYY-MM"}
-                let v: serde_json::Value = serde_json::from_str(&t.params_json)
-                    .unwrap_or(serde_json::Value::Object(Default::default()));
-                let target = v
-                    .get("target")
-                    .or_else(|| v.get("amount"))
-                    .or_else(|| v.get("cap"))
-                    .and_then(|x| x.as_i64().or_else(|| x.as_f64().map(|f| f.round() as i64)))
-                    .unwrap_or(0);
-                let by = v
-                    .get("by")
-                    .and_then(|x| x.as_str())
-                    .unwrap_or(month);
-                let balance = category_available(conn, &t.category_id, month)?;
-                let remaining = target.saturating_sub(balance).max(0);
-                let months_left = months_between(month, by).max(1);
-                // ceil division
-                (remaining + months_left - 1) / months_left
-            }
-            "average" => {
-                let v: serde_json::Value = serde_json::from_str(&t.params_json)
-                    .unwrap_or(serde_json::Value::Object(Default::default()));
-                let months = v
-                    .get("months")
-                    .and_then(|x| x.as_u64())
-                    .or_else(|| v.get("months").and_then(|x| x.as_i64().map(|i| i as u64)))
-                    .unwrap_or(3) as u32;
-                average_spending(conn, &t.category_id, month, months)?
-            }
-            "percent" => {
-                let pct = parse_pct_from_json(&t.params_json)?;
-                (available as f64 * pct).round() as i64
-            }
-            "remainder" => available,
-            "schedule" => {
-                // For schedule, params may be {"amount":X} or {"schedule":"X"} with amount inside
-                let amt = parse_amount_from_json(&t.params_json, &["amount", "amount_cents", "amountCents"])?;
-                if amt != 0 {
-                    amt
-                } else {
-                    // try to parse schedule string as amount? fallback 0
-                    0
-                }
-            }
-            _ => 0,
-        };
-        let take = need.min(available).max(0);
-        out.push(BudgetChange {
-            category_id: t.category_id.clone(),
-            amount_cents: take,
-        });
-        available -= take;
+pub fn apply_templates(conn: &mut Connection, month: &str) -> CoreResult<Vec<BudgetChange>> {
+    conn.execute("BEGIN IMMEDIATE", [])?;
+    let res: CoreResult<Vec<BudgetChange>> = (|| {
+        let mut templates = list_funding_templates(conn)?;
+        templates.sort_by_key(|t| (t.priority, t.id.clone()));
+        let mut available = to_budget(conn, month)?;
         if available < 0 {
             available = 0;
         }
+        let mut remainder = available;
+        let mut out = Vec::with_capacity(templates.len());
+        for tmpl in templates {
+            let cat_avail = category_available(conn, &tmpl.category_id, month)?;
+            let need: i64 = match tmpl.kind.as_str() {
+                "fixed" => parse_amount_from_json(&tmpl.params_json, &["amount", "amount_cents", "amountCents", "cap"])?,
+                "up_to" => {
+                    let cap = parse_amount_from_json(&tmpl.params_json, &["cap", "amount", "amount_cents", "amountCents", "target"])?;
+                    (cap - cat_avail).max(0)
+                }
+                "by" => {
+                    let v: serde_json::Value = serde_json::from_str(&tmpl.params_json)
+                        .unwrap_or(serde_json::Value::Object(Default::default()));
+                    let target = v
+                        .get("target")
+                        .or_else(|| v.get("amount"))
+                        .or_else(|| v.get("cap"))
+                        .and_then(|x| x.as_i64().or_else(|| x.as_f64().map(|f| f.round() as i64)))
+                        .unwrap_or(0);
+                    let by = v.get("by").and_then(|x| x.as_str()).unwrap_or(month);
+                    let remaining = target.saturating_sub(cat_avail).max(0);
+                    let months_left = months_between(month, by).max(1);
+                    (remaining + months_left - 1) / months_left
+                }
+                "average" => {
+                    let v: serde_json::Value = serde_json::from_str(&tmpl.params_json)
+                        .unwrap_or(serde_json::Value::Object(Default::default()));
+                    let months = v
+                        .get("months")
+                        .and_then(|x| x.as_u64())
+                        .or_else(|| v.get("months").and_then(|x| x.as_i64().map(|i| i as u64)))
+                        .unwrap_or(3) as u32;
+                    average_spending(conn, &tmpl.category_id, month, months)?
+                }
+                "percent" => {
+                    let pct = parse_pct_from_json(&tmpl.params_json)?;
+                    (remainder as f64 * pct).round() as i64
+                }
+                "remainder" => remainder,
+                "schedule" => {
+                    let amt = parse_amount_from_json(&tmpl.params_json, &["amount", "amount_cents", "amountCents"])?;
+                    if amt != 0 { amt } else { 0 }
+                }
+                _ => 0,
+            };
+            let take = need.min(available).max(0).min(remainder.max(0));
+            if take != 0 {
+                let cur: i64 = conn.query_row(
+                    "SELECT COALESCE(SUM(amount_cents),0) FROM budgets WHERE category_id=?1 AND month=?2",
+                    params![tmpl.category_id, month],
+                    |r| r.get(0),
+                )?;
+                set(conn, &tmpl.category_id, month, cur + take)?;
+            }
+            available -= take;
+            remainder -= take;
+            if available < 0 {
+                available = 0;
+            }
+            if remainder < 0 {
+                remainder = 0;
+            }
+            out.push(BudgetChange {
+                category_id: tmpl.category_id.clone(),
+                amount_cents: take,
+            });
+        }
+        if out.iter().any(|c| c.amount_cents != 0) {
+            let _ = conn.execute("DELETE FROM budget_holds WHERE month=?1", params![month]);
+        }
+        Ok(out)
+    })();
+    match res {
+        Ok(v) => {
+            conn.execute("COMMIT", [])?;
+            Ok(v)
+        }
+        Err(e) => {
+            let _ = conn.execute("ROLLBACK", []);
+            Err(e)
+        }
     }
-    Ok(out)
 }
 
 /// Compute carryover *into* `month` ("YYYY-MM") for one category: the running sum
@@ -1229,5 +1247,111 @@ mod tests {
         };
         let res = custom_report(&conn, params).unwrap();
         assert_eq!(res.total_cents, 1000, "future row excluded by end bound");
+    }
+
+    fn budget_amount(conn: &rusqlite::Connection, category_id: &str, month: &str) -> i64 {
+        conn.query_row(
+            "SELECT COALESCE(SUM(amount_cents),0) FROM budgets WHERE category_id=?1 AND month=?2",
+            params![category_id, month],
+            |r| r.get(0),
+        )
+        .unwrap()
+    }
+
+    fn income_for_month(conn: &mut Connection, month: &str, amount_cents: i64) {
+        // income is positive non-transfer, non-settle_up transaction in that month
+        let posted = format!("{month}-05T00:00:00Z");
+        conn.execute(
+            "INSERT INTO transactions(id, account_id, posted_at, amount_cents, merchant_raw, status, is_anomaly, is_transfer, settle_up, created_at) VALUES(?1,'acc1',?2,?3,'Income','cleared',0,0,0,?2)",
+            params![Uuid::new_v4().to_string(), posted, amount_cents],
+        )
+        .unwrap();
+    }
+
+    fn create_fixed_template(conn: &mut Connection, category_id: &str, amount: i64, priority: i64) {
+        create_funding_template(conn, category_id, "fixed", &format!(r#"{{"amount":{}}}"#, amount), priority).unwrap();
+    }
+
+    #[test]
+    fn apply_templates_writes_and_clears_hold() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        seed_category(&mut conn, "cat_a");
+        seed_category(&mut conn, "cat_b");
+        // income 10000 for 2026-09 so to_budget = income 10000 - hold 5000 = 5000
+        income_for_month(&mut conn, "2026-09", 10_000);
+        set_hold(&mut conn, "2026-09", 5000).unwrap();
+        create_fixed_template(&mut conn, "cat_a", 3000, 1);
+        create_fixed_template(&mut conn, "cat_b", 4000, 2);
+        let changes = apply_templates(&mut conn, "2026-09").unwrap();
+        assert_eq!(changes.len(), 2);
+        assert_eq!(changes[0].category_id, "cat_a");
+        assert_eq!(changes[0].amount_cents, 3000);
+        assert_eq!(changes[1].category_id, "cat_b");
+        assert_eq!(changes[1].amount_cents, 2000, "capped by to_budget 5000");
+        // hold cleared
+        assert_eq!(get_hold(&conn, "2026-09").unwrap(), None);
+        assert_eq!(budget_amount(&conn, "cat_a", "2026-09"), 3000);
+        assert_eq!(budget_amount(&conn, "cat_b", "2026-09"), 2000);
+        // verify transactional: budgets sum equals to_budget initial
+        assert_eq!(budget_amount(&conn, "cat_a", "2026-09") + budget_amount(&conn, "cat_b", "2026-09"), 5000);
+    }
+
+    #[test]
+    fn apply_templates_second_call_idempotent() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        seed_category(&mut conn, "cat_a");
+        // Use UpTo to make second call idempotent even when available remains (hold cleared adds back)
+        // Income 10000, hold 5000 => to_budget 5000, UpTo cap 5000 => first takes 5000, second 0
+        income_for_month(&mut conn, "2026-09", 10_000);
+        set_hold(&mut conn, "2026-09", 5000).unwrap();
+        create_funding_template(&mut conn, "cat_a", "up_to", r#"{"cap":5000}"#, 1).unwrap();
+        let c1 = apply_templates(&mut conn, "2026-09").unwrap();
+        assert_eq!(c1[0].amount_cents, 5000);
+        assert_eq!(get_hold(&conn, "2026-09").unwrap(), None, "hold cleared after first");
+        assert_eq!(budget_amount(&conn, "cat_a", "2026-09"), 5000);
+        let c2 = apply_templates(&mut conn, "2026-09").unwrap();
+        assert!(c2.iter().all(|c| c.amount_cents == 0), "second call no double-spend, got {:?}", c2);
+        assert_eq!(budget_amount(&conn, "cat_a", "2026-09"), 5000, "budget not doubled");
+    }
+
+    #[test]
+    fn apply_templates_fixed_second_call_idempotent_via_available_zero() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        seed_category(&mut conn, "cat_a");
+        // No hold, income 5000, fixed 5000 => first consumes all, second 0
+        income_for_month(&mut conn, "2026-09", 5000);
+        create_fixed_template(&mut conn, "cat_a", 5000, 1);
+        let c1 = apply_templates(&mut conn, "2026-09").unwrap();
+        assert_eq!(c1[0].amount_cents, 5000);
+        let c2 = apply_templates(&mut conn, "2026-09").unwrap();
+        assert!(c2.iter().all(|c| c.amount_cents == 0), "second call no double-spend");
+        assert_eq!(budget_amount(&conn, "cat_a", "2026-09"), 5000);
+    }
+
+    #[test]
+    fn apply_templates_upto_uses_category_available() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        seed_category(&mut conn, "groceries");
+        income_for_month(&mut conn, "2026-09", 20_000);
+        // Pre-budget 5000 and spend 2000 => cat_avail 3000, cap 10000 => need 7000
+        conn.execute(
+            "INSERT INTO budgets(id, category_id, month, amount_cents, created_at, updated_at) VALUES('b1','groceries','2026-09',5000,'2026-09-01T00:00:00Z','2026-09-01T00:00:00Z')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO transactions(id, account_id, posted_at, amount_cents, merchant_raw, category_id, status, is_anomaly, is_transfer, created_at) VALUES('e1','acc1','2026-09-10T00:00:00Z',-2000,'Store','groceries','cleared',0,0,'2026-09-10T00:00:00Z')",
+            [],
+        )
+        .unwrap();
+        create_funding_template(&mut conn, "groceries", "up_to", r#"{"cap":10000}"#, 0).unwrap();
+        let changes = apply_templates(&mut conn, "2026-09").unwrap();
+        // cat_avail 3000, need 7000, available = to_budget = 20000-5000=15000 => take 7000, budget becomes 12000
+        assert_eq!(changes[0].amount_cents, 7000);
+        assert_eq!(budget_amount(&conn, "groceries", "2026-09"), 12_000);
     }
 }
