@@ -119,7 +119,7 @@ impl EnableBankingClient {
                 res.status()
             )));
         }
-        Ok(res.json().await.map_err(ProviderError::Http)?)
+        res.json().await.map_err(ProviderError::Http)
     }
 
     /// Fetch transactions for a single account.
@@ -183,7 +183,7 @@ impl EnableBankingClient {
                 res.status()
             )));
         }
-        Ok(res.json().await.map_err(ProviderError::Http)?)
+        res.json().await.map_err(ProviderError::Http)
     }
 }
 
