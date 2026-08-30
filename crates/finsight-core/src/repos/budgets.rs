@@ -342,13 +342,18 @@ fn validate_funding_kind(kind: &str) -> CoreResult<()> {
 }
 
 fn parse_amount_from_json(params_json: &str, keys: &[&str]) -> CoreResult<i64> {
-    let v: serde_json::Value =
-        serde_json::from_str(params_json).unwrap_or(serde_json::Value::Object(Default::default()));
+    let v: serde_json::Value = serde_json::from_str(params_json)
+        .map_err(|e| CoreError::Validation(format!("invalid params_json: {e}")))?;
+    if !v.is_object() {
+        return Err(CoreError::Validation(
+            "params_json must be a JSON object".to_string(),
+        ));
+    }
     for k in keys {
         if let Some(n) = v.get(*k).and_then(|x| x.as_i64()) {
             return Ok(n);
         }
-        // allow floating pct? for amount we expect integer cents
+        // allow floating point amounts; round to nearest cent
         if let Some(n) = v.get(*k).and_then(|x| x.as_f64()) {
             return Ok(n.round() as i64);
         }
@@ -357,8 +362,13 @@ fn parse_amount_from_json(params_json: &str, keys: &[&str]) -> CoreResult<i64> {
 }
 
 fn parse_pct_from_json(params_json: &str) -> CoreResult<f64> {
-    let v: serde_json::Value =
-        serde_json::from_str(params_json).unwrap_or(serde_json::Value::Object(Default::default()));
+    let v: serde_json::Value = serde_json::from_str(params_json)
+        .map_err(|e| CoreError::Validation(format!("invalid params_json: {e}")))?;
+    if !v.is_object() {
+        return Err(CoreError::Validation(
+            "params_json must be a JSON object".to_string(),
+        ));
+    }
     for k in ["pct", "percent", "pct_f32", "percent_f32"] {
         if let Some(n) = v.get(k).and_then(|x| x.as_f64()) {
             // Accept 0..1 as fraction or 0..100 as percent — values >1 are treated as percent/100
@@ -627,53 +637,94 @@ pub fn delete_funding_template(conn: &mut Connection, id: &str) -> CoreResult<bo
 /// Apply templates for `month` ("YYYY-MM") ordered by priority.
 /// Each template computes `need` from its kind + params, capped by remaining `available`.
 ///
-/// `available` starts as `to_budget(month)` (income - budgeted - hold, respects holds).
-/// For each template: `take = need.min(available).max(0)`, then `available -= take`.
+/// `available` starts as `available_funds(month)` (`income - budgeted - hold_current + hold_prev`)
+/// so a hold parked for next month correctly appears as allocatable. This keeps
+/// `apply_templates` from under-allocating by the prior month's hold (see
+/// `available_funds` vs `to_budget` discussion in task-4 review).
+///
+/// Funding is transactional via `crate::repos::atomic` (`BEGIN IMMEDIATE` / `COMMIT` / `ROLLBACK`);
+/// `DELETE FROM budget_holds` propagates errors (no `let _ =`) and `COMMIT` errors are
+/// surfaced, with best-effort `ROLLBACK` on failure. `atomic` provides the
+/// `BEGIN IMMEDIATE` isolation that prevents concurrent double-spend.
+///
+/// Idempotence: a second call in the same month must yield `take == 0` for every
+/// template. `UpTo`/`By` are naturally idempotent via `category_available`/`cat_avail`
+/// caps. `Fixed`/`Schedule` (constant `need`) would double-spend after the hold
+/// is cleared (available recovers by `hold` amount), so they are capped by the
+/// existing budget row: `need = (raw_amount - cur_budget).max(0)`. After the first
+/// call `cur == raw` → `need == 0` → `take == 0` even though `available` may
+/// remain >0. This makes `Fixed` a one-shot “ensure budget hits amount” rather
+/// than an additive increment — the verified semantics for I2.
 ///
 /// Kind handling:
-/// - `fixed`: `{"amount":7299}` or `{"amount_cents":7299}` → need = amount
+/// - `fixed`: `{"amount":7299}` or `{"amount_cents":7299}` → need = max(0, amount - cur_budget)
 /// - `up_to`: `{"cap":30000}` or `{"amount":30000}` → need = max(0, cap - category_available)
-/// - `by`: `{"target":10000,"by":"2026-12"}` → need = ceil((target - balance)/months_remaining)
-/// - `average`: `{"months":3}` → need = average spend over N prior months
-/// - `percent`: `{"pct":0.5}` or `{"percent":50}` → need = round(available * pct)
+/// - `by`: `{"target":10000,"by":"2026-12"}` → need = ceil((target - cat_avail)/months_remaining), validates `target`+`by` presence and `params_json` well-formedness
+/// - `average`: `{"months":3}` → need = average spend over N prior months, validates `params_json`
+/// - `percent`: `{"pct":0.5}` or `{"percent":50}` → need = round(available * pct) where `available` is the *remaining* pool before this template (single tracking, `remainder` collapsed into `available`)
 /// - `remainder`: `{"":}` → need = available (takes all remaining)
-/// - `schedule`: `{"amount":5000}` or pattern → need = amount or 0 if unparseable
+/// - `schedule`: `{"amount":5000}` or pattern → need = max(0, amount - cur_budget) or 0 if unparseable
 pub fn apply_templates(conn: &mut Connection, month: &str) -> CoreResult<Vec<BudgetChange>> {
-    conn.execute("BEGIN IMMEDIATE", [])?;
-    let res: CoreResult<Vec<BudgetChange>> = (|| {
+    crate::repos::atomic(conn, |conn| {
         let mut templates = list_funding_templates(conn)?;
         templates.sort_by_key(|t| (t.priority, t.id.clone()));
-        let mut available = to_budget(conn, month)?;
+        // Use available_funds (not to_budget) so prev_hold rolls forward as intended.
+        let mut available = available_funds(conn, month)?;
         if available < 0 {
             available = 0;
         }
-        let mut remainder = available;
         let mut out = Vec::with_capacity(templates.len());
-        for tmpl in templates {
+        for tmpl in &templates {
+            // Current budgeted amount for this category/month — used to cap Fixed/Schedule for idempotence.
+            let cur: i64 = conn.query_row(
+                "SELECT COALESCE(SUM(amount_cents),0) FROM budgets WHERE category_id=?1 AND month=?2",
+                params![tmpl.category_id, month],
+                |r| r.get(0),
+            )?;
             let cat_avail = category_available(conn, &tmpl.category_id, month)?;
             let need: i64 = match tmpl.kind.as_str() {
-                "fixed" => parse_amount_from_json(&tmpl.params_json, &["amount", "amount_cents", "amountCents", "cap"])?,
+                "fixed" => {
+                    let raw = parse_amount_from_json(&tmpl.params_json, &["amount", "amount_cents", "amountCents", "cap"])?;
+                    (raw - cur).max(0)
+                }
                 "up_to" => {
                     let cap = parse_amount_from_json(&tmpl.params_json, &["cap", "amount", "amount_cents", "amountCents", "target"])?;
                     (cap - cat_avail).max(0)
                 }
                 "by" => {
-                    let v: serde_json::Value = serde_json::from_str(&tmpl.params_json)
-                        .unwrap_or(serde_json::Value::Object(Default::default()));
+                    // Malformed params_json must bubble as Validation (previously silent 0 via unwrap_or).
+                    // Missing fields keep previous defaults (target 0, by = current month) to avoid
+                    // breaking existing templates; only truly invalid JSON is surfaced.
+                    let v: serde_json::Value = serde_json::from_str(&tmpl.params_json).map_err(|e| {
+                        CoreError::Validation(format!("invalid params_json for 'by' template {}: {e}", tmpl.id))
+                    })?;
+                    if !v.is_object() {
+                        return Err(CoreError::Validation(format!(
+                            "params_json for 'by' template {} must be a JSON object",
+                            tmpl.id
+                        )));
+                    }
                     let target = v
                         .get("target")
                         .or_else(|| v.get("amount"))
                         .or_else(|| v.get("cap"))
                         .and_then(|x| x.as_i64().or_else(|| x.as_f64().map(|f| f.round() as i64)))
                         .unwrap_or(0);
-                    let by = v.get("by").and_then(|x| x.as_str()).unwrap_or(month);
+                    let by_str = v.get("by").and_then(|x| x.as_str()).unwrap_or(month);
                     let remaining = target.saturating_sub(cat_avail).max(0);
-                    let months_left = months_between(month, by).max(1);
+                    let months_left = months_between(month, by_str).max(1);
                     (remaining + months_left - 1) / months_left
                 }
                 "average" => {
-                    let v: serde_json::Value = serde_json::from_str(&tmpl.params_json)
-                        .unwrap_or(serde_json::Value::Object(Default::default()));
+                    let v: serde_json::Value = serde_json::from_str(&tmpl.params_json).map_err(|e| {
+                        CoreError::Validation(format!("invalid params_json for 'average' template {}: {e}", tmpl.id))
+                    })?;
+                    if !v.is_object() {
+                        return Err(CoreError::Validation(format!(
+                            "params_json for 'average' template {} must be a JSON object",
+                            tmpl.id
+                        )));
+                    }
                     let months = v
                         .get("months")
                         .and_then(|x| x.as_u64())
@@ -683,31 +734,25 @@ pub fn apply_templates(conn: &mut Connection, month: &str) -> CoreResult<Vec<Bud
                 }
                 "percent" => {
                     let pct = parse_pct_from_json(&tmpl.params_json)?;
-                    (remainder as f64 * pct).round() as i64
+                    (available as f64 * pct).round() as i64
                 }
-                "remainder" => remainder,
+                "remainder" => available,
                 "schedule" => {
-                    let amt = parse_amount_from_json(&tmpl.params_json, &["amount", "amount_cents", "amountCents"])?;
-                    if amt != 0 { amt } else { 0 }
+                    let raw = parse_amount_from_json(&tmpl.params_json, &["amount", "amount_cents", "amountCents"])?;
+                    (raw - cur).max(0)
                 }
                 _ => 0,
             };
-            let take = need.min(available).max(0).min(remainder.max(0));
+            // Single tracking: `available` is the remaining allocatable pool; `remainder`
+            // was redundant (`need.min(available).min(remainder)` was no-op). Percent and
+            // Remainder now read from `available` before `take`.
+            let take = need.min(available).max(0);
             if take != 0 {
-                let cur: i64 = conn.query_row(
-                    "SELECT COALESCE(SUM(amount_cents),0) FROM budgets WHERE category_id=?1 AND month=?2",
-                    params![tmpl.category_id, month],
-                    |r| r.get(0),
-                )?;
                 set(conn, &tmpl.category_id, month, cur + take)?;
             }
             available -= take;
-            remainder -= take;
             if available < 0 {
                 available = 0;
-            }
-            if remainder < 0 {
-                remainder = 0;
             }
             out.push(BudgetChange {
                 category_id: tmpl.category_id.clone(),
@@ -715,20 +760,10 @@ pub fn apply_templates(conn: &mut Connection, month: &str) -> CoreResult<Vec<Bud
             });
         }
         if out.iter().any(|c| c.amount_cents != 0) {
-            let _ = conn.execute("DELETE FROM budget_holds WHERE month=?1", params![month]);
+            conn.execute("DELETE FROM budget_holds WHERE month=?1", params![month])?;
         }
         Ok(out)
-    })();
-    match res {
-        Ok(v) => {
-            conn.execute("COMMIT", [])?;
-            Ok(v)
-        }
-        Err(e) => {
-            let _ = conn.execute("ROLLBACK", []);
-            Err(e)
-        }
-    }
+    })
 }
 
 /// Compute carryover *into* `month` ("YYYY-MM") for one category: the running sum
@@ -1353,5 +1388,64 @@ mod tests {
         // cat_avail 3000, need 7000, available = to_budget = 20000-5000=15000 => take 7000, budget becomes 12000
         assert_eq!(changes[0].amount_cents, 7000);
         assert_eq!(budget_amount(&conn, "groceries", "2026-09"), 12_000);
+    }
+
+    #[test]
+    fn apply_templates_fixed_with_hold_is_idempotent_via_cur_cap() {
+        // Repro for reviewer's Critical: Fixed+hold double-spend on retry.
+        // Income 10000, hold 5000 => available_funds 5000, fixed 5000 => first 5000, hold cleared.
+        // Before fix: second call saw available 5000 again and retook 5000 (double-spend).
+        // After fix: Fixed is capped by cur (5000-5000=0) => second 0, idempotent.
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        seed_category(&mut conn, "cat_a");
+        income_for_month(&mut conn, "2026-09", 10_000);
+        set_hold(&mut conn, "2026-09", 5000).unwrap();
+        create_fixed_template(&mut conn, "cat_a", 5000, 1);
+        let c1 = apply_templates(&mut conn, "2026-09").unwrap();
+        assert_eq!(c1[0].amount_cents, 5000, "first fixed consumes hold-limited pool");
+        assert_eq!(get_hold(&conn, "2026-09").unwrap(), None);
+        assert_eq!(budget_amount(&conn, "cat_a", "2026-09"), 5000);
+        // available after hold cleared is still 5000 (10000-5000), but Fixed cap makes second 0
+        let c2 = apply_templates(&mut conn, "2026-09").unwrap();
+        assert!(c2.iter().all(|c| c.amount_cents == 0), "second Fixed must be 0 via cur cap, got {:?}", c2);
+        assert_eq!(budget_amount(&conn, "cat_a", "2026-09"), 5000, "budget not doubled");
+    }
+
+    #[test]
+    fn apply_templates_available_funds_includes_prev_hold() {
+        // Verify spec compliance: available_funds = to_budget + prev_hold
+        // Hold in 2026-08 rolls into 2026-09's apply_templates pool.
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        seed_category(&mut conn, "cat_a");
+        // No income in Sep, but hold 1500 parked in Aug => available_funds(2026-09) = 1500
+        set_hold(&mut conn, "2026-08", 1500).unwrap();
+        income_for_month(&mut conn, "2026-08", 1500); // fund Aug so to_budget covers hold if needed, not relevant
+        create_fixed_template(&mut conn, "cat_a", 1500, 1);
+        let changes = apply_templates(&mut conn, "2026-09").unwrap();
+        assert_eq!(changes[0].amount_cents, 1500, "prev_hold rolls forward via available_funds");
+        assert_eq!(budget_amount(&conn, "cat_a", "2026-09"), 1500);
+    }
+
+    #[test]
+    fn apply_templates_by_malformed_json_bubbles_validation() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        seed_category(&mut conn, "cat_a");
+        income_for_month(&mut conn, "2026-09", 5000);
+        // Insert a 'by' template with invalid JSON directly (bypass create validation)
+        conn.execute(
+            "INSERT INTO funding_templates(id, category_id, kind, params_json, priority, created_at) VALUES('bad1','cat_a','by','{ not json',0,'2026-09-01T00:00:00Z')",
+            [],
+        )
+        .unwrap();
+        let err = apply_templates(&mut conn, "2026-09").unwrap_err();
+        match err {
+            crate::error::CoreError::Validation(msg) => assert!(msg.contains("invalid params_json"), "got {}", msg),
+            _ => panic!("expected Validation, got {:?}", err),
+        };
+        // Transactional: no budget written, hold untouched if any
+        assert_eq!(budget_amount(&conn, "cat_a", "2026-09"), 0);
     }
 }
