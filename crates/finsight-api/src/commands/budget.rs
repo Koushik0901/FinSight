@@ -81,6 +81,31 @@ fn budget_envelopes_for_month(
     let rows: Vec<_> = rows.collect::<rusqlite::Result<_>>()?;
     drop(stmt);
 
+    // Grouped transfer sums: two queries total, not 2*envelopes (I5).
+    // Each map is category_id -> total cents for the month. NULL from/to
+    // (To Budget moves) are excluded so GROUP BY never yields a NULL key
+    // that `r.get::<String>` would fail to parse.
+    let from_map: std::collections::HashMap<String, i64> = conn
+        .prepare(
+            "SELECT from_category, COALESCE(SUM(amount_cents),0) \
+             FROM budget_transfers WHERE month = ?1 AND from_category IS NOT NULL \
+             GROUP BY from_category",
+        )?
+        .query_map(rusqlite::params![month], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
+        })?
+        .collect::<Result<std::collections::HashMap<_, _>, _>>()?;
+    let to_map: std::collections::HashMap<String, i64> = conn
+        .prepare(
+            "SELECT to_category, COALESCE(SUM(amount_cents),0) \
+             FROM budget_transfers WHERE month = ?1 AND to_category IS NOT NULL \
+             GROUP BY to_category",
+        )?
+        .query_map(rusqlite::params![month], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
+        })?
+        .collect::<Result<std::collections::HashMap<_, _>, _>>()?;
+
     let mut out = Vec::new();
     for (cat_id, label, color, group_label, spent, txn_count, budget) in rows {
         if !finsight_core::categorize::is_budgetable_category(&cat_id) {
@@ -89,26 +114,10 @@ fn budget_envelopes_for_month(
         let carryover_cents = budgets::carryover_into_month(conn, &cat_id, month)?;
         // Net cover ledger for this month: +in - out. Uses the same month as the
         // envelope, so a cover in April does not smear into May's carryover —
-        // it stays an auditable per-month move.
-        //
-        // We do two scalar queries per envelope (N < 100, months are small, and
-        // the indexes (from_category, month) / (to_category, month) keep them
-        // logarithmic). A single GROUP BY would save ~N queries but complicates
-        // the simple, auditable math that Tasks 2-4 keep in `finsight-core`.
-        let transfer_in: i64 = conn
-            .query_row(
-                "SELECT COALESCE(SUM(amount_cents), 0) FROM budget_transfers WHERE to_category = ?1 AND month = ?2",
-                rusqlite::params![cat_id, month],
-                |r| r.get(0),
-            )
-            .unwrap_or(0);
-        let transfer_out: i64 = conn
-            .query_row(
-                "SELECT COALESCE(SUM(amount_cents), 0) FROM budget_transfers WHERE from_category = ?1 AND month = ?2",
-                rusqlite::params![cat_id, month],
-                |r| r.get(0),
-            )
-            .unwrap_or(0);
+        // it stays an auditable per-month move. Transfers are now fetched via
+        // the two grouped maps above (≤2 queries total) and joined in Rust.
+        let transfer_in = to_map.get(&cat_id).copied().unwrap_or(0);
+        let transfer_out = from_map.get(&cat_id).copied().unwrap_or(0);
         let transfer_cents = transfer_in - transfer_out;
         // Every active budgetable category is shown, budgeted or not — a category
         // with no budget and no spend yet is exactly the one a user needs to see
@@ -1415,5 +1424,103 @@ mod tests {
             .expect("a budgeted-but-unspent category is still shown");
         assert_eq!(env.budget_cents, 10000);
         assert_eq!(env.member_spent_cents, 0);
+    }
+
+    #[test]
+    fn envelope_listing_uses_grouped_query() {
+        // Perf regression: old impl did 2 scalar SUMs per envelope (N+1).
+        // New impl must use at most 2 grouped queries total.
+        let src = include_str!("budget.rs");
+        // Positive: must contain grouped transfer queries (budget_transfers + GROUP BY)
+        assert!(
+            src.contains("GROUP BY from_category"),
+            "should use GROUP BY from_category for grouped transfer sums"
+        );
+        assert!(
+            src.contains("GROUP BY to_category"),
+            "should use GROUP BY to_category for grouped transfer sums"
+        );
+        // Negative: must not contain the old per-envelope N+1 scalar pattern.
+        // Avoid a self-referential literal that would make include_str always match
+        // its own test source: build the needle at runtime.
+        let needle_to = format!(
+            "{} {} {}",
+            "WHERE to_category",
+            "= ?1 AND month",
+            "= ?2"
+        );
+        let needle_from = format!(
+            "{} {} {}",
+            "WHERE from_category",
+            "= ?1 AND month",
+            "= ?2"
+        );
+        // Count occurrences in the functional code before the test module:
+        // the src from include_str includes this test itself, so it will contain
+        // the fragments via the format! above but not the contiguous needle
+        // constructed at runtime — so a zero count after fix means the N+1 is gone.
+        // Before the fix the impl had exactly those needles and the test would see them.
+        let functional_src = src.split("#[cfg(test)]").next().unwrap_or(src);
+        assert!(
+            !functional_src.contains(&needle_to),
+            "should not do per-category scalar transfer queries (found N+1 pattern for to_category)"
+        );
+        assert!(
+            !functional_src.contains(&needle_from),
+            "should not do per-category scalar transfer queries (found N+1 pattern for from_category)"
+        );
+        // Also verify the two HashMaps exist (the join in Rust)
+        assert!(
+            functional_src.contains("from_map") && functional_src.contains("to_map"),
+            "should join via from_map/to_map HashMaps"
+        );
+    }
+
+    #[test]
+    fn budget_envelope_transfer_grouped_parity() {
+        // Functional parity: 3 categories with transfers must produce correct transfer_cents
+        let (_dir, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        seed_account(&conn);
+        seed_category(&conn, "groceries", "Groceries");
+        seed_category(&conn, "dining", "Dining");
+        seed_category(&conn, "fun", "Fun");
+
+        let month = "2026-05";
+        let month_start = "2026-05-01";
+        // Budgets (not needed for transfer math but envelope lists all)
+        for (id, cat) in [("b1", "groceries"), ("b2", "dining"), ("b3", "fun")] {
+            conn.execute(
+                "INSERT INTO budgets(id,category_id,month,amount_cents,created_at,updated_at) VALUES(?1,?2,?3,10000,datetime('now'),datetime('now'))",
+                rusqlite::params![id, cat, month],
+            )
+            .unwrap();
+        }
+        // Transfers:
+        // groceries -> dining 500
+        // dining -> fun 300
+        // groceries -> fun 200
+        // fun -> groceries 100
+        let transfers = [
+            ("t1", "groceries", "dining", 500),
+            ("t2", "dining", "fun", 300),
+            ("t3", "groceries", "fun", 200),
+            ("t4", "fun", "groceries", 100),
+        ];
+        for (id, from, to, cents) in transfers {
+            conn.execute(
+                "INSERT INTO budget_transfers(id,month,from_category,to_category,amount_cents,created_at) VALUES(?1,?2,?3,?4,?5,datetime('now'))",
+                rusqlite::params![id, month, from, to, cents],
+            )
+            .unwrap();
+        }
+        let envelopes = budget_envelopes_for_month(&mut conn, month, month_start).unwrap();
+        let find = |id: &str| envelopes.iter().find(|e| e.category_id == id).unwrap().transfer_cents;
+        // groceries: in 100 - out (500+200)=700 => -600
+        assert_eq!(find("groceries"), -600, "groceries transfer_cents");
+        // dining: in 500 - out 300 => 200
+        assert_eq!(find("dining"), 200, "dining transfer_cents");
+        // fun: in (300+200)=500 - out 100 => 400
+        assert_eq!(find("fun"), 400, "fun transfer_cents");
     }
 }
