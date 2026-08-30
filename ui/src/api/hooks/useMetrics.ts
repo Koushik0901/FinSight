@@ -15,7 +15,7 @@ export const useReconcile = (a: Basis, b: Basis, scope?: string) =>
   useQuery({
     queryKey: ["reconcile", a, b, scope ?? null],
     queryFn: async () => {
-      const r = await client.POST("/api/rpc/reconcileBases", {
+      const r = await client.POST("/api/rpc/reconcile_bases", {
         // generated openapi.ts types body as Record<string, never> — cast needed until spec has typed schema; ExpenseBasis deserializes via serde rename_all camelCase
         body: { basisA: a, basisB: b, scope } as any,
       });

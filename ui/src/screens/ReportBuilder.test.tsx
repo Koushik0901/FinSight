@@ -50,10 +50,10 @@ describe("ReportBuilder", () => {
     await waitFor(() => expect(api.customReport).toHaveBeenCalled());
     vi.mocked(api.customReport).mockClear();
     const select = screen.getByLabelText("Split by") as HTMLSelectElement;
-    fireEvent.change(select, { target: { value: "Payee" } });
+    fireEvent.change(select, { target: { value: "payee" } });
     await waitFor(() =>
       expect(api.customReport).toHaveBeenCalledWith(
-        expect.objectContaining({ splitBy: "Payee" })
+        expect.objectContaining({ splitBy: "payee" })
       )
     );
   });

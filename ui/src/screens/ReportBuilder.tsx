@@ -4,11 +4,11 @@ import type { CustomReportParams } from "../api/openapiClient";
 import { money } from "../utils/format";
 
 const SPLIT_OPTIONS: { value: CustomReportParams["splitBy"]; label: string }[] = [
-  { value: "Category", label: "Category" },
-  { value: "Group", label: "Group" },
-  { value: "Payee", label: "Payee" },
-  { value: "Account", label: "Account" },
-  { value: "Month", label: "Month" },
+  { value: "category", label: "Category" },
+  { value: "group", label: "Group" },
+  { value: "payee", label: "Payee" },
+  { value: "account", label: "Account" },
+  { value: "month", label: "Month" },
 ];
 
 const PERIOD_OPTIONS: { value: CustomReportParams["period"]; label: string }[] = [
@@ -21,7 +21,7 @@ const PERIOD_OPTIONS: { value: CustomReportParams["period"]; label: string }[] =
 
 export default function ReportBuilder() {
   const [params, setParams] = useState<CustomReportParams>({
-    splitBy: "Category",
+    splitBy: "category",
     period: "Last6Months",
     includeTransfers: false,
     includeArchived: false,

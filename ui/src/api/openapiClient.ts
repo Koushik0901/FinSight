@@ -128,9 +128,8 @@ export const api = {
    deleteFundingTemplate: (id: string) => wrap<null>(raw.POST("/api/rpc/delete_funding_template", { body: { id } })),
    applyTemplates: (month: string) => wrap<components["schemas"]["BudgetChange"][]>(raw.POST("/api/rpc/apply_templates", { body: { month } })),
    listBudgetTransfers: (month: string) => wrap<components["schemas"]["BudgetTransfer"][]>(raw.POST("/api/rpc/list_budget_transfers", { body: { month } })),
-   transferBudget: (fromCategory: string | null, toCategory: string | null, amountCents: number, month: string, note: string | null) => wrap<components["schemas"]["BudgetTransfer"]>(raw.POST("/api/rpc/transfer_budget", { body: { fromCategory, toCategory, amountCents, month, note } })),
-   transferEnvelope: (fromCategory: string | null, toCategory: string | null, amountCents: number, month: string, note: string | null) => wrap<components["schemas"]["BudgetTransfer"]>(raw.POST("/api/rpc/transfer_envelope", { body: { fromCategory, toCategory, amountCents, month, note } })),
-   listGoals: () => wrap<components["schemas"]["GoalDto"][]>(raw.POST("/api/rpc/list_goals", {})),
+    transferBudget: (fromCategory: string | null, toCategory: string | null, amountCents: number, month: string, note: string | null) => wrap<components["schemas"]["BudgetTransfer"]>(raw.POST("/api/rpc/transfer_budget", { body: { fromCategory, toCategory, amountCents, month, note } })),
+    listGoals: () => wrap<components["schemas"]["GoalDto"][]>(raw.POST("/api/rpc/list_goals", {})),
   createGoal: (input: components["schemas"]["NewGoalInput"]) => wrap<components["schemas"]["GoalDto"]>(raw.POST("/api/rpc/create_goal", { body: { input } })),
   updateGoalBalance: (id: string, currentCents: number) => wrap<null>(raw.POST("/api/rpc/update_goal_balance", { body: { id, currentCents } })),
   contributeToGoal: (id: string, amountCents: number, note: string | null, source: string | null) => wrap<components["schemas"]["GoalContributionDto"]>(raw.POST("/api/rpc/contribute_to_goal", { body: { id, amountCents, note, source } })),
@@ -302,13 +301,21 @@ export const api = {
   createConversation: () => wrap<string>(raw.POST("/api/rpc/create_conversation", {})),
   editConversationUserMessage: (input: components["schemas"]["EditConversationMessageInput"]) => wrap<null>(raw.POST("/api/rpc/edit_conversation_user_message", { body: { input } })),
   deleteConversationMessagesAfter: (conversationId: string, messageId: string) => wrap<number>(raw.POST("/api/rpc/delete_conversation_messages_after", { body: { conversationId, messageId } })),
-  // generic fallback for dynamic commands (used by hooks that haven't migrated yet)
-  rpc: <T>(cmd: string, body: unknown) =>
-    wrap<T>((raw.POST as any)(`/api/rpc/${cmd}`, { body: body as any })),
+  /** @deprecated Use typed `api` — untyped rpc bypasses arg camelCase asserts */
+  rpc: <T>(cmd: string, body: unknown) => {
+    if (import.meta.env.DEV) console.warn("[deprecated] rpc", cmd);
+    return wrap<T>((raw.POST as any)(`/api/rpc/${cmd}`, { body: body as any }));
+  },
 };
 
 
 export const commands = api;
+
+/** @deprecated Use typed `api` — untyped rpc bypasses arg camelCase asserts */
+export async function rpc<T>(cmd: string, body: unknown): Promise<Result<T>> {
+  if (import.meta.env.DEV) console.warn("[deprecated] rpc", cmd);
+  return api.rpc<T>(cmd, body);
+}
 
 // Re-export all schemas as top-level types for backward compat with old bindings imports
 export type Account = components["schemas"]["Account"];

@@ -499,6 +499,7 @@ fn average_spending(conn: &Connection, category_id: &str, month: &str, months: u
 }
 
 /// List all funding templates ordered by priority ASC, id ASC.
+// M4: no WHERE category_id — verified via grep, so category_priority index not needed
 pub fn list_funding_templates(conn: &Connection) -> CoreResult<Vec<FundingTemplate>> {
     let mut stmt = conn.prepare(
         "SELECT id, category_id, kind, params_json, priority, created_at \
