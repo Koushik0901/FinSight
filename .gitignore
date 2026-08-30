@@ -48,5 +48,5 @@ samples/
 # (`finsight-eval/src/bin/import_hf_corpus.rs`, `generate_ca_corpus.rs`); the
 # data does not — the US file alone is ~3.8MB and would sit in every clone
 # forever. Both are reproducible in two commands; see eval/CENTROID_BASELINE.md.
-eval/categorization_corpus.semi_synthetic.jsonl
-eval/categorization_corpus.semi_synthetic_ca.jsonl
+vite.log
+.claude/
