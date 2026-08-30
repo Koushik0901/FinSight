@@ -925,6 +925,10 @@ fn recent_memory(conn: &mut Connection) -> Vec<MemoryItem> {
         let (kind, description, merchant_key) = row;
         let mapped_kind = match kind.as_str() {
             "correction" => "merchant_correction",
+            "preference" => "user_preference",
+            "philosophy" => "financial_philosophy",
+            "risk_tolerance" => "risk_tolerance",
+            "conversation_context" => "conversation_context",
             other => other,
         }
         .to_string();
@@ -935,6 +939,12 @@ fn recent_memory(conn: &mut Connection) -> Vec<MemoryItem> {
                 format!("{merchant_key}: {description} (user correction)")
             } else {
                 format!("{description} (user correction)")
+            }
+        } else if kind == "preference" || kind == "philosophy" || kind == "risk_tolerance" {
+            if let Some(key) = merchant_key {
+                format!("{key}: {description} (user preference)")
+            } else {
+                format!("{description} (user preference)")
             }
         } else {
             description

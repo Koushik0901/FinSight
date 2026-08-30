@@ -210,6 +210,7 @@ export const api = {
   cancelStagedRestore: () => wrap<null>(raw.POST("/api/rpc/cancel_staged_restore", {})),
   listAgentMemory: () => wrap<components["schemas"]["AgentMemory"][]>(raw.POST("/api/rpc/list_agent_memory", {})),
   forgetAgentMemory: (id: string) => wrap<null>(raw.POST("/api/rpc/forget_agent_memory", { body: { id } })),
+  upsertAgentMemory: (kind: string, key: string, description: string) => wrap<null>(raw.POST("/api/rpc/upsert_agent_memory", { body: { kind, key, description } })),
   getFinancialHealthScore: () => wrap<components["schemas"]["HealthScore"]>(raw.POST("/api/rpc/get_financial_health_score", {})),
   listRuleProposals: () => wrap<components["schemas"]["RuleProposal"][]>(raw.POST("/api/rpc/list_rule_proposals", {})),
   acceptRuleProposal: (id: string) => wrap<null>(raw.POST("/api/rpc/accept_rule_proposal", { body: { id } })),

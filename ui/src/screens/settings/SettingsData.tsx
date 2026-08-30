@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useFinancialMetrics, useSetFinancialAssumptions, useFinancialPhilosophy, useSetFinancialPhilosophy } from "../../api/hooks/metrics";
-import { useAgentMemory, useForgetAgentMemory } from "../../api/hooks/agentMemory";
+import { useAgentMemory, useForgetAgentMemory, useUpsertAgentMemory } from "../../api/hooks/agentMemory";
 import { useDataHealth, useCreateBackup, useStageRestore, useCancelRestore } from "../../api/hooks/dataHealth";
 import { useExportJson, useExportCsv, useAutoCategorizeEnabled, useSetAutoCategorizeEnabled } from "../../api/hooks/settings";
 import { useCompletionProvider, useSetCompletionProvider, useSaveProviderApiKey, useTestCompletionProvider, useTriggerCategorize, useListProviderModels } from "../../api/hooks/agent";
@@ -422,7 +422,7 @@ function AgentMemoryPanel() {
           <ul className="stack" style={{ margin: 0, padding: 0, listStyle: "none", width: "100%" }}>
             {visibleMemory.map((m) => (
               <li key={m.id} className="row-md" style={{ padding: "8px 0", borderBottom: "1px solid var(--hairline)", alignItems: "center" }}>
-                <div className="grow" style={{ fontSize: 13.5, minWidth: 0 }}>{m.description}</div>
+                <div className="grow" style={{ fontSize: 13.5, minWidth: 0 }}><span className="chip" style={{ marginRight: 8, fontSize: 11 }}>{m.kind}</span>{m.description}</div>
                 <button className="btn ghost sm" type="button" onClick={() => handleForget(m)} aria-label={`Forget: ${m.description}`}>
                   Forget
                 </button>
@@ -430,6 +430,55 @@ function AgentMemoryPanel() {
             ))}
           </ul>
         )}
+      </div>
+    </div>
+  );
+}
+
+function PreferenceMemoryPanel() {
+  const { data: memory = [] } = useAgentMemory();
+  const upsert = useUpsertAgentMemory();
+  const [key, setKey] = useState("");
+  const [value, setValue] = useState("");
+  const preferences = memory.filter((m) => m.kind === "preference" || m.kind === "philosophy" || m.kind === "risk_tolerance");
+  const handleSave = async () => {
+    if (!key.trim() || !value.trim()) {
+      toast.error("Key and value required");
+      return;
+    }
+    try {
+      await upsert.mutateAsync({ kind: "preference", key: key.trim(), description: value.trim() });
+      toast.success("Preference saved", { description: `${key.trim()}: ${value.trim().slice(0, 40)}` });
+      setKey("");
+      setValue("");
+    } catch (e) {
+      toast.error(userErrorMessage(e));
+    }
+  };
+  return (
+    <div className="s-row" style={{ alignItems: "flex-start" }}>
+      <div>
+        <div className="label">Your preferences</div>
+        <div className="desc">Tell the agent how you want advice — risk tolerance, philosophy, or any preference. Stored as controlled memory and shown to the model.</div>
+      </div>
+      <div style={{ gridColumn: "2 / -1", display: "flex", flexDirection: "column", gap: 12, width: "100%" }}>
+        {preferences.length > 0 ? (
+          <ul className="stack" style={{ margin: 0, padding: 0, listStyle: "none", width: "100%" }}>
+            {preferences.map((m) => (
+              <li key={m.id} className="row-md" style={{ padding: "8px 0", borderBottom: "1px solid var(--hairline)", alignItems: "center" }}>
+                <div className="grow" style={{ fontSize: 13.5, minWidth: 0 }}><span className="chip" style={{ marginRight: 8, fontSize: 11 }}>{m.merchantKey ?? m.kind}</span>{m.description}</div>
+                <span className="muted" style={{ fontSize: 11 }}>{m.kind}</span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <div className="muted" style={{ fontSize: 13 }}>No preferences yet — add one below.</div>
+        )}
+        <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+          <input className="control" placeholder="Key (e.g. risk_tolerance)" value={key} onChange={(e) => setKey(e.target.value)} style={{ flex: "1 1 160px", minWidth: 0 }} aria-label="Preference key" />
+          <input className="control" placeholder="Value (e.g. cautious)" value={value} onChange={(e) => setValue(e.target.value)} style={{ flex: "2 1 220px", minWidth: 0 }} aria-label="Preference value" />
+          <button className="btn primary sm" type="button" onClick={handleSave} disabled={upsert.isPending}>Save</button>
+        </div>
       </div>
     </div>
   );
@@ -449,6 +498,7 @@ function AgentSection() {
         <Tog checked={autoCategorizeEnabled} onChange={(value) => setAutoCategorizeMutation.mutate(value)} ariaLabel="Auto-categorize new transactions" />
       </div>
       <AgentMemoryPanel />
+      <PreferenceMemoryPanel />
       <div className="card tight" style={{ marginTop: 12 }}>
         <div className="row row-sm" style={{ alignItems: "flex-start", gap: 8 }}>
           <span aria-hidden style={{ fontSize: 15 }}>🔒</span>

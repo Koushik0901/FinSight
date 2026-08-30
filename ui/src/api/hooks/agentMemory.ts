@@ -22,3 +22,15 @@ export function useForgetAgentMemory() {
     },
   });
 }
+
+export function useUpsertAgentMemory() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { kind: string; key: string; description: string }) => {
+      await unwrap(api.upsertAgentMemory(input.kind, input.key, input.description));
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["agent-memory"] });
+    },
+  });
+}

@@ -30,14 +30,27 @@ pub fn upsert_correction(
     merchant_key: &str,
     description: &str,
 ) -> CoreResult<()> {
+    upsert_memory(conn, "correction", merchant_key, description)
+}
+
+pub fn upsert_preference(conn: &mut Connection, key: &str, value: &str) -> CoreResult<()> {
+    upsert_memory(conn, "preference", key, value)
+}
+
+pub fn upsert_memory(
+    conn: &mut Connection,
+    kind: &str,
+    key: &str,
+    description: &str,
+) -> CoreResult<()> {
     let id = Uuid::new_v4().to_string();
     let now = Utc::now().to_rfc3339();
     conn.execute(
         "INSERT INTO agent_memory(id, kind, description, merchant_key, created_at) \
-         VALUES(?1, 'correction', ?2, ?3, ?4) \
+         VALUES(?1, ?2, ?3, ?4, ?5) \
          ON CONFLICT(kind, merchant_key) DO UPDATE SET \
             description = excluded.description, created_at = excluded.created_at",
-        params![id, description, merchant_key, now],
+        params![id, kind, description, key, now],
     )?;
     Ok(())
 }

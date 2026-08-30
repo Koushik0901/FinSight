@@ -1983,6 +1983,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/rpc/upsert_agent_memory": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["upsert_agent_memory"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/rpc/list_agent_sessions": {
         parameters: {
             query?: never;
@@ -5952,6 +5968,11 @@ export interface components {
         };
         ForgetAgentMemoryRequest: {
             id: string;
+        };
+        UpsertAgentMemoryRequest: {
+            kind: string;
+            key: string;
+            description: string;
         };
         /**
          * @description One funding template — declarative rule for how to fund a category.
@@ -10960,6 +10981,27 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["AgentMemory"][];
                 };
+            };
+        };
+    };
+    upsert_agent_memory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpsertAgentMemoryRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: never;
             };
         };
     };
