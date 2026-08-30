@@ -1041,10 +1041,10 @@ pub fn custom_report(conn: &Connection, p: CustomReportParams) -> CoreResult<Cus
     let group_by = group_by.as_str();
     // Ensure joins for filters that need them, regardless of split_by
     let mut join_clause = join_clause.to_string();
-    if !p.category_ids.is_empty() || !p.group_ids.is_empty() || p.spending_type.is_some() {
-        if !join_clause.contains("categories c") {
-            join_clause.push_str(" LEFT JOIN categories c ON c.id = t.category_id");
-        }
+    if (!p.category_ids.is_empty() || !p.group_ids.is_empty() || p.spending_type.is_some())
+        && !join_clause.contains("categories c")
+    {
+        join_clause.push_str(" LEFT JOIN categories c ON c.id = t.category_id");
     }
     if !p.group_ids.is_empty() && !join_clause.contains("category_groups g") {
         join_clause.push_str(" LEFT JOIN category_groups g ON g.id = c.group_id");
