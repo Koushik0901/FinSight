@@ -285,7 +285,7 @@ pub struct ReconcileBasesRequest {
     pub scope: Option<String>,
 }
 
-#[utoipa::path(post, path = "/api/rpc/reconcileBases", request_body(content = ReconcileBasesRequest), responses((status = 200, body = ReconcileResult)))]
+#[utoipa::path(post, path = "/api/rpc/reconcile_bases", request_body(content = ReconcileBasesRequest), responses((status = 200, body = ReconcileResult)))]
 pub async fn reconcile_bases(
     state: &ApiState,
     basis_a: metrics::ExpenseBasis,

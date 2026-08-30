@@ -2813,7 +2813,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/rpc/reconcileBases": {
+    "/api/rpc/reconcile_bases": {
         parameters: {
             query?: never;
             header?: never;
@@ -3661,22 +3661,6 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["transfer_budget"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/rpc/transfer_envelope": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["transfer_envelope"];
         delete?: never;
         options?: never;
         head?: never;
@@ -7841,7 +7825,7 @@ export interface components {
          * @description How to slice the expense pie.
          * @enum {string}
          */
-        SplitBy: "Category" | "Group" | "Payee" | "Account" | "Month";
+        SplitBy: "category" | "group" | "payee" | "account" | "month";
         SplitInputDto: {
             /** Format: int64 */
             amountCents: number;
@@ -13014,29 +12998,6 @@ export interface operations {
         };
     };
     transfer_budget: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["TransferBudgetRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["BudgetTransfer"];
-                };
-            };
-        };
-    };
-    transfer_envelope: {
         parameters: {
             query?: never;
             header?: never;

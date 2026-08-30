@@ -130,8 +130,7 @@ pub async fn rpc(
 /// One table for the whole RPC surface: wire name => serving body. This single
 /// invocation expands to BOTH the `dispatch()` function and the [`SUPPORTED`]
 /// name list, so the two cannot drift. Adding a command is one entry here,
-/// plus the shared body in `finsight-api`, the bindings wrapper, the
-/// `collect_commands!` registration, and an `export_bindings` regen — the
+/// plus the shared body in `finsight-api` — regen: cargo run -p finsight-openapi --bin export_openapi && pnpm --filter ui openapi:gen — finSight-openapi + ui/src/api/openapi.ts — the
 /// parity test enforces the rest.
 ///
 /// Arm bodies read their arguments with `arg(&p, "camelKey")`, mirroring what
@@ -225,7 +224,7 @@ rpc_routes!(api, events, cmd, p, c:
         "get_needs_review_count" => ok(c::agent::get_needs_review_count(api).await?),
         "trigger_categorize" => ok(c::agent::trigger_categorize(api).await?),
         "recompute_anomalies" => ok(c::agent::recompute_anomalies(api).await?),
-        "reconcileBases" => ok(
+        "reconcile_bases" => ok(
             c::copilot::reconcile_bases(
                 api,
                 arg(&p, "basisA")?, // ExpenseBasis deserializes via serde rename_all camelCase
@@ -315,15 +314,6 @@ rpc_routes!(api, events, cmd, p, c:
         "apply_templates" => ok(c::budget::apply_templates(api, arg(&p, "month")?).await?),
         "list_budget_transfers" => ok(c::budget::list_budget_transfers(api, arg(&p, "month")?).await?),
         "transfer_budget" => ok(c::budget::transfer_budget(
-            api,
-            arg(&p, "fromCategory")?,
-            arg(&p, "toCategory")?,
-            arg(&p, "amountCents")?,
-            arg(&p, "month")?,
-            arg(&p, "note")?,
-        )
-        .await?),
-        "transfer_envelope" => ok(c::budget::transfer_envelope(
             api,
             arg(&p, "fromCategory")?,
             arg(&p, "toCategory")?,

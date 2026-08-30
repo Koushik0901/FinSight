@@ -454,26 +454,6 @@ pub async fn list_budget_transfers(state: &ApiState, month: String) -> AppResult
         .map_err(AppError::from)
 }
 
-// Transfer envelope alias — older UI / plan name for the same ledger primitive.
-// The plan calls this `POST /api/rpc/transfer_envelope`; we keep it as a
-// thin alias that routes to the same `transfer_budget` logic so parity tests
-// that seed `COMMANDS` with either name stay flexible. The OpenAPI `paths`
-// entry for it is intentionally absent: the typed contract prefers
-// `transfer_budget`, but the dispatcher below routes `transfer_envelope` to
-// the same handler so an older generated client that still sends that command
-// does not 404 after an upgrade.
-#[utoipa::path(post, path = "/api/rpc/transfer_envelope", request_body(content = TransferBudgetRequest), responses((status = 200, body = BudgetTransfer)))]
-pub async fn transfer_envelope(
-    state: &ApiState,
-    from_category: Option<String>,
-    to_category: Option<String>,
-    amount_cents: i64,
-    month: String,
-    note: Option<String>,
-) -> AppResult<BudgetTransfer> {
-    transfer_budget(state, from_category, to_category, amount_cents, month, note).await
-}
-
 // ── Goals ──────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
