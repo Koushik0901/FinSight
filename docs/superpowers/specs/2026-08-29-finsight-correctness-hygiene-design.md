@@ -82,9 +82,9 @@ Each fix stays in its owning crate; no cross-crate SQL, no hand-rolled money mat
 - Drift invariant: reimbursement `+2000,settle_up=1` reduces both `envelope.spent` and `carryover_for` by 2000.
 
 ### `apply_templates` Transactional Write (I2)
-Input `Vec<FundingTemplate>` ordered `priority ASC, id ASC`. Handler resolves `available = to_budget(month)`. Inside `BEGIN IMMEDIATE`:
+Input `Vec<FundingTemplate>` ordered `priority ASC, id ASC`. Handler resolves `available = available_funds(month)` (`income - budgeted - hold_current + hold_prev` — diverges from spec §3 Global Constraints `to_budget` intentionally; `remainder` collapsed into `available` single tracking). Inside `BEGIN IMMEDIATE`:
 - For each `tmpl` in order: `need = match kind { Fixed(v)=>v, Percent(p)=>p%*remainder, UpTo(cap)=> (cap - category_available(cat,month)).max(0), By(n)=>n, Average(k)=>avg(k), Remainder=>remainder }`
-- `take = need.min(available).max(0);` `budgets.set(cat, month, budgeted+take)`; `available -= take; remainder -= take;` `DELETE FROM budget_holds WHERE category_id=cat AND month=?` if `take>0`.
+- `take = need.min(available).max(0);` `budgets.set(cat, month, budgeted+take)`; `available -= take;` `DELETE FROM budget_holds WHERE month=?` if `take>0` (holds are per-month).
 - `COMMIT` → `Vec<BudgetChange { categoryId, appliedCents }>`. Second call with `available==0` yields `take==0` — idempotent.
 
 ### Enable Banking Isolation (C2+I7)

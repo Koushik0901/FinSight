@@ -669,6 +669,7 @@ pub fn apply_templates(conn: &mut Connection, month: &str) -> CoreResult<Vec<Bud
     crate::repos::atomic(conn, |conn| {
         let mut templates = list_funding_templates(conn)?;
         templates.sort_by_key(|t| (t.priority, t.id.clone()));
+        // diverges from spec §3: available_funds intentionally includes prev_hold
         // Use available_funds (not to_budget) so prev_hold rolls forward as intended.
         let mut available = available_funds(conn, month)?;
         if available < 0 {
@@ -1451,8 +1452,15 @@ mod tests {
     }
 
     // ── Task 7 parity corpus (C1+I3+I8 unified) ──────────────────────────────
+    // Self-consistency check, not cross-surface equality: both sides use the same
+    // `CASE WHEN settle_up ...` via `period_bounds`, so this cannot catch a future
+    // `get_report_data` regression (e.g. missing `primary_currency_clause`). That
+    // cross-surface equality is exercised indirectly via the shared `period_bounds`
+    // helper (reports.rs now calls the same function) and remains out-of-scope for
+    // a `finsight-core` unit test due to the circular dep on `finsight-api`.
+    // To tighten, we also assert that an `is_transfer=1` row is excluded from both sums.
     #[test]
-    fn custom_report_parity_with_fixed_reports() {
+    fn custom_report_self_consistent_sums() {
         let (_d, db) = fresh_db();
         let mut conn = db.get().unwrap();
         // Seed 6 months: mix of expense, income, reimbursement (settle_up)
@@ -1466,6 +1474,17 @@ mod tests {
             insert_tx(&conn, &cat_id, 5000, &format!("{month}-11"), 0);
             // reimbursement +200 settle_up=1 nets as -200
             insert_tx(&conn, &cat_id, 200, &format!("{month}-12"), 1);
+        }
+        // Add a transfer that must be excluded (is_transfer=1) inside the 6-month window
+        {
+            let cat_id = "Cat3".to_string();
+            let posted = "2026-03-15T00:00:00Z";
+            conn.execute(
+                "INSERT INTO transactions(id, account_id, posted_at, amount_cents, merchant_raw, category_id, status, is_anomaly, is_transfer, settle_up, created_at) \
+                 VALUES(?1, 'acc1', ?2, -9999, 'TRANSFER', ?3, 'cleared', 0, 1, 0, ?2)",
+                params![uuid::Uuid::new_v4().to_string(), posted, cat_id],
+            )
+            .unwrap();
         }
         // Fixed report total: direct SUM with same CASE + is_transfer=0 + period_bounds,
         // mimicking reports::get_report_data monthly expense totals for Last6Months.
@@ -1491,7 +1510,7 @@ mod tests {
         .unwrap();
         let custom_sum: i64 = custom.rows.iter().map(|r| r.total_cents).sum();
         // The brief's invariant: for same 6-month period with reimbursements, sums must equal.
-        // Expected: sum(1000*m -200) for m=1..6 = 19800
+        // Expected: sum(1000*m -200) for m=1..6 = 19800 (is_transfer row excluded)
         assert_eq!(custom.total_cents, custom_sum, "custom.total_cents must equal sum of rows");
         assert_eq!(
             fixed_sum, custom_sum,
@@ -1499,7 +1518,10 @@ mod tests {
             fixed_sum, custom_sum, custom.total_cents
         );
         assert_eq!(fixed_sum, custom.total_cents);
-        assert_eq!(fixed_sum, 19_800, "expected 19800 from seeded fixture");
+        assert_eq!(fixed_sum, 19_800, "expected 19800 from seeded fixture (transfer excluded)");
+        // Tighten: total must not include the 9999 transfer
+        assert_ne!(fixed_sum, 19_800 + 9_999, "is_transfer=1 row must be excluded");
+        assert_ne!(custom.total_cents, 19_800 + 9_999);
     }
 
     #[test]

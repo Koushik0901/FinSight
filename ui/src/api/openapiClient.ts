@@ -1,6 +1,6 @@
 /**
  * OpenAPI-typed fetch client for the RPC surface.
- * GENERATED  do not hand-edit. Regenerate via `cargo run -p finsight-openapi --bin export_openapi && pnpm --filter ui openapi:gen && python gen_api.py` or `node scripts/gen_api.mjs`.
+ * GENERATED  do not hand-edit. Regenerate via `pnpm openapi` (`cargo run -p finsight-openapi --bin export_openapi && pnpm --filter ui openapi:gen`) — see `crates/finsight-server/src/dispatch.rs:130`.
  * Wraps `openapi-fetch` with the `Result<T,AppError>` envelope and 401 -> `FINSIGHT_AUTH_REQUIRED` dispatch
  * that the old `httpBackend.ts` shim provided.
  */

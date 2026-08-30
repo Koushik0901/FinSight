@@ -554,7 +554,7 @@ export default function Budget() {
           <div>
             <div className="eyebrow"><span className="dot" />Month progress</div>
             <div className="hero-num">
-              <div className="figure money" style={{ fontSize: 56, lineHeight: 1, color: remaining < 0 ? "var(--negative)" : "var(--accent)" }}>{money(Math.abs(remaining))}</div>
+              <div className="figure money" style={{ fontSize: 56, lineHeight: 1, color: remaining < 0 ? "var(--negative)" : "var(--accent)" }}>{money(remaining)}</div>
               <div className="muted">{remaining < 0 ? "over the current plan" : "left to spend"}</div>
             </div>
             <div className="budget-progress-track" style={{ position: "relative", height: 10, background: "var(--surface-2)", borderRadius: 999, overflow: "hidden", marginTop: 4 }}>
@@ -938,7 +938,7 @@ export default function Budget() {
   );
 }
 
-export function BudgetEnvelope({ remaining }: { remaining: number }) {
+export function BudgetEnvelopeChip({ remaining }: { remaining: number }) {
   const label =
     remaining < 0
       ? `Over by ${money(remaining, { decimals: 2 })}`

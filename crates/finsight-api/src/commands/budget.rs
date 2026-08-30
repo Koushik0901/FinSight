@@ -59,7 +59,7 @@ fn budget_envelopes_for_month(
                 COUNT(t.id) \
          FROM categories c \
          LEFT JOIN category_groups g ON g.id = c.group_id \
-         LEFT JOIN transactions t ON t.category_id = c.id AND t.posted_at >= ?1 \
+         LEFT JOIN transactions t ON t.category_id = c.id AND t.posted_at >= ?1 AND t.is_transfer = 0 \
          WHERE c.archived_at IS NULL \
          GROUP BY c.id, c.label, c.color, c.group_id, g.label \
          ORDER BY g.sort_order, c.sort_order",
@@ -1332,6 +1332,60 @@ mod tests {
         assert!(
             food.spent_cents < food.budget_cents,
             "netted spend (3000) is under the 4000 budget"
+        );
+    }
+
+    #[test]
+    fn budget_envelope_excludes_transfers() {
+        // I-P1 regression: a negative is_transfer=1 row must NOT inflate spent_cents/txn_count,
+        // otherwise available = budgeted+carry+transfer-spent drifts.
+        let (_dir, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        seed_account(&conn);
+        seed_category(&conn, "food", "Food");
+
+        let month = "2026-05";
+        let month_start = "2026-05-01";
+        conn.execute(
+            "INSERT INTO budgets(id,category_id,month,amount_cents,created_at,updated_at) \
+             VALUES('b1','food',?1,4000,datetime('now'),datetime('now'))",
+            rusqlite::params![month],
+        )
+        .unwrap();
+
+        // Ordinary $30 expense.
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,category_id,status,is_anomaly,is_transfer,created_at) \
+             VALUES('e1','a1','2026-05-10T00:00:00Z',-3000,'GROCERY','food','cleared',0,0,'2026-05-10T00:00:00Z')",
+            [],
+        )
+        .unwrap();
+        // $10 transfer (is_transfer=1) must NOT count toward spent or txn_count
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,category_id,status,is_anomaly,is_transfer,created_at) \
+             VALUES('t1','a1','2026-05-12T00:00:00Z',-1000,'TRANSFER','food','cleared',0,1,'2026-05-12T00:00:00Z')",
+            [],
+        )
+        .unwrap();
+
+        let envelopes = budget_envelopes_for_month(&mut conn, month, month_start).unwrap();
+        let food = envelopes
+            .iter()
+            .find(|e| e.category_id == "food")
+            .expect("food envelope present");
+        assert_eq!(
+            food.spent_cents, 3000,
+            "is_transfer=1 row must not inflate spent_cents"
+        );
+        assert_eq!(
+            food.txn_count, 1,
+            "is_transfer=1 row must not inflate txn_count"
+        );
+        // available invariant: budgeted + carry + transfer - spent
+        assert_eq!(
+            food.budget_cents + food.carryover_cents + food.transfer_cents - food.spent_cents,
+            1000,
+            "available must be 4000 - 3000 = 1000, not 0"
         );
     }
 
