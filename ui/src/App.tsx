@@ -20,8 +20,11 @@ import { useOnboardingState } from "./api/hooks/onboarding";
 import { useDefaultCurrency } from "./api/hooks/settings";
 import { warmOfflineEssentials } from "./api/prefetch";
 import { useOnboardingRedirect } from "./hooks/useOnboardingRedirect";
+import { useIsMobile } from "./hooks/useIsMobile";
 import ImportProgress from "./components/ImportProgress";
 import UnfinishedImportBanner from "./components/UnfinishedImportBanner";
+import MobileShell from "./components/mobile/MobileShell";
+import MobileMoreScreen from "./components/mobile/MobileMoreScreen";
 // Lazy for the same reason as Onboarding: it reaches ImportMappingDialog →
 // AccountDrawer, i.e. react-hook-form + zod again. It renders null unless this
 // launch came from the OS share sheet, which is rare and always user-initiated,
@@ -48,7 +51,21 @@ const MonthClose = lazy(() => import("./screens/MonthClose"));
 const PathBack = lazy(() => import("./screens/PathBack"));
 const Rules = lazy(() => import("./screens/Rules"));
 const Settings = lazy(() => import("./screens/Settings"));
-// Server-mode-only admin surface; the route resolves for everyone but the
+// Mobile-first presentations — lazy so desktop never pays for phone code
+const MobileToday = lazy(() => import("./screens/mobile/MobileToday"));
+const MobileTransactions = lazy(() => import("./screens/mobile/MobileTransactions"));
+const MobileBudget = lazy(() => import("./screens/mobile/MobileBudget"));
+const MobileAccounts = lazy(() => import("./screens/mobile/MobileAccounts"));
+const MobileGoals = lazy(() => import("./screens/mobile/MobileGoals"));
+const MobileCopilot = lazy(() => import("./screens/mobile/MobileCopilot"));
+const MobileCategories = lazy(() => import("./screens/mobile/MobileCategories"));
+const MobileRecurring = lazy(() => import("./screens/mobile/MobileRecurring"));
+const MobileReports = lazy(() => import("./screens/mobile/MobileReports"));
+const MobileJourney = lazy(() => import("./screens/mobile/MobileJourney"));
+const MobileCashflow = lazy(() => import("./screens/mobile/MobileCashflow"));
+const MobileScenarios = lazy(() => import("./screens/mobile/MobileScenarios"));
+const MobileRules = lazy(() => import("./screens/mobile/MobileRules"));
+const MobileSettings = lazy(() => import("./screens/mobile/MobileSettings"));
 // screen itself renders nothing outside server mode / for non-admins.
 const UsersAdmin = lazy(() => import("./screens/server/UsersAdmin"));
 // OAuth consent for external MCP clients. Rendered chrome-less (like
@@ -59,7 +76,6 @@ const CopilotAgUiSpike = lazy(() => import("./screens/CopilotAgUiSpike"));
 const Recipes = lazy(() => import("./screens/Recipes"));
 // DEV-only: gallery of the Copilot generative-UI blocks (never routed in prod builds).
 const GenUiPreview = lazy(() => import("./dev/GenUiPreview"));
-// Pulls in recharts and react-markdown via AgentResponseRenderer —
 // code-split so those land only when the palette is actually opened, not in
 // the entry bundle.
 const CommandPalette = lazy(() =>
@@ -235,6 +251,7 @@ export function App() {
   // Consent for an external app is a decision ABOUT the app, not a place
   // inside it — so it renders without the sidebar/nav, same as onboarding.
   const isOAuthConsent = location.pathname === "/oauth/authorize";
+  const isMobile = useIsMobile();
 
   // Installed-PWA icon badge. App-level on purpose: the badge's job is to be
   // right while the user is on some other screen entirely.
@@ -317,6 +334,50 @@ export function App() {
             <OAuthAuthorize />
           </Suspense>
         </RouteErrorBoundary>
+      ) : isMobile ? (
+        <MobileShell>
+          <UnfinishedImportBanner />
+          <ImportProgress />
+          <Suspense fallback={null}>
+            <ShareTargetImport />
+          </Suspense>
+          <RouteErrorBoundary resetKey={location.key}>
+            <Suspense fallback={<PageLoader />}>
+              <Routes>
+                <Route path="/" element={<MobileToday />} />
+                <Route path="/inbox" element={<Review />} />
+                <Route path="/import-review" element={<ImportReview />} />
+                <Route path="/insights" element={<Navigate to="/inbox" replace />} />
+                <Route path="/accounts" element={<MobileAccounts />} />
+                <Route path="/accounts/:id/transactions" element={<MobileTransactions />} />
+                <Route path="/transactions" element={<MobileTransactions />} />
+                <Route path="/budget" element={<MobileBudget />} />
+                <Route path="/categories" element={<MobileCategories />} />
+                <Route path="/recurring" element={<MobileRecurring />} />
+                <Route path="/goals" element={<MobileGoals />} />
+                <Route path="/journey" element={<MobileJourney />} />
+                <Route path="/scenarios" element={<MobileScenarios />} />
+                <Route path="/cashflow" element={<MobileCashflow />} />
+                <Route path="/reports" element={<MobileReports />} />
+                <Route path="/close" element={<MonthClose />} />
+                <Route path="/path-back" element={<PathBack />} />
+                <Route path="/rules" element={<MobileRules />} />
+                <Route path="/review" element={<Navigate to="/inbox?view=categories" replace />} />
+                <Route path="/settings" element={<MobileSettings />} />
+                <Route path="/settings/users" element={<UsersAdmin />} />
+                <Route path="/copilot" element={<MobileCopilot />} />
+                {import.meta.env.DEV && (
+                  <Route path="/copilot/ag-ui-spike" element={<CopilotAgUiSpike />} />
+                )}
+                <Route path="/recipes" element={<Recipes />} />
+                {import.meta.env.DEV && (
+                  <Route path="/dev/genui-preview" element={<GenUiPreview />} />
+                )}
+                <Route path="/more" element={<MobileMoreScreen />} />
+              </Routes>
+            </Suspense>
+          </RouteErrorBoundary>
+        </MobileShell>
       ) : (
         <div className="app">
           <Sidebar
@@ -369,6 +430,7 @@ export function App() {
                     {import.meta.env.DEV && (
                       <Route path="/dev/genui-preview" element={<GenUiPreview />} />
                     )}
+                    <Route path="/more" element={<MobileMoreScreen />} />
                   </Routes>
                 </Suspense>
               </RouteErrorBoundary>

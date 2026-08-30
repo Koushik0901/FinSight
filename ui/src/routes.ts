@@ -51,6 +51,8 @@ export const NON_LINKABLE_ROUTES = [
   // browser here with authorization parameters, so a backend-generated link to
   // it could never carry the state that makes it meaningful.
   "/oauth/authorize",
+  // Mobile-only nav container — not a data destination the backend should link to.
+  "/more",
 ] as const;
 
 export type AppRoutePath = (typeof APP_ROUTES)[number];
