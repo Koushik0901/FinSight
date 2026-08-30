@@ -82,6 +82,20 @@ const PERIOD_OPTIONS: { value: string; label: string }[] = [
   { value: "All", label: "All time" },
 ];
 
+const INTERVAL_OPTIONS: { value: string; label: string }[] = [
+  { value: "", label: "Default" },
+  { value: "day", label: "Day" },
+  { value: "week", label: "Week" },
+  { value: "month", label: "Month" },
+  { value: "year", label: "Year" },
+];
+
+const METRIC_OPTIONS: { value: string; label: string }[] = [
+  { value: "sum", label: "Sum" },
+  { value: "count", label: "Count" },
+  { value: "average", label: "Average" },
+];
+
 function parseFilters(json: string) {
   try {
     const j = JSON.parse(json || "{}");
@@ -108,6 +122,8 @@ export default function WidgetDrawer({ open, onClose, editing }: Props) {
   const [chartType, setChartType] = useState("bar");
   const [splitBy, setSplitBy] = useState("category");
   const [period, setPeriod] = useState("All");
+  const [interval, setInterval] = useState("");
+  const [metric, setMetric] = useState("sum");
   const [includeTransfers, setIncludeTransfers] = useState(false);
   const [includeArchived, setIncludeArchived] = useState(false);
   const [accountIds, setAccountIds] = useState<string[]>([]);
@@ -116,7 +132,6 @@ export default function WidgetDrawer({ open, onClose, editing }: Props) {
   const [spendingType, setSpendingType] = useState("");
   const [minAmount, setMinAmount] = useState("");
   const [maxAmount, setMaxAmount] = useState("");
-
   useEffect(() => {
     if (editing) {
       setTitle(editing.title);
@@ -132,11 +147,18 @@ export default function WidgetDrawer({ open, onClose, editing }: Props) {
       setSpendingType((f.spendingType as string) ?? "");
       setMinAmount(f.minAmount != null ? String(f.minAmount) : "");
       setMaxAmount(f.maxAmount != null ? String(f.maxAmount) : "");
+      // Interval and metric are stored as top-level widget fields, not in filtersJson
+      // For now, we store them in filtersJson as well for simplicity
+      const jf = JSON.parse(editing.filtersJson || "{}");
+      setInterval(jf.interval ?? "");
+      setMetric(jf.metric ?? "sum");
     } else {
       setTitle("");
       setChartType("bar");
       setSplitBy("category");
       setPeriod("All");
+      setInterval("");
+      setMetric("sum");
       setIncludeTransfers(false);
       setIncludeArchived(false);
       setAccountIds([]);
@@ -163,6 +185,8 @@ export default function WidgetDrawer({ open, onClose, editing }: Props) {
       spendingType: spendingType || undefined,
       minAmount: minAmount ? Number(minAmount) : undefined,
       maxAmount: maxAmount ? Number(maxAmount) : undefined,
+      interval: interval || undefined,
+      metric: metric !== "sum" ? metric : undefined,
     });
     try {
       if (editing) {
@@ -256,6 +280,30 @@ export default function WidgetDrawer({ open, onClose, editing }: Props) {
           </select>
         </label>
 
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <span className="eyebrow" style={{ fontSize: 11 }}>Interval</span>
+            <select
+              value={interval}
+              onChange={(e) => setInterval(e.target.value)}
+              aria-label="Interval"
+              style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid var(--line)", background: "var(--elevated)", fontSize: 14 }}
+            >
+              {INTERVAL_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </label>
+          <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <span className="eyebrow" style={{ fontSize: 11 }}>Metric</span>
+            <select
+              value={metric}
+              onChange={(e) => setMetric(e.target.value)}
+              aria-label="Metric"
+              style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid var(--line)", background: "var(--elevated)", fontSize: 14 }}
+            >
+              {METRIC_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </label>
+        </div>
         <fieldset style={{ border: "1px solid var(--line)", borderRadius: 12, padding: 12, display: "flex", flexDirection: "column", gap: 12 }}>
           <legend className="eyebrow" style={{ fontSize: 11, padding: "0 6px" }}>Filters</legend>
           <label className="row row-sm" style={{ gap: 8, cursor: "pointer", fontSize: 13 }}>

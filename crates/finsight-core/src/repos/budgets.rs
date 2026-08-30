@@ -943,34 +943,42 @@ pub fn custom_report(conn: &Connection, p: CustomReportParams) -> CoreResult<Cus
 
     let (select_label, join_clause, group_by) = match p.split_by {
         SplitBy::Category => (
-            "COALESCE(c.label, 'Uncategorized')",
-            " LEFT JOIN categories c ON c.id = t.category_id",
-            "COALESCE(c.id, 'uncategorized'), COALESCE(c.label, 'Uncategorized')",
+            "COALESCE(c.label, 'Uncategorized')".to_string(),
+            " LEFT JOIN categories c ON c.id = t.category_id".to_string(),
+            "COALESCE(c.id, 'uncategorized'), COALESCE(c.label, 'Uncategorized')".to_string(),
         ),
         SplitBy::Group => (
-            "COALESCE(g.label, 'Uncategorized')",
-            " LEFT JOIN categories c ON c.id = t.category_id LEFT JOIN category_groups g ON g.id = c.group_id",
-            "COALESCE(g.id, 'uncategorized'), COALESCE(g.label, 'Uncategorized')",
+            "COALESCE(g.label, 'Uncategorized')".to_string(),
+            " LEFT JOIN categories c ON c.id = t.category_id LEFT JOIN category_groups g ON g.id = c.group_id".to_string(),
+            "COALESCE(g.id, 'uncategorized'), COALESCE(g.label, 'Uncategorized')".to_string(),
         ),
-        SplitBy::Payee => ("t.merchant_raw", "", "t.merchant_raw"),
+        SplitBy::Payee => ("t.merchant_raw".to_string(), "".to_string(), "t.merchant_raw".to_string()),
         SplitBy::Account => (
-            "COALESCE(a.name, t.account_id)",
-            " LEFT JOIN accounts a ON a.id = t.account_id",
-            "COALESCE(a.id, t.account_id), COALESCE(a.name, t.account_id)",
+            "COALESCE(a.name, t.account_id)".to_string(),
+            " LEFT JOIN accounts a ON a.id = t.account_id".to_string(),
+            "COALESCE(a.id, t.account_id), COALESCE(a.name, t.account_id)".to_string(),
         ),
-        SplitBy::Month => (
-            "strftime('%Y-%m', t.posted_at)",
-            "",
-            "strftime('%Y-%m', t.posted_at)",
-        ),
+        SplitBy::Month => {
+            let fmt = match p.interval.as_deref().map(|s| s.to_lowercase()).as_deref() {
+                Some("day") => "%Y-%m-%d",
+                Some("week") => "%Y-%W",
+                Some("year") => "%Y",
+                _ => "%Y-%m",
+            };
+            let expr = format!("strftime('{}', t.posted_at)", fmt);
+            (expr.clone(), "".to_string(), expr)
+        },
         SplitBy::SpendingType => (
             // 'Untagged' distinguishes null spending_type (custom/untagged) from
             // 'Uncategorized' (no category). Separate from Category's bucket.
-            "COALESCE(c.spending_type, 'Untagged')",
-            " LEFT JOIN categories c ON c.id = t.category_id",
-            "COALESCE(c.spending_type, 'Untagged')",
+            "COALESCE(c.spending_type, 'Untagged')".to_string(),
+            " LEFT JOIN categories c ON c.id = t.category_id".to_string(),
+            "COALESCE(c.spending_type, 'Untagged')".to_string(),
         ),
     };
+    // Convert to &str for later use, handling owned Strings
+    let select_label = select_label.as_str();
+    let group_by = group_by.as_str();
     // Ensure joins for filters that need them, regardless of split_by
     let mut join_clause = join_clause.to_string();
     if !p.category_ids.is_empty() || !p.group_ids.is_empty() || p.spending_type.is_some() {
@@ -981,11 +989,15 @@ pub fn custom_report(conn: &Connection, p: CustomReportParams) -> CoreResult<Cus
     if !p.group_ids.is_empty() && !join_clause.contains("category_groups g") {
         join_clause.push_str(" LEFT JOIN category_groups g ON g.id = c.group_id");
     }
-
     // Build WHERE clause dynamically.
+    let total_expr = match p.metric.as_deref().map(|s| s.to_lowercase()).as_deref() {
+        Some("count") => "COUNT(*)".to_string(),
+        Some("average") | Some("avg") => "CAST(AVG(CASE WHEN t.settle_up=1 THEN -t.amount_cents WHEN t.amount_cents < 0 THEN -t.amount_cents ELSE 0 END) AS INTEGER)".to_string(),
+        _ => "CAST(SUM(CASE WHEN t.settle_up=1 THEN -t.amount_cents WHEN t.amount_cents < 0 THEN -t.amount_cents ELSE 0 END) AS INTEGER)".to_string(),
+    };
     let mut sql = format!(
         "SELECT {select_label} AS label, \
-                CAST(SUM(CASE WHEN t.settle_up=1 THEN -t.amount_cents WHEN t.amount_cents < 0 THEN -t.amount_cents ELSE 0 END) AS INTEGER) AS total, \
+                {total_expr} AS total, \
                 COUNT(*) AS cnt \
          FROM transactions t{join_clause} WHERE 1=1"
     );

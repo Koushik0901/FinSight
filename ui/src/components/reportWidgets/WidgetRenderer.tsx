@@ -20,6 +20,8 @@ function parseFilters(filtersJson: string): {
   spendingType: string | null;
   minAmount: number | null;
   maxAmount: number | null;
+  interval: string | null;
+  metric: string | null;
 } {
   try {
     const j = JSON.parse(filtersJson || "{}");
@@ -32,9 +34,11 @@ function parseFilters(filtersJson: string): {
       spendingType: (j.spendingType as string | undefined) ?? (j.spending_type as string | undefined) ?? null,
       minAmount: j.minAmount != null ? Number(j.minAmount) : j.min_amount_cents != null ? Number(j.min_amount_cents) / 100 : j.minAmountCents != null ? Number(j.minAmountCents) / 100 : null,
       maxAmount: j.maxAmount != null ? Number(j.maxAmount) : j.max_amount_cents != null ? Number(j.max_amount_cents) / 100 : j.maxAmountCents != null ? Number(j.maxAmountCents) / 100 : null,
+      interval: (j.interval as string | undefined) ?? null,
+      metric: (j.metric as string | undefined) ?? null,
     };
   } catch {
-    return { includeTransfers: false, includeArchived: false, accountIds: [], categoryIds: [], payee: null, spendingType: null, minAmount: null, maxAmount: null };
+    return { includeTransfers: false, includeArchived: false, accountIds: [], categoryIds: [], payee: null, spendingType: null, minAmount: null, maxAmount: null, interval: null, metric: null };
   }
 }
 
@@ -55,6 +59,8 @@ function toParams(widget: ReportWidget, memberId?: string | null): CustomReportP
     spendingType: f.spendingType,
     minAmountCents: f.minAmount != null ? Math.round(f.minAmount * 100) : null,
     maxAmountCents: f.maxAmount != null ? Math.round(f.maxAmount * 100) : null,
+    interval: f.interval,
+    metric: f.metric,
   } as unknown as CustomReportParams;
 }
 

@@ -72,6 +72,10 @@ pub struct CustomReportParams {
     pub min_amount_cents: Option<i64>,
     #[serde(default, alias = "max_amount_cents")]
     pub max_amount_cents: Option<i64>,
+    #[serde(default, alias = "interval")]
+    pub interval: Option<String>,
+    #[serde(default, alias = "metric")]
+    pub metric: Option<String>,
 }
 
 impl Default for CustomReportParams {
@@ -89,6 +93,8 @@ impl Default for CustomReportParams {
             spending_type: None,
             min_amount_cents: None,
             max_amount_cents: None,
+            interval: None,
+            metric: None,
         }
     }
 }

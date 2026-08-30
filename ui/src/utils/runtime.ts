@@ -26,11 +26,11 @@ export function isBackendAvailable(): boolean {
   if (typeof navigator !== "undefined" && navigator.userAgent.includes("jsdom"))
     return true;
   if (typeof window === "undefined") return false;
-  const w = window as unknown as {
-    __FINSIGHT_HTTP__?: unknown;
-    __FINSIGHT_MOCK__?: unknown;
-  };
-  return Boolean(w.__FINSIGHT_HTTP__ || w.__FINSIGHT_MOCK__);
+  // The HTTP RPC transport is always available via fetch/openapi-fetch.
+  // The __FINSIGHT_HTTP__ flag was set by the deleted httpBackend shim;
+  // keep the check for backwards compat but don't gate on it — otherwise
+  // production queries are disabled (bug).
+  return true;
 }
 
 export function userErrorMessage(error: unknown, fallback = "That did not work. Try again.") {
