@@ -200,6 +200,7 @@ pub struct CategoryDto {
     pub spending_type: Option<String>,
     /// Whether unspent budget rolls into next month. False = envelope resets.
     #[serde(default = "default_true")]
+    #[schema(default = true)]
     pub rollover_enabled: bool,
 }
 
@@ -256,14 +257,13 @@ pub struct CategoryWithSpending {
     pub last_month_cents: i64,
     /// Number of transactions categorised here this month
     pub txn_count: i64,
-    pub year_total_cents: i64,
-    /// Number of transactions categorised here so far this calendar year
     pub year_txn_count: i64,
     pub budget_cents: i64,
     /// Free-text categorizer/Copilot guidance the user attached.
     pub guidance: Option<String>,
     /// Whether unspent budget rolls forward. When false, carryover is always 0.
     #[serde(default = "default_true")]
+    #[schema(default = true)]
     pub rollover_enabled: bool,
 }
 

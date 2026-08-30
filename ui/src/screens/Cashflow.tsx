@@ -4,6 +4,21 @@ import { useFinancialMetrics } from "../api/hooks/metrics";
 import type { CashflowForecast, CashflowEvent } from "../api/openapiClient";
 import { money } from "../utils/format";
 import { blurAmounts } from "../utils/blurAmounts";
+function getOverlooked(forecast: unknown): Array<{ merchantKey: string; label: string; amountCents: number; cadence: string; confidence: number; kind: string; nextExpected?: string | null }> {
+  if (forecast && typeof forecast === "object") {
+    if ("overlookedCandidates" in forecast) {
+      const rec = forecast as Record<string, unknown>;
+      const v = rec["overlookedCandidates"];
+      if (Array.isArray(v)) return v as Array<{ merchantKey: string; label: string; amountCents: number; cadence: string; confidence: number; kind: string; nextExpected?: string | null }>;
+    }
+    if ("overlooked_candidates" in forecast) {
+      const rec = forecast as Record<string, unknown>;
+      const v = rec["overlooked_candidates"];
+      if (Array.isArray(v)) return v as Array<{ merchantKey: string; label: string; amountCents: number; cadence: string; confidence: number; kind: string; nextExpected?: string | null }>;
+    }
+  }
+  return [];
+}
 
 const HORIZONS = [7, 14, 30, 60, 90, 180] as const;
 
@@ -214,14 +229,14 @@ export default function Cashflow() {
               )}
             </section>
           </div>
-          {(forecast.overlookedCandidates?.length ?? 0) > 0 && (
+          {getOverlooked(forecast).length > 0 && (
             <section className="card" style={{ marginTop: 16 }}>
               <div className="eyebrow">Include overlooked bill</div>
               <p className="muted" style={{ margin: "6px 0 10px", fontSize: 13, lineHeight: 1.5 }}>
                 These bills were detected but left out of the projection (low confidence or irregular cadence). Check any you want to force-include — they’ll be treated as dated bills inside the horizon.
               </p>
               <div style={{ display: "grid", gap: 8 }}>
-                {forecast.overlookedCandidates.map((b) => {
+                {getOverlooked(forecast).map((b) => {
                   const checked = includeKeys.includes(b.merchantKey);
                   return (
                     <label key={b.merchantKey} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 10, border: "1px solid var(--line)", background: checked ? "var(--surface-2)" : "transparent", cursor: "pointer" }}>

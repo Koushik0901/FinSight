@@ -11,7 +11,7 @@ import { FINSIGHT_AUTH_REQUIRED } from "./eventNames";
 export type AppError = { code: string; message: string; details?: unknown | null };
 export type Result<T, E = AppError> = { status: "ok"; data: T } | { status: "error"; error: E };
 
-const raw = createClient<paths>({ baseUrl: "" });
+export const raw = createClient<paths>({ baseUrl: "" });
 
 async function wrap<T>(p: Promise<any>): Promise<Result<T>> {
   const { data, error, response } = (await p) as unknown as {
@@ -75,7 +75,7 @@ export const api = {
   listCategoryGroups: () => wrap<components["schemas"]["CategoryGroup"][]>(raw.POST("/api/rpc/list_category_groups", {})),
   createCategoryGroup: (label: string, hint: string | null) => wrap<components["schemas"]["CategoryGroup"]>(raw.POST("/api/rpc/create_category_group", { body: { label, hint } })),
   setCategoryGroup: (categoryId: string, groupId: string) => wrap<null>(raw.POST("/api/rpc/set_category_group", { body: { categoryId, groupId } })),
-  setCategoryRollover: (id: string, rolloverEnabled: boolean) => wrap<null>(raw.POST("/api/rpc/set_category_rollover", { body: { id, rolloverEnabled } })),
+  setCategoryRollover: (id: string, rolloverEnabled: boolean) => wrap<null>((raw.POST as unknown as (path: string, opts: { body: { id: string; rolloverEnabled: boolean } }) => Promise<unknown>)("/api/rpc/set_category_rollover", { body: { id, rolloverEnabled } })),
   addCategoryExample: (categoryId: string, exampleText: string, sourceTxnId: string | null) => wrap<components["schemas"]["CategoryExample"]>(raw.POST("/api/rpc/add_category_example", { body: { categoryId, exampleText, sourceTxnId } })),
   removeCategoryExample: (id: string) => wrap<null>(raw.POST("/api/rpc/remove_category_example", { body: { id } })),
   listCategoryExamples: (categoryId: string) => wrap<components["schemas"]["CategoryExample"][]>(raw.POST("/api/rpc/list_category_examples", { body: { categoryId } })),

@@ -152,10 +152,13 @@ export default function MobileBudget() {
             type="button"
             style={{ minHeight: 44 }}
             onClick={async () => {
+              const prev = holdCents;
               const cents = Math.round(Number(holdInput || 0) * 100);
               try {
                 await setHold.mutateAsync({ month: viewMonth, amountCents: cents });
-                toast.success(cents > 0 ? `Hold $${(cents / 100).toFixed(0)} for ${monthAfter(viewMonth, 1)}` : "Hold cleared");
+                toast.success(cents > 0 ? `Hold $${(cents / 100).toFixed(0)} for ${monthAfter(viewMonth, 1)}` : "Hold cleared", {
+                  action: prev !== cents ? { label: "Undo", onClick: () => void setHold.mutateAsync({ month: viewMonth, amountCents: prev }) } : undefined,
+                });
               } catch {
                 toast.error("Failed to save hold");
               }
@@ -169,9 +172,12 @@ export default function MobileBudget() {
               type="button"
               style={{ minHeight: 44 }}
               onClick={async () => {
+                const prev = holdCents;
                 try {
                   await setHold.mutateAsync({ month: viewMonth, amountCents: 0 });
-                  toast.success("Hold cleared");
+                  toast.success("Hold cleared", {
+                    action: { label: "Undo", onClick: () => void setHold.mutateAsync({ month: viewMonth, amountCents: prev }) },
+                  });
                 } catch {
                   toast.error("Failed to clear hold");
                 }

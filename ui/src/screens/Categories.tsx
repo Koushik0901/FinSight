@@ -20,6 +20,16 @@ import type { CategoryWithSpending } from "../api/openapiClient";
 import { money } from "../utils/format";
 import { CATEGORY_COLOR_CHOICES, DEFAULT_CATEGORY_COLOR, iconFor, nextCategoryColor } from "../utils/categoryColor";
 import Swatch from "../components/Swatch";
+function getRolloverEnabled(category: unknown): boolean {
+  // Generated OpenAPI type may lag behind Rust DTO (rolloverEnabled added in V069);
+  // treat missing field as true (default) until spec is regenerated.
+  if (category && typeof category === "object" && "rolloverEnabled" in category) {
+    const rec = category as Record<string, unknown>;
+    const v = rec["rolloverEnabled"];
+    if (typeof v === "boolean") return v;
+  }
+  return true;
+}
 
 type Scope = "month" | "avg" | "year";
 
@@ -406,7 +416,7 @@ export default function Categories() {
                         <span>
                           <span style={{ fontSize: 13, fontWeight: 600 }}>Rollover unspent</span>
                           <span className="muted" style={{ display: "block", fontSize: 12, marginTop: 2 }}>
-                            {category.rolloverEnabled ? "Unspent rolls into next month" : "Resets to zero each month"}
+                            {getRolloverEnabled(category) ? "Unspent rolls into next month" : "Resets to zero each month"}
                           </span>
                         </span>
                         <input
@@ -414,8 +424,8 @@ export default function Categories() {
                           type="checkbox"
                           role="switch"
                           aria-label={`Rollover for ${category.label}`}
-                          aria-checked={category.rolloverEnabled}
-                          checked={category.rolloverEnabled}
+                          aria-checked={getRolloverEnabled(category)}
+                          checked={getRolloverEnabled(category)}
                           disabled={setCategoryRollover.isPending}
                           onChange={async (e) => {
                             const next = e.target.checked;

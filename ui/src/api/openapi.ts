@@ -1217,6 +1217,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/rpc/upsert_agent_memory": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["upsert_agent_memory"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/rpc/get_account_balance_timeline": {
         parameters: {
             query?: never;
@@ -1977,22 +1993,6 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["list_agent_memory"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/rpc/upsert_agent_memory": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["upsert_agent_memory"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5065,18 +5065,6 @@ export interface components {
             /** @description The dated events inside the horizon, chronological, for display. */
             upcomingEvents: components["schemas"]["CashflowEvent"][];
             warnings: components["schemas"]["CashflowWarning"][];
-            overlookedCandidates?: components["schemas"]["OverlookedBill"][];
-        };
-        OverlookedBill: {
-            merchantKey: string;
-            label: string;
-            /** Format: int64 */
-            amountCents: number;
-            kind: components["schemas"]["CashflowEventKind"];
-            /** Format: double */
-            confidence: number;
-            nextExpected?: string | null;
-            cadence: string;
         };
         CashflowWarning: {
             level: components["schemas"]["WarningLevel"];
@@ -5982,9 +5970,9 @@ export interface components {
             id: string;
         };
         UpsertAgentMemoryRequest: {
-            kind: string;
-            key: string;
             description: string;
+            key: string;
+            kind: string;
         };
         /**
          * @description One funding template — declarative rule for how to fund a category.
@@ -6041,7 +6029,6 @@ export interface components {
             extraExpenseDate?: string | null;
             /** Format: int64 */
             horizonDays?: number | null;
-            includeMerchantKeys?: string[] | null;
         };
         GetConversationMessagesRequest: {
             conversationId: string;
@@ -10029,6 +10016,28 @@ export interface operations {
             };
         };
     };
+    upsert_agent_memory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpsertAgentMemoryRequest"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     get_account_balance_timeline: {
         parameters: {
             query?: never;
@@ -10999,27 +11008,6 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["AgentMemory"][];
                 };
-            };
-        };
-    };
-    upsert_agent_memory: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpsertAgentMemoryRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: never;
             };
         };
     };

@@ -403,10 +403,15 @@ function buildCashflowForecast(m: AnyRec, horizonDays?: number, bufferCents?: nu
   ] : [];
   const includeSet = new Set((includeKeys ?? []).map(String));
   for (const cand of overlookedCandidates) {
-    if (includeSet.has(cand.merchantKey) && cand.nextExpected) {
-      const day = Math.round((new Date(cand.nextExpected).getTime() - new Date(isoInDays(0)).getTime()) / 86400000);
+    const merchantKey = typeof cand.merchantKey === "string" ? cand.merchantKey : String(cand.merchantKey ?? "");
+    const nextExpected = typeof cand.nextExpected === "string" ? cand.nextExpected : null;
+    if (includeSet.has(merchantKey) && nextExpected) {
+      const day = Math.round((new Date(nextExpected).getTime() - new Date(isoInDays(0)).getTime()) / 86400000);
       if (day >= 0 && day < horizon) {
-        raw.push({ day, amountCents: cand.amountCents, kind: cand.kind, label: cand.label, merchantKey: cand.merchantKey });
+        const amountCents = typeof cand.amountCents === "number" ? cand.amountCents : Number(cand.amountCents ?? 0);
+        const kind = typeof cand.kind === "string" ? cand.kind : String(cand.kind ?? "bill");
+        const label = typeof cand.label === "string" ? cand.label : String(cand.label ?? "");
+        raw.push({ day, amountCents, kind, label, merchantKey });
       }
     }
   }

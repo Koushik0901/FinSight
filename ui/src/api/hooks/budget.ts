@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, raw, type BudgetEnvelope, type CategoryHistory, type GoalContributionDto, type GoalDto, type MemberBudgetEnvelope, type NewGoalInput, type PlanAssignment, type ProjectedValue } from "../openapiClient";
+import { api, raw, type BudgetEnvelope, type CategoryHistory, type GoalContributionDto, type GoalDto, type MemberBudgetEnvelope, type NewGoalInput, type PlanAssignment, type ProjectedValue, type Result } from "../openapiClient";
 import { unwrap } from "../openapiClient";
 import { isBackendAvailable } from "../../utils/runtime";
 import { invalidateDomains } from "../invalidation";
@@ -138,7 +138,10 @@ export function useUpdateGoalMonthly() {
     mutationFn: async ({ id, monthlyCents, period }: { id: string; monthlyCents: number; period?: string }) => {
       if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
       // Direct raw call keeps period in the payload even before openapi types are regenerated.
-      await unwrap(raw.POST("/api/rpc/update_goal_monthly" as never, { body: { id, monthlyCents, period: period ?? null } } as never));
+      const call = (raw.POST as unknown as (path: string, opts: unknown) => Promise<Result<null>>)("/api/rpc/update_goal_monthly", {
+        body: { id, monthlyCents, period: period ?? null },
+      });
+      await unwrap(call);
     },
     onSuccess: () => {
       invalidateDomains(qc, "goals");

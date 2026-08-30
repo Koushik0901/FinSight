@@ -322,7 +322,8 @@ function FundingTemplatesPanel() {
 
   useEffect(() => {
     if (!showForm && categories.length > 0 && formCategoryId === "") {
-      setFormCategoryId(categories[0].id);
+      const first = categories[0];
+      if (first) setFormCategoryId(first.id);
     }
   }, [categories, showForm, formCategoryId]);
 

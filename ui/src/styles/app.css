@@ -2939,7 +2939,7 @@ body::-webkit-scrollbar-track,
 
 /* ── Responsive shell ─────────────────────────────────── */
 
-@media (max-width: 900px) {
+@media (max-width: 768px) {
   .app {
     display: block;
     min-height: 100%;

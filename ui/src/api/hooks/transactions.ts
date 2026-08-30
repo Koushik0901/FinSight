@@ -290,7 +290,7 @@ export function useSetCategoryRollover() {
     onSuccess: () => {
       // Rollover flips carryover for the next month, so budget envelopes also change.
       invalidateDomains(qc, "categories");
-      invalidateDomains(qc, "budget");
+      invalidateDomains(qc, "budgetEnvelopes");
       qc.invalidateQueries({ queryKey: ["budget-envelopes"] });
     },
   });
