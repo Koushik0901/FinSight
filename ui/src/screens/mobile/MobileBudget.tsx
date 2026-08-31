@@ -9,6 +9,8 @@ import { MobileSection, MobileList, MobileListItem } from "../../components/mobi
 import { BottomSheet } from "../../components/mobile/BottomSheet";
 import { SegmentedControl } from "../../components/mobile/SegmentedControl";
 import { MobileEmptyState } from "../../components/mobile/MobileEmptyState";
+import { money } from "../../utils/format";
+import type { BudgetEnvelope } from "../../api/openapiClient";
 
 function envelopeStatus(env: BudgetEnvelope) {
   const transfer = (env as unknown as { transferCents?: number }).transferCents ?? 0;
@@ -31,17 +33,22 @@ export default function MobileBudget() {
   const [viewMonth, setViewMonth] = useState(todayMonth);
   const monthBefore = (m: string, n: number) => {
     const [y, mo] = m.split("-").map(Number);
-    const d = new Date(y, mo - 1 - n, 1);
+    const d = new Date((y as number), (mo as number) - 1 - n, 1);
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
   };
   const monthAfter = (m: string, n: number) => monthBefore(m, -n);
   const displayMonth = new Date(viewMonth + "-01T00:00:00").toLocaleDateString("en-US", { month: "long", year: "numeric" });
   const { data: envelopes = [], isLoading } = useBudgetEnvelopes(viewMonth);
-  const { data: holdCents = 0 } = useHold(viewMonth);
+  const { data: hold } = useHold(viewMonth);
+  const holdCents = (hold as unknown as { amountCents: number } | null)?.amountCents ?? 0;
   const setHold = useSetHold();
   const [holdInput, setHoldInput] = useState("");
   useEffect(() => { setHoldInput(holdCents > 0 ? String(Math.round(holdCents / 100)) : ""); }, [holdCents]);
   const [filter, setFilter] = useState<Filter>("all");
+  const [detail, setDetail] = useState<BudgetEnvelope | null>(null);
+  const [adjust, setAdjust] = useState(false);
+  const [adjustValue, setAdjustValue] = useState("");
+  const setBudget = useSetBudget();
 
   const primaryCurrency = "USD";
 

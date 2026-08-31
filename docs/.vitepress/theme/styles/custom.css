@@ -1,0 +1,210 @@
+/* FinSight docs — VitePress overrides.
+   Calm, trustworthy, typographic. No neon, no glass — just whitespace,
+   thin borders, restrained lime, and excellent readability. */
+
+/* ── Layout ──────────────────────────────────────────── */
+:root {
+  --vp-layout-max-width: 1440px;
+  --vp-sidebar-width: 272px;
+}
+
+.VPDoc.has-aside .content-container {
+  max-width: 720px;
+}
+
+/* ── Typography ──────────────────────────────────────── */
+.VPDoc h1 {
+  letter-spacing: -0.02em;
+  font-weight: 650;
+}
+.VPDoc h2 {
+  letter-spacing: -0.015em;
+  font-weight: 620;
+  border-top: 1px solid var(--vp-c-divider);
+  padding-top: 24px;
+  margin-top: 48px;
+}
+.VPDoc h3 {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.vp-doc p {
+  line-height: 1.7;
+}
+.vp-doc li {
+  line-height: 1.65;
+}
+
+/* ── Nav ─────────────────────────────────────────────── */
+.VPNavBar {
+  border-bottom: 1px solid var(--vp-c-divider);
+}
+.VPNavBarTitle .title {
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+/* Logo — small lime mark */
+.VPNavBarTitle .VPImage.logo {
+  border-radius: 6px;
+}
+
+/* ── Sidebar ─────────────────────────────────────────── */
+.VPSidebar {
+  border-right: 1px solid var(--vp-c-divider);
+}
+.VPSidebarItem .text {
+  font-size: 13.5px;
+  line-height: 1.4;
+}
+.VPSidebarItem.level-0 > .item > .text {
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--vp-c-text-3);
+  margin-top: 16px;
+}
+.VPSidebarItem.is-active > .item .link > .text {
+  color: var(--vp-c-brand-1);
+  font-weight: 600;
+}
+.dark .VPSidebarItem.is-active > .item .link {
+  background: var(--fs-accent-soft);
+  border-radius: 6px;
+}
+
+/* ── Code ────────────────────────────────────────────── */
+.vp-doc div[class*="language-"] {
+  border: 1px solid var(--vp-c-divider);
+  border-radius: var(--fs-radius);
+}
+.vp-doc :not(pre) > code {
+  font-size: 0.875em;
+  border: 1px solid var(--vp-c-divider);
+  background: var(--vp-c-bg-soft);
+  border-radius: 6px;
+  padding: 2px 6px;
+  font-weight: 500;
+}
+.dark .vp-doc :not(pre) > code {
+  background: var(--fs-surface-2);
+  border-color: var(--fs-line);
+}
+
+/* Copy button */
+.vp-doc div[class*="language-"] button.copy {
+  border-radius: 6px;
+}
+
+/* ── Tables ──────────────────────────────────────────── */
+.vp-doc table {
+  border: 1px solid var(--vp-c-divider);
+  border-radius: var(--fs-radius);
+  overflow: hidden;
+  display: table;
+  width: 100%;
+  border-collapse: collapse;
+}
+.vp-doc th {
+  background: var(--vp-c-bg-soft);
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--vp-c-text-2);
+}
+.vp-doc td, .vp-doc th {
+  border-color: var(--vp-c-divider);
+  font-size: 14px;
+}
+
+/* ── Custom blocks ───────────────────────────────────── */
+.vp-doc .custom-block {
+  border-radius: var(--fs-radius);
+  border: 1px solid var(--vp-c-divider);
+}
+.vp-doc .custom-block.tip {
+  border-color: var(--fs-accent-line);
+  background: var(--fs-accent-soft);
+}
+.dark .vp-doc .custom-block.tip {
+  background: rgba(201, 249, 80, 0.06);
+}
+.vp-doc .custom-block.warning {
+  border-color: rgba(251, 191, 36, 0.24);
+}
+.vp-doc .custom-block.danger {
+  border-color: rgba(248, 113, 140, 0.24);
+}
+.vp-doc .custom-block.info {
+  border-color: var(--vp-c-divider);
+}
+
+/* ── Links ───────────────────────────────────────────── */
+.vp-doc a {
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1.2px;
+}
+.vp-doc a:hover {
+  color: var(--vp-c-brand-1);
+}
+
+/* ── Search ──────────────────────────────────────────── */
+.VPLocalSearchBox {
+  --vp-c-bg-soft: var(--fs-surface-2);
+}
+
+/* ── Footer ──────────────────────────────────────────── */
+.VPFooter {
+  border-top: 1px solid var(--vp-c-divider);
+}
+
+/* ── Home: handled by components, minimal global ─────── */
+
+/* ── Focus ───────────────────────────────────────────── */
+*:focus-visible {
+  outline: 2px solid var(--vp-c-brand-1);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* ── Motion respect ──────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ── Scrollbar (subtle) ──────────────────────────────── */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--vp-c-divider);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ── Doc content width: prevent ultra-wide text ──────── */
+.vp-doc {
+  max-width: 720px;
+}
+
+/* ── Hero overrides for docs that use VitePress default hero (none — we use custom) ─── */
+
+/* ── Edit link ───────────────────────────────────────── */
+.edit-link {
+  font-size: 13px;
+}
+
+/* ── Outline ─────────────────────────────────────────── */
+.VPDocAsideOutline .outline-link.active {
+  color: var(--vp-c-brand-1);
+  font-weight: 600;
+}
