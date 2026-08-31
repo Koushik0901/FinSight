@@ -66,6 +66,32 @@ export function CommandPalette({ open, onClose }: Props) {
   const listboxId = useId();
   const askAgentMutation = useAskAgent();
   const { mutate: askAgent } = askAgentMutation;
+  const [render, setRender] = useState(open);
+  const [closing, setClosing] = useState(false);
+  const timerRef = useRef<number | null>(null);
+
+  // Keep mounted for exit animation.
+  useEffect(() => {
+    if (open) {
+      if (timerRef.current !== null) {
+        window.clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+      setRender(true);
+      setClosing(false);
+      return;
+    }
+    if (render && !closing) {
+      setClosing(true);
+      timerRef.current = window.setTimeout(() => {
+        setRender(false);
+        setClosing(false);
+        timerRef.current = null;
+      }, 140);
+    }
+  }, [open, render, closing]);
+
+  useEffect(() => () => { if (timerRef.current !== null) window.clearTimeout(timerRef.current); }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -78,12 +104,17 @@ export function CommandPalette({ open, onClose }: Props) {
     setActiveQuery("");
     return () => {
       window.clearTimeout(focusTimer);
-      const focusTarget = lastActiveRef.current;
-      lastActiveRef.current = null;
-      focusTarget?.focus();
     };
   }, [open]);
 
+  // Restore focus after exit animation fully completes.
+  useEffect(() => {
+    if (!render && lastActiveRef.current) {
+      const t = lastActiveRef.current;
+      lastActiveRef.current = null;
+      t.focus();
+    }
+  }, [render]);
   const trimmed = q.trim();
   const filtered = useMemo<CmdItem[]>(() => {
     if (!trimmed) return [...NAV_ITEMS, ...ACT_ITEMS];
@@ -148,6 +179,7 @@ export function CommandPalette({ open, onClose }: Props) {
   }, [askAgent, navigate, onClose]);
 
   useEffect(() => {
+    if (!render || closing) return;
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -177,9 +209,9 @@ export function CommandPalette({ open, onClose }: Props) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, filtered, sel, mode, onClose, handleItem]);
+  }, [open, render, closing, filtered, sel, mode, onClose, handleItem]);
 
-  if (!open) return null;
+  if (!render) return null;
 
   const navF = trimmed ? [] : filtered.filter((x) => x.kind === "nav");
   const actF = trimmed ? [] : filtered.filter((x) => x.kind === "act");
@@ -210,7 +242,7 @@ export function CommandPalette({ open, onClose }: Props) {
 
   return (
     <FocusLock returnFocus={false}>
-    <div className="cmdk-mask" onClick={onClose} role="dialog" aria-modal="true" aria-label="Command palette">
+    <div className={`cmdk-mask${closing ? " is-exiting" : ""}`} onClick={onClose} role="dialog" aria-modal="true" aria-label="Command palette">
       <div className={`cmdk${mode === "answer" ? " answer" : ""}`} onClick={(e) => e.stopPropagation()}>
         {mode === "answer" ? (
           <>

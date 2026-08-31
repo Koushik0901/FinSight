@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import FocusLock from "react-focus-lock";
 import { createPortal } from "react-dom";
 import type { ReactNode } from "react";
@@ -18,19 +18,53 @@ interface DrawerProps {
 export default function Drawer({ open, onClose, title, children, width = 480, elevated = false }: DrawerProps) {
   const titleId = useId();
   const lastActive = useRef<HTMLElement | null>(null);
+  const [render, setRender] = useState(open);
+  const [closing, setClosing] = useState(false);
+  const timerRef = useRef<number | null>(null);
 
-  // Restore focus on close.
+  // Mount immediately when opening; delay unmount to play exit animation.
+  useEffect(() => {
+    if (open) {
+      if (timerRef.current !== null) {
+        window.clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+      setRender(true);
+      setClosing(false);
+      return;
+    }
+    if (render && !closing) {
+      setClosing(true);
+      const isMobile = typeof window !== "undefined" && window.matchMedia("(max-width: 640px)").matches;
+      const dur = isMobile ? 200 : 180;
+      timerRef.current = window.setTimeout(() => {
+        setRender(false);
+        setClosing(false);
+        timerRef.current = null;
+      }, dur);
+    }
+  }, [open, render, closing]);
+
+  // Cleanup timer on unmount.
+  useEffect(() => {
+    return () => {
+      if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+    };
+  }, []);
+
+  // Restore focus on close (after exit animation completes).
   useEffect(() => {
     if (open) {
       lastActive.current = (document.activeElement as HTMLElement) ?? null;
-    } else if (lastActive.current) {
+    } else if (!render && lastActive.current) {
       lastActive.current.focus();
       lastActive.current = null;
     }
-  }, [open]);
+  }, [open, render]);
 
-  // ESC key closes the drawer.
+  // ESC key closes the drawer. Kept active while rendered so closing animation can be triggered via keyboard.
   useEffect(() => {
+    if (!render || closing) return;
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -40,13 +74,21 @@ export default function Drawer({ open, onClose, title, children, width = 480, el
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  }, [open, render, closing, onClose]);
 
-  if (!open) return null;
+  if (!render) return null;
+
+  const rootClass = [
+    "drawer-root",
+    elevated ? "drawer-root-elevated" : "",
+    closing ? "is-exiting" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   return createPortal(
     <FocusLock returnFocus={false}>
-      <div className={elevated ? "drawer-root drawer-root-elevated" : "drawer-root"}>
+      <div className={rootClass}>
         <div
           className="drawer-backdrop"
           data-testid="drawer-backdrop"

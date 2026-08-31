@@ -67,17 +67,28 @@
   /* Touch targets */
   --touch-target: 44px;
 
-  /* Transitions */
-  --transition-fast:  120ms ease-out;
-  --transition-base:  180ms cubic-bezier(.2,.7,.2,1);
-  --transition-slow:  300ms cubic-bezier(.2,.7,.2,1);
+  /* Motion — composable durations + expo easing for calm, decisive feel */
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-out-expo:  cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-soft:   cubic-bezier(0.7, 0, 0.84, 0);
+  --ease-spring-soft: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --dur-instant: 100ms;
+  --dur-fast:    140ms;
+  --dur-base:    200ms;
+  --dur-slow:    300ms;
+  --dur-enter:   460ms;
+
+  /* Transitions — use expo easing; NEVER bounce/elastic */
+  --transition-fast:  var(--dur-fast) var(--ease-out-quart);
+  --transition-base:  var(--dur-base) var(--ease-out-expo);
+  --transition-slow:  var(--dur-slow) var(--ease-out-expo);
 
   /* Component sizing */
   --input-h: 40px;
   --btn-h:   38px;
   --header-h: 28px;
 }
-
 /* ── Dark theme ──────────────────────────────────────── */
 :root[data-theme="dark"] {
   /* Surfaces */
