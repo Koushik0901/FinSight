@@ -108,8 +108,7 @@ pub fn set_group(conn: &mut Connection, category_id: &str, group_id: &str) -> Co
 
 pub fn list(conn: &mut Connection) -> CoreResult<Vec<Category>> {
     let mut stmt = conn.prepare(
-        "SELECT id, group_id, label, color, icon, spending_type, guidance, sort_order, archived_at, \
-                COALESCE(rollover_enabled, 1) \
+        "SELECT id, group_id, label, color, icon, spending_type, guidance, sort_order, archived_at \
          FROM categories ORDER BY sort_order, label",
     )?;
     let rows = stmt.query_map([], |r| {
@@ -128,7 +127,6 @@ pub fn list(conn: &mut Connection) -> CoreResult<Vec<Category>> {
             ),
             None => None,
         };
-        let rollover_raw: i64 = r.get(9)?;
         Ok(Category {
             id: r.get(0)?,
             group_id: r.get(1)?,
@@ -139,7 +137,6 @@ pub fn list(conn: &mut Connection) -> CoreResult<Vec<Category>> {
             guidance: r.get(6)?,
             sort_order: r.get(7)?,
             archived_at,
-            rollover_enabled: rollover_raw != 0,
         })
     })?;
     let mut out = Vec::new();
@@ -233,7 +230,6 @@ pub fn create(
         guidance: None,
         sort_order: next_sort,
         archived_at: None,
-        rollover_enabled: true,
     })
 }
 
@@ -275,30 +271,6 @@ pub fn set_guidance(conn: &mut Connection, id: &str, guidance: Option<&str>) -> 
         rusqlite::params![g, id],
     )?;
     Ok(())
-}
-
-/// Set whether a category's unspent budget rolls into the next month.
-/// When disabled, carryover is always 0. Defaults to true for all categories.
-pub fn set_rollover(conn: &mut Connection, id: &str, enabled: bool) -> CoreResult<()> {
-    conn.execute(
-        "UPDATE categories SET rollover_enabled = ?1 WHERE id = ?2",
-        rusqlite::params![if enabled { 1 } else { 0 }, id],
-    )?;
-    Ok(())
-}
-
-/// Whether a single category has rollover enabled. Returns true when the
-/// category row is missing or the column is NULL (pre-migration safety) so
-/// existing categories keep prior behaviour.
-pub fn rollover_enabled(conn: &rusqlite::Connection, id: &str) -> CoreResult<bool> {
-    let v: Option<i64> = conn
-        .query_row(
-            "SELECT rollover_enabled FROM categories WHERE id = ?1",
-            rusqlite::params![id],
-            |r| r.get(0),
-        )
-        .optional()?;
-    Ok(v.map(|i| i != 0).unwrap_or(true))
 }
 
 /// All active categories that carry non-empty guidance, as (label, guidance).

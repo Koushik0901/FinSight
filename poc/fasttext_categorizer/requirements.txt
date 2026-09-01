@@ -1,0 +1,9 @@
+fasttext==0.9.3
+pandas==2.2.*
+scikit-learn==1.5.*
+numpy==1.26.*
+matplotlib==3.8.*
+seaborn==0.13.*
+tqdm==4.66.*
+jupyter==1.0.*
+ipykernel==6.29.*

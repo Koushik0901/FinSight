@@ -6,6 +6,7 @@ pub mod categorizer;
 pub mod context;
 pub mod embedding;
 pub mod executor;
+pub mod fasttext_predict;
 pub mod finance;
 pub mod navigation;
 pub mod planner;

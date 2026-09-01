@@ -256,7 +256,6 @@ fn execute_item(conn: &mut Connection, item: &AgentActionItem) -> CoreResult<Str
                 &payload.category_id,
                 &payload.month,
                 payload.amount_cents,
-                false,
             )?;
             Ok(format!(
                 "Budget for {} in {} set to ${:.0}",

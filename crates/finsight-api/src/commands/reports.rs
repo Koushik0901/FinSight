@@ -22,8 +22,6 @@ pub struct MonthSummary {
     pub expense_cents: i64,
     /// Net = income - expense
     pub net_cents: i64,
-    /// Total budgeted amount for this month (sum across all categories), as positive cents
-    pub budget_cents: i64,
 }
 
 /// One category's 12-month total.
@@ -308,35 +306,16 @@ pub async fn get_report_data(
                     .into_iter()
                     .map(|(mo, inc, exp)| (mo, (inc, exp)))
                     .collect();
-                // Budget totals per month: sum of all envelope budgets for each YYYY-MM.
-                // Budgets are household-wide (not per-member), so this query is
-                // intentionally unweighted — member filtering only affects transaction
-                // spending, not the plan.
-                let budget_rows: std::collections::HashMap<String, i64> = {
-                    let mut stmt2 = conn.prepare(
-                        "SELECT month, COALESCE(SUM(amount_cents), 0) FROM budgets \
-                         WHERE month >= ?1 AND month <= ?2 GROUP BY month",
-                    )?;
-                    stmt2
-                        .query_map(rusqlite::params![first, last], |r| {
-                            Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
-                        })?
-                        .collect::<Result<Vec<_>, rusqlite::Error>>()?
-                        .into_iter()
-                        .collect()
-                };
                 Ok(month_list
                     .iter()
                     .map(|m| {
                         let (inc, exp) = db_rows.get(m).copied().unwrap_or((0, 0));
-                        let budget = budget_rows.get(m).copied().unwrap_or(0);
                         MonthSummary {
                             label: month_short_label(m),
                             month: m.clone(),
                             income_cents: inc,
                             expense_cents: exp,
                             net_cents: inc - exp,
-                            budget_cents: budget,
                         }
                     })
                     .collect())

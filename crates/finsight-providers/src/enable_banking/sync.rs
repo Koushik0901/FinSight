@@ -144,7 +144,7 @@ fn parse_amount_cents(amount: &str) -> ProviderResult<i64> {
         .round_dp_with_strategy(0, RoundingStrategy::MidpointAwayFromZero)
         .to_i64()
         .ok_or_else(|| ProviderError::Internal(format!("amount out of range: {}", amount)))?;
-    if !(-crate::amount::MAX_SAFE_CENTS..=crate::amount::MAX_SAFE_CENTS).contains(&cents) {
+    if cents > crate::amount::MAX_SAFE_CENTS || cents < -crate::amount::MAX_SAFE_CENTS {
         return Err(ProviderError::Internal(format!(
             "amount out of range: {}",
             amount

@@ -29,30 +29,6 @@ pub async fn forget_agent_memory(state: &ApiState, id: String) -> AppResult<()> 
         .map_err(AppError::from)
 }
 
-#[derive(serde::Deserialize, utoipa::ToSchema)]
-#[serde(rename_all = "camelCase")]
-#[schema(rename_all = "camelCase")]
-pub struct UpsertAgentMemoryRequest {
-    pub kind: String,
-    pub key: String,
-    pub description: String,
-}
-
-#[utoipa::path(post, path = "/api/rpc/upsert_agent_memory",
-    request_body(content = UpsertAgentMemoryRequest), responses((status = 200, description = "Success")))]
-pub async fn upsert_agent_memory(
-    state: &ApiState,
-    kind: String,
-    key: String,
-    description: String,
-) -> AppResult<()> {
-    let db = (*state.db).clone();
-    run(&db, move |conn| {
-        agent_memory::upsert_memory(conn, &kind, &key, &description)
-    })
-    .await
-    .map_err(AppError::from)
-}
 #[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
 #[schema(rename_all = "camelCase")]

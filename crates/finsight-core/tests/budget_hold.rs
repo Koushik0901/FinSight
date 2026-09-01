@@ -1,5 +1,6 @@
 use finsight_core::repos::budgets::{available_funds, get_hold, set_hold, to_budget};
 use finsight_core::testing::migrated_db;
+use rusqlite::params;
 
 fn setup() -> (tempfile::TempDir, finsight_core::Db) {
     let (dir, db) = migrated_db();

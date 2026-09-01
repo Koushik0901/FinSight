@@ -148,25 +148,3 @@ pub async fn set_category_group(
     .await
     .map_err(AppError::from)
 }
-
-#[derive(serde::Deserialize, utoipa::ToSchema)]
-#[serde(rename_all = "camelCase")]
-#[schema(rename_all = "camelCase")]
-pub struct SetCategoryRolloverRequest {
-    pub id: String,
-    pub rollover_enabled: bool,
-}
-
-#[utoipa::path(post, path = "/api/rpc/set_category_rollover", request_body(content = SetCategoryRolloverRequest), responses((status = 200, description = "Success")))]
-pub async fn set_category_rollover(
-    state: &ApiState,
-    id: String,
-    rollover_enabled: bool,
-) -> AppResult<()> {
-    let db = (*state.db).clone();
-    run(&db, move |conn| {
-        categories::set_rollover(conn, &id, rollover_enabled)
-    })
-    .await
-    .map_err(AppError::from)
-}

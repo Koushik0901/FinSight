@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img">
+  <rect width="1200" height="630" fill="#08080B"/>
+  <!-- subtle grid -->
+  <g stroke="rgba(255,255,255,0.04)" stroke-width="1">
+    <line x1="0" y1="105" x2="1200" y2="105"/><line x1="0" y1="210" x2="1200" y2="210"/><line x1="0" y1="315" x2="1200" y2="315"/><line x1="0" y1="420" x2="1200" y2="420"/><line x1="0" y1="525" x2="1200" y2="525"/>
+    <line x1="200" y1="0" x2="200" y2="630"/><line x1="400" y1="0" x2="400" y2="630"/><line x1="600" y1="0" x2="600" y2="630"/><line x1="800" y1="0" x2="800" y2="630"/><line x1="1000" y1="0" x2="1000" y2="630"/>
+  </g>
+  <!-- lime mark -->
+  <g transform="translate(88,88)">
+    <rect width="64" height="64" rx="14" fill="#C9F950"/>
+    <path d="M19 18 h22 v7 h-14 v6 h12 v7 h-12 v12 h-8 z" fill="#0A0F02"/>
+    <path d="M36 36 l7 -7 5 5 -7 7 z" fill="#0A0F02"/>
+  </g>
+  <text x="88" y="230" font-family="Geist, ui-sans-serif, system-ui" font-size="72" font-weight="700" letter-spacing="-0.02em" fill="#F4F4F7">FinSight</text>
+  <text x="88" y="290" font-family="Geist, ui-sans-serif, system-ui" font-size="26" font-weight="450" fill="#A5A5B0">Your AI-powered financial copilot.</text>
+  <text x="88" y="330" font-family="Geist, ui-sans-serif, system-ui" font-size="16" font-weight="400" fill="#6B7280" font-style="italic">“A quiet way to understand, plan, and master your money.”</text>
+  <g transform="translate(88,378)">
+    <rect width="260" height="1" rx="0.5" fill="rgba(255,255,255,0.06)"/>
+  </g>
+  <text x="88" y="410" font-family="Geist Mono, ui-monospace, monospace" font-size="13" letter-spacing="0.08em" fill="#A5A5B0">LOCAL-FIRST  •  ENCRYPTED  •  SELF-HOSTED</text>
+  <text x="88" y="440" font-family="Geist, ui-sans-serif, system-ui" font-size="14" fill="#6B7280">Your finances stay yours — one encrypted database per user, on hardware you control.</text>
+  <!-- right accent line -->
+  <rect x="1120" y="48" width="2" height="72" rx="1" fill="#C9F950" opacity="0.9"/>
+</svg>

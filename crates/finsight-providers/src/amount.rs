@@ -39,7 +39,7 @@ pub fn parse_decimal_cents(amount: &str) -> Result<i64, CentsError> {
         .round_dp(0)
         .to_i64()
         .ok_or(CentsError::OutOfRange)?;
-    if !(-MAX_SAFE_CENTS..=MAX_SAFE_CENTS).contains(&cents) {
+    if cents > MAX_SAFE_CENTS || cents < -MAX_SAFE_CENTS {
         return Err(CentsError::OutOfRange);
     }
     Ok(cents)

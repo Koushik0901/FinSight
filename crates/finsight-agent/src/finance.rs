@@ -77,12 +77,6 @@ pub struct SnapshotGoal {
     /// nothing else to go on.
     pub priority: String,
     pub deadline_strictness: String,
-    #[serde(default = "default_monthly_period")]
-    pub period: String,
-}
-
-fn default_monthly_period() -> String {
-    "monthly".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -904,7 +898,7 @@ pub fn plan_sinking_funds(conn: &mut Connection) -> rusqlite::Result<SinkingFund
             }
         };
 
-        let committed = goal.monthly_equivalent_cents().max(0);
+        let committed = goal.monthly_cents.max(0);
         let shortfall = required.map(|r| (r - committed).max(0)).unwrap_or(0);
         let overdue = matches!(due, Some(d) if d < today) && remaining > 0;
 
@@ -1341,7 +1335,8 @@ pub fn calculate_goal_eta(
         "monthly" => 12,
         _ => 12,
     };
-    let monthly_equivalent_cents = (contribution_cents.max(0) * periods_per_year as i64 + 6) / 12;
+    let monthly_equivalent_cents =
+        ((contribution_cents.max(0) as f64) * periods_per_year as f64 / 12.0).round() as i64;
     let eta_months = if monthly_equivalent_cents > 0 && goal.remaining_cents > 0 {
         Some(div_ceil(goal.remaining_cents, monthly_equivalent_cents))
     } else if goal.remaining_cents == 0 {
@@ -1578,8 +1573,7 @@ pub fn compare_debt_vs_goal(
             monthly_min_payment_cents,
         )
     });
-    let redirected_monthly = monthly_min_payment_cents
-        + monthly_equivalent_cents(&goal.period, goal.monthly_cents).max(0);
+    let redirected_monthly = monthly_min_payment_cents + goal.monthly_cents.max(0);
     let payoff_with_redirect = weighted_apr.and_then(|apr| {
         payoff_projection(
             compared_debt_cents.saturating_sub(suggested_goal_drawdown_cents),
@@ -2539,10 +2533,10 @@ fn build_debt_goal_alternatives(
             action: format!(
                 "Use safe excess savings and redirect the current {} contribution of ${:.2}/mo to debt until it is cleared.",
                 goal.name,
-                monthly_equivalent_cents(&goal.period, goal.monthly_cents).max(0) as f64 / 100.0
+                goal.monthly_cents.max(0) as f64 / 100.0
             ),
             cash_used_cents: safe_drawdown_cents,
-            monthly_debt_payment_cents: Some(min_payment_cents + monthly_equivalent_cents(&goal.period, goal.monthly_cents).max(0)),
+            monthly_debt_payment_cents: Some(min_payment_cents + goal.monthly_cents.max(0)),
             projected_debt_balance_cents: post_drawdown_debt,
             emergency_fund_months: emergency_after,
             payoff_months: with_redirect.map(|p| p.months),
@@ -2639,23 +2633,14 @@ fn setting_i64(conn: &mut Connection, key: &str) -> rusqlite::Result<Option<i64>
 }
 
 fn goals(conn: &mut Connection) -> rusqlite::Result<Vec<SnapshotGoal>> {
-    // `period` was added in V068 — older dev DBs or in-flight migrations may
-    // not have it yet. COALESCE keeps the read from blowing up with "no such
-    // column" before the migration runs, and a missing row falls back to
-    // 'monthly' so the math is exact for existing data.
-    let mut stmt = conn.prepare(
-        "SELECT id, name, type, target_cents, current_cents, monthly_cents, target_date, priority, deadline_strictness, COALESCE(period,'monthly') \
-         FROM goals WHERE archived_at IS NULL ORDER BY sort_order, created_at",
-    )?;
+    let mut stmt = conn.prepare("SELECT id, name, type, target_cents, current_cents, monthly_cents, target_date, priority, deadline_strictness FROM goals WHERE archived_at IS NULL ORDER BY sort_order, created_at")?;
     let rows = stmt.query_map([], |r| {
         let target: i64 = r.get(3)?;
         let current: i64 = r.get(4)?;
         let monthly: i64 = r.get(5)?;
-        let period: String = r.get(9)?;
-        let monthly_eq = monthly_equivalent_cents(&period, monthly);
         let remaining = (target - current).max(0);
-        let eta_months = if monthly_eq > 0 && remaining > 0 {
-            Some(div_ceil(remaining, monthly_eq))
+        let eta_months = if monthly > 0 && remaining > 0 {
+            Some(div_ceil(remaining, monthly))
         } else if remaining == 0 {
             Some(0)
         } else {
@@ -2673,7 +2658,6 @@ fn goals(conn: &mut Connection) -> rusqlite::Result<Vec<SnapshotGoal>> {
             eta_months,
             priority: r.get(7)?,
             deadline_strictness: r.get(8)?,
-            period,
         })
     })?;
     rows.collect()
@@ -2782,24 +2766,6 @@ fn div_ceil(n: i64, d: i64) -> i64 {
     (n + d - 1) / d
 }
 
-fn goal_periods_per_year(period: &str) -> i64 {
-    match period.trim().to_ascii_lowercase().as_str() {
-        "weekly" => 52,
-        "biweekly" | "bi-weekly" => 26,
-        _ => 12,
-    }
-}
-
-fn goal_period_factor(period: &str) -> f64 {
-    goal_periods_per_year(period) as f64 / 12.0
-}
-
-fn monthly_equivalent_cents(period: &str, amount_cents: i64) -> i64 {
-    if amount_cents <= 0 {
-        return 0;
-    }
-    (amount_cents * goal_periods_per_year(period) + 6) / 12
-}
 // ── "Explain this recommendation" — issue #71 ───────────────────────────────
 //
 // Debt payoff and goal completion are recommendations produced HERE — above
@@ -2958,7 +2924,6 @@ pub fn explain_goals(conn: &mut Connection) -> rusqlite::Result<Vec<MetricExplan
 }
 
 fn explain_one_goal(g: &SnapshotGoal) -> MetricExplanation {
-    let monthly_eq = monthly_equivalent_cents(&g.period, g.monthly_cents);
     let inputs = vec![
         MetricInput {
             label: "Target".into(),
@@ -2977,20 +2942,8 @@ fn explain_one_goal(g: &SnapshotGoal) -> MetricExplanation {
         },
         MetricInput {
             label: "Monthly contribution".into(),
-            amount_cents: Some(monthly_eq),
-            detail: if g.period != "monthly" {
-                Some(format!(
-                    "{} · {} contribution",
-                    g.period,
-                    if g.period == "weekly" {
-                        "weekly"
-                    } else {
-                        "biweekly"
-                    }
-                ))
-            } else {
-                None
-            },
+            amount_cents: Some(g.monthly_cents),
+            detail: None,
         },
     ];
     let mut assumptions = vec![MetricAssumption {
@@ -3051,7 +3004,7 @@ fn explain_one_goal(g: &SnapshotGoal) -> MetricExplanation {
         };
     }
     // No contribution — there is no honest completion date to state.
-    if monthly_eq <= 0 {
+    if g.monthly_cents <= 0 {
         return MetricExplanation {
             key,
             label: g.name.clone(),

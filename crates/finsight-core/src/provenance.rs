@@ -1117,10 +1117,8 @@ mod tests {
                 name: "House".into(),
                 remaining_cents: 1_200_000,
                 monthly_cents: 100_000,
-                priority: None,
-                deadline_strictness: None,
-                target_date: None,
             }],
+            basis: None,
         }
     }
 

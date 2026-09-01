@@ -1,0 +1,6 @@
+{
+  "valid_n": 548,
+  "valid_p1": 0.9507299270072993,
+  "valid_r1": 0.9507299270072993,
+  "model": "/mnt/e/Workspace/FinSight/poc/fasttext_categorizer/models/merchant_ft.bin"
+}

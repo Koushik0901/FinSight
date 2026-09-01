@@ -106,23 +106,13 @@ fn budget_envelopes_for_month(
         })?
         .collect::<Result<std::collections::HashMap<_, _>, _>>()?;
 
-    // Rollover map: single query for all categories, avoids N+1 per-envelope
-    // SELECT rollover_enabled. COALESCE to 1 for pre-migration rows.
-    let rollover_map: std::collections::HashMap<String, i64> = conn
-        .prepare(
-            "SELECT id, COALESCE(rollover_enabled,1) FROM categories WHERE archived_at IS NULL",
-        )?
-        .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))?
-        .collect::<Result<std::collections::HashMap<_, _>, _>>()?;
-
     let mut out = Vec::new();
     for (cat_id, label, color, group_label, spent, txn_count, budget) in rows {
         if !finsight_core::categorize::is_budgetable_category(&cat_id) {
             continue;
         }
-        let rollover_enabled = rollover_map.get(&cat_id).copied().unwrap_or(1) != 0;
-        let carryover_cents =
-            budgets::carryover_into_month_fast(conn, &cat_id, month, rollover_enabled)?;
+        let carryover_cents = budgets::carryover_into_month(conn, &cat_id, month)?;
+        // Net cover ledger for this month: +in - out. Uses the same month as the
         // envelope, so a cover in April does not smear into May's carryover —
         // it stays an auditable per-month move. Transfers are now fetched via
         // the two grouped maps above (≤2 queries total) and joined in Rust.
@@ -147,37 +137,20 @@ fn budget_envelopes_for_month(
     Ok(out)
 }
 
-#[derive(serde::Deserialize, utoipa::ToSchema)]
-#[serde(rename_all = "camelCase")]
-#[schema(rename_all = "camelCase")]
-pub struct ListBudgetEnvelopesRequest {
-    /// "YYYY-MM" month to list. When absent or empty, defaults to the current
-    /// UTC month (the previous "today" behavior). Optional so existing callers
-    /// that POST {} keep working.
-    #[serde(default)]
-    pub month: Option<String>,
-}
-
-#[utoipa::path(post, path = "/api/rpc/list_budget_envelopes", request_body(content = ListBudgetEnvelopesRequest), responses((status = 200, body = Vec<BudgetEnvelope>)))]
-pub async fn list_budget_envelopes(
-    state: &ApiState,
-    month: Option<String>,
-) -> AppResult<Vec<BudgetEnvelope>> {
+#[utoipa::path(post, path = "/api/rpc/list_budget_envelopes", responses((status = 200, body = Vec<BudgetEnvelope>)))]
+pub async fn list_budget_envelopes(state: &ApiState) -> AppResult<Vec<BudgetEnvelope>> {
     let db = (*state.db).clone();
-    let effective_month = month
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| Utc::now().format("%Y-%m").to_string());
-    let this_month_start = format!("{effective_month}-01");
+    let now = Utc::now();
+    let month = now.format("%Y-%m").to_string();
+    let this_month_start = now.format("%Y-%m-01").to_string();
 
     run(&db, move |conn| {
-        budget_envelopes_for_month(conn, &effective_month, &this_month_start)
+        budget_envelopes_for_month(conn, &month, &this_month_start)
     })
     .await
     .map_err(AppError::from)
 }
+
 /// One category's household budget alongside a single member's share of the
 /// spend against it. The budget itself stays household-level — the issue keeps
 /// budgets a shared pool and adds a per-person *view* of progress against it,
@@ -260,37 +233,14 @@ pub async fn list_member_budget_envelopes(
 pub struct SetBudgetRequest {
     pub category_id: String,
     pub amount_cents: i64,
-    #[serde(default)]
-    pub allow_over_assign: Option<bool>,
-    /// "YYYY-MM" month to set. When absent/empty, defaults to current month.
-    #[serde(default)]
-    pub month: Option<String>,
 }
 
 #[utoipa::path(post, path = "/api/rpc/set_budget", request_body(content = SetBudgetRequest), responses((status = 200, description = "Success")))]
-pub async fn set_budget(
-    state: &ApiState,
-    category_id: String,
-    amount_cents: i64,
-    allow_over_assign: Option<bool>,
-    month: Option<String>,
-) -> AppResult<()> {
-    let allow = allow_over_assign.unwrap_or(false);
+pub async fn set_budget(state: &ApiState, category_id: String, amount_cents: i64) -> AppResult<()> {
     let db = (*state.db).clone();
-    let effective_month = month
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| Utc::now().format("%Y-%m").to_string());
+    let month = Utc::now().format("%Y-%m").to_string();
     run(&db, move |conn| {
-        if crate::commands::month_close::is_locked(conn, &effective_month)? {
-            return Err(finsight_core::CoreError::Validation(format!(
-                "MONTH_LOCKED: This month is closed — editing will cause drift. Reopen to continue. (month {})",
-                effective_month
-            )));
-        }
-        budgets::set(conn, &category_id, &effective_month, amount_cents, allow)
+        budgets::set(conn, &category_id, &month, amount_cents)
     })
     .await
     .map_err(AppError::from)
@@ -540,13 +490,6 @@ pub struct GoalDto {
     pub priority: String,
     /// "hard" | "target" | "none" — what `target_date` commits the user to.
     pub deadline_strictness: String,
-    /// "monthly" | "weekly" | "biweekly" — cadence of `monthly_cents`.
-    #[serde(default = "default_period")]
-    pub period: String,
-}
-
-fn default_period() -> String {
-    "monthly".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Type, ToSchema)]
@@ -621,8 +564,6 @@ pub struct NewGoalInput {
     pub priority: Option<String>,
     #[serde(default)]
     pub deadline_strictness: Option<String>,
-    #[serde(default)]
-    pub period: Option<String>,
 }
 
 fn goal_to_dto(g: goals::Goal) -> GoalDto {
@@ -630,7 +571,6 @@ fn goal_to_dto(g: goals::Goal) -> GoalDto {
     // borrows `g`, and the field moves below would have taken it apart first.
     let priority = g.priority.as_db().to_string();
     let deadline_strictness = g.effective_strictness().as_db().to_string();
-    let period = g.period.as_db().to_string();
     GoalDto {
         id: g.id,
         name: g.name,
@@ -650,7 +590,6 @@ fn goal_to_dto(g: goals::Goal) -> GoalDto {
         // open-ended whatever was stored, and the UI should not offer to edit a
         // deadline commitment that cannot apply.
         deadline_strictness,
-        period,
     }
 }
 
@@ -684,7 +623,6 @@ pub async fn create_goal(state: &ApiState, input: NewGoalInput) -> AppResult<Goa
                     .deadline_strictness
                     .as_deref()
                     .map(goals::DeadlineStrictness::from_db),
-                period: input.period.as_deref().map(goals::GoalPeriod::from_db),
                 name: input.name,
                 goal_type: input.goal_type,
                 target_cents: input.target_cents,
@@ -860,13 +798,6 @@ pub async fn contribute_to_goal(
     let db = (*state.db).clone();
     run(&db, move |conn| {
         ensure_manual_goal(conn, &id)?;
-        let cur_month = chrono::Utc::now().format("%Y-%m").to_string();
-        if crate::commands::month_close::is_locked(conn, &cur_month)? {
-            return Err(finsight_core::CoreError::Validation(format!(
-                "MONTH_LOCKED: This month is closed — editing will cause drift. Reopen to continue. (month {})",
-                cur_month
-            )));
-        }
         goals::add_contribution(
             conn,
             &id,
@@ -924,8 +855,6 @@ pub async fn archive_goal(state: &ApiState, id: String) -> AppResult<()> {
 pub struct UpdateGoalMonthlyRequest {
     pub id: String,
     pub monthly_cents: i64,
-    #[serde(default)]
-    pub period: Option<String>,
 }
 
 #[utoipa::path(post, path = "/api/rpc/update_goal_monthly", request_body(content = UpdateGoalMonthlyRequest), responses((status = 200, description = "Success")))]
@@ -933,16 +862,10 @@ pub async fn update_goal_monthly(
     state: &ApiState,
     id: String,
     monthly_cents: i64,
-    period: Option<String>,
 ) -> AppResult<()> {
     let db = (*state.db).clone();
     run(&db, move |conn| {
-        if let Some(p) = period.as_deref() {
-            let gp = goals::GoalPeriod::from_db(p);
-            goals::set_monthly_cents_and_period(conn, &id, monthly_cents, gp)
-        } else {
-            goals::set_monthly_cents(conn, &id, monthly_cents)
-        }
+        goals::set_monthly_cents(conn, &id, monthly_cents)
     })
     .await
     .map_err(AppError::from)
@@ -1175,7 +1098,7 @@ pub async fn apply_next_month_plan(
         let next_month = format!("{ny}-{nm:02}");
         for a in &assignments {
             if a.amount_cents > 0 {
-                budgets::set(conn, &a.category_id, &next_month, a.amount_cents, false)?;
+                budgets::set(conn, &a.category_id, &next_month, a.amount_cents)?;
             }
         }
         Ok(())

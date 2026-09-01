@@ -11,7 +11,8 @@ use finsight_core::{
 use rusqlite::params;
 use serde::Deserialize;
 use serde_json::json;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 const LLM_BATCH_SIZE: usize = 20;
@@ -170,10 +171,164 @@ pub async fn run_job(
         total,
     });
 
-    // Step 2: LLM batch pass
+    // Step 1.5: fastText local classifier (feature `fasttext-local`)
+    // Tries to categorize `remaining` without an LLM round-trip. Only
+    // predictions with prob >= LOW_CONFIDENCE_THRESHOLD and a known
+    // category slug are accepted; everything else falls through to the
+    // LLM batch. On any failure (model missing, not Send, etc.) we
+    // degrade gracefully to LLM.
+    let remaining_for_llm: Vec<(String, String, i64)> = {
+        #[cfg(feature = "fasttext-local")]
+        {
+            if remaining.is_empty() {
+                Vec::new()
+            } else {
+                // Build slug -> category_id map (training labels are
+                // lowercased category names, e.g. "groceries").
+                let slug_to_id: HashMap<String, String> = categories
+                    .iter()
+                    .map(|(id, name, _, _)| (name.to_lowercase(), id.clone()))
+                    .collect();
+                let data_dir = std::env::var("FINSIGHT_DATA_DIR")
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|_| PathBuf::from("."));
+                match crate::fasttext_predict::get_fasttext_model(&data_dir).await {
+                    Ok(model) => {
+                        let mut accepted: Vec<(String, String, f64)> = Vec::new();
+                        let mut fallthrough: Vec<(String, String, i64)> = Vec::new();
+                        for (txn_id, merchant_raw, amount_cents) in remaining {
+                            if superseded() {
+                                return Ok(());
+                            }
+                            let text =
+                                crate::fasttext_predict::merchant_text_for_model(
+                                    &merchant_raw,
+                                    amount_cents,
+                                );
+                            let pred = tokio::task::spawn_blocking({
+                                let m = model.clone();
+                                let t = text.clone();
+                                move || m.predict(&t)
+                            })
+                            .await
+                            .ok()
+                            .flatten();
+                            if let Some((slug, prob)) = pred {
+                                let slug_norm = slug.trim_start_matches("__label__").to_lowercase();
+                                if slug_norm == "__exclude" || slug_norm == "exclude" {
+                                    fallthrough.push((txn_id, merchant_raw, amount_cents));
+                                    continue;
+                                }
+                                if prob < LOW_CONFIDENCE_THRESHOLD {
+                                    fallthrough.push((txn_id, merchant_raw, amount_cents));
+                                    continue;
+                                }
+                                if let Some(cat_id) = slug_to_id.get(&slug_norm) {
+                                    accepted.push((txn_id, cat_id.clone(), prob));
+                                } else {
+                                    tracing::warn!(
+                                        "[categorizer] fasttext unknown slug '{}' for '{}'",
+                                        slug_norm,
+                                        merchant_raw
+                                    );
+                                    fallthrough.push((txn_id, merchant_raw, amount_cents));
+                                }
+                            } else {
+                                fallthrough.push((txn_id, merchant_raw, amount_cents));
+                            }
+                        }
+                        // Bulk-write fastText acceptances (one txn per chunk pattern,
+                        // but single atomic batch here is fine - all or nothing).
+                        if !accepted.is_empty() {
+                            let db_for_ft = db.clone();
+                            let start_epoch_ft = start_epoch;
+                            let lease = db.reset_barrier().writer_lease(start_epoch_ft).await;
+                            if lease.superseded() {
+                                return Ok(());
+                            }
+                            let write_ft = tokio::task::spawn_blocking(move || {
+                                let mut conn = db_for_ft.get()?;
+                                let tx = conn.transaction()?;
+                                {
+                                    let mut ins_cat = tx.prepare_cached(
+                                        "INSERT INTO categorizations(id, txn_id, category_id, source, confidence, model, at) VALUES(?1, ?2, ?3, 'fasttext', ?4, 'merchant_ft.bin', ?5)",
+                                    )?;
+                                    let mut upd_txn = tx.prepare_cached(
+                                        "UPDATE transactions SET category_id = ?1, ai_confidence = ?2, ai_explanation = ?3 WHERE id = ?4",
+                                    )?;
+                                    for (txn_id, cat_id, prob) in &accepted {
+                                        let cid = uuid::Uuid::new_v4().to_string();
+                                        let now = chrono::Utc::now().to_rfc3339();
+                                        let rationale = format!("fasttext {prob:.2}");
+                                        ins_cat.execute(rusqlite::params![
+                                            cid, txn_id, cat_id, prob, now
+                                        ])?;
+                                        upd_txn.execute(rusqlite::params![
+                                            cat_id, prob, rationale, txn_id
+                                        ])?;
+                                        let prop_id = uuid::Uuid::new_v4().to_string();
+                                        let candidates =
+                                            json!([{"category_id": cat_id, "confidence": prob}])
+                                                .to_string();
+                                        let status = if *prob < LOW_CONFIDENCE_THRESHOLD {
+                                            "pending"
+                                        } else {
+                                            "accepted"
+                                        };
+                                        tx.execute(
+                                            "INSERT INTO category_proposals (id, txn_id, proposed_category_id, source, confidence, rationale, candidates_json, status, applied, model, created_at, reviewed_at) VALUES (?1, ?2, ?3, 'fasttext', ?4, ?5, ?6, ?7, 1, 'merchant_ft.bin', ?8, NULL) ON CONFLICT(txn_id) DO UPDATE SET id=excluded.id, proposed_category_id=excluded.proposed_category_id, source=excluded.source, confidence=excluded.confidence, rationale=excluded.rationale, candidates_json=excluded.candidates_json, status=excluded.status, applied=excluded.applied, model=excluded.model, created_at=excluded.created_at, reviewed_at=NULL WHERE category_proposals.status='pending'",
+                                            rusqlite::params![
+                                                prop_id, txn_id, cat_id, prob, rationale, candidates, status, now
+                                            ],
+                                        )?;
+                                    }
+                                }
+                                tx.commit()?;
+                                Ok::<usize, anyhow::Error>(accepted.len())
+                            })
+                            .await;
+                            match write_ft {
+                                Ok(Ok(n)) => {
+                                    categorized += n as u32;
+                                    tracing::info!("[categorizer] fasttext categorized {n} txns");
+                                    on_event(AgentEvent::CategorizationProgress {
+                                        import_id: import_id.clone(),
+                                        done: categorized,
+                                        total,
+                                    });
+                                }
+                                Ok(Err(e)) => {
+                                    tracing::error!("[categorizer] fasttext write failed: {e}");
+                                    // keep fallthrough only — accepted had no merchant_raw
+                                    // to re-queue; they'll be retried as LLM on next run
+                                    // if still uncategorized
+                                }
+                                Err(e) => {
+                                    tracing::error!("[categorizer] fasttext join error: {e}");
+                                }
+                            }
+                            drop(lease);
+                        }
+                        fallthrough
+                    }
+                    Err(e) => {
+                        tracing::warn!("[categorizer] fasttext unavailable, using LLM: {e}");
+                        remaining
+                    }
+                }
+            }
+        }
+        #[cfg(not(feature = "fasttext-local"))]
+        {
+            remaining
+        }
+    };
+
+    // Step 2: LLM batch pass (now over fastText fallthrough only)
     let system_prompt = build_system_prompt(&categories, &recent_examples);
 
-    for chunk in remaining.chunks(LLM_BATCH_SIZE) {
+    for chunk in remaining_for_llm.chunks(LLM_BATCH_SIZE) {
+
         // A Delete-All / factory reset between batches aborts the rest of the
         // run: the following LLM call + writes would target a wiped ledger.
         // (Cheap bail before we spend an LLM round-trip; the lease below is the

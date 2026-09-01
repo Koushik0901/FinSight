@@ -6,7 +6,6 @@ pub mod categorize;
 pub mod currency;
 pub mod db;
 pub mod error;
-pub mod fees;
 pub mod forecast;
 pub mod investments;
 pub mod keychain;

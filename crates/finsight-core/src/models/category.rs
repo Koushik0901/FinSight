@@ -24,13 +24,4 @@ pub struct Category {
     pub guidance: Option<String>,
     pub sort_order: i32,
     pub archived_at: Option<DateTime<Utc>>,
-    /// Whether this category's unspent budget rolls forward into the next month.
-    /// When false, carryover is always 0 — the envelope resets each month.
-    /// Defaults to true so every existing category keeps prior behaviour.
-    #[serde(default = "default_rollover")]
-    pub rollover_enabled: bool,
-}
-
-fn default_rollover() -> bool {
-    true
 }

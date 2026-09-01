@@ -779,6 +779,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "cfasttext-sys"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6938c7d4dab1e120a10a7ed798f9f791c7ac83748651254373ba8809818052e0"
+dependencies = [
+ "cmake",
+]
+
+[[package]]
 name = "cfg-if"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -926,6 +935,15 @@ name = "clap_lex"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
+
+[[package]]
+name = "cmake"
+version = "0.1.58"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c0f78a02292a74a88ac736019ab962ece0bc380e3f977bf72e376c5d78ff0678"
+dependencies = [
+ "cc",
+]
 
 [[package]]
 name = "cmov"
@@ -1664,6 +1682,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f1f227452a390804cdb637b74a86990f2a7d7ba4b7d5693aac9b4dd6defd8d6"
 
 [[package]]
+name = "fasttext"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fce4dc10f576b02d3174a02bba6c9c0cd8a325bcc3e37198023b9ad7f217b50e"
+dependencies = [
+ "cfasttext-sys",
+]
+
+[[package]]
 name = "ff"
 version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1689,6 +1716,7 @@ dependencies = [
  "candle-nn",
  "candle-transformers",
  "chrono",
+ "fasttext",
  "finsight-core",
  "reqwest",
  "rusqlite",

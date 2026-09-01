@@ -3,11 +3,10 @@ use specta::Type;
 use utoipa::ToSchema;
 
 /// How to slice the expense pie.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type, ToSchema, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
 #[schema(rename_all = "camelCase")]
 pub enum SplitBy {
-    #[default]
     Category,
     Group,
     Payee,
@@ -16,8 +15,14 @@ pub enum SplitBy {
     #[serde(alias = "spending_type", alias = "spendingtype")]
     SpendingType,
 }
+impl Default for SplitBy {
+    fn default() -> Self {
+        Self::Category
+    }
+}
+
 /// Lookback window.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type, ToSchema, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type, ToSchema)]
 pub enum Period {
     #[serde(alias = "Last1M", alias = "last1Month", alias = "last1m")]
     Last1Month,
@@ -28,12 +33,17 @@ pub enum Period {
     #[serde(alias = "ytd", alias = "Ytd")]
     YTD,
     #[serde(alias = "AllTime", alias = "all", alias = "allTime")]
-    #[default]
     All,
 }
 
+impl Default for Period {
+    fn default() -> Self {
+        Self::All
+    }
+}
+
 /// Parameters for the custom report query — filters + split.
-#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
 #[schema(rename_all = "camelCase")]
 pub struct CustomReportParams {
@@ -66,6 +76,27 @@ pub struct CustomReportParams {
     pub interval: Option<String>,
     #[serde(default, alias = "metric")]
     pub metric: Option<String>,
+}
+
+impl Default for CustomReportParams {
+    fn default() -> Self {
+        Self {
+            split_by: SplitBy::default(),
+            period: Period::default(),
+            include_transfers: false,
+            include_archived: false,
+            member_id: None,
+            account_ids: Vec::new(),
+            category_ids: Vec::new(),
+            group_ids: Vec::new(),
+            payee: None,
+            spending_type: None,
+            min_amount_cents: None,
+            max_amount_cents: None,
+            interval: None,
+            metric: None,
+        }
+    }
 }
 
 /// One grouped row.

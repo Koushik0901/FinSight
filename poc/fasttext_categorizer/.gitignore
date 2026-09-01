@@ -1,0 +1,8 @@
+models/*.bin
+models/*.vec
+data/processed/fasttext.*
+data/processed/metrics*.json
+data/synthetic/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
