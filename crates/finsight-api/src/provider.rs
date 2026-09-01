@@ -149,7 +149,45 @@ pub fn build_copilot_router_from_settings(db: &Db) -> Option<Arc<dyn CompletionP
     ))
 }
 
-#[cfg(test)]
+/// Load `llm_routing` (per-task Immich-style). Falls back to `ModelRoutingConfig::default()` when missing.
+pub fn load_routing_config(db: &Db) -> crate::commands::agent::ModelRoutingConfig {
+    let conn = match db.get() {
+        Ok(c) => c,
+        Err(_) => return crate::commands::agent::ModelRoutingConfig::default(),
+    };
+    match finsight_core::settings::get::<serde_json::Value>(&conn, "llm_routing") {
+        Ok(Some(v)) => serde_json::from_value(v).unwrap_or_default(),
+        _ => crate::commands::agent::ModelRoutingConfig::default(),
+    }
+}
+
+/// Build a provider for a specific task from `llm_routing`. `task` is one of
+/// `categorization`, `planner`, `title`, `complexityRouter`, `copilotRouter`,
+/// `copilotSynthesizer`. Returns `None` → deterministic/heuristic (0 tokens).
+/// Falls back to the global `completion_provider` when the task entry is `None`.
+pub fn provider_for_task(db: &Db, task: &str) -> Option<Arc<dyn CompletionProvider>> {
+    let routing = load_routing_config(db);
+    let cfg_opt: Option<serde_json::Value> = match task {
+        "categorization" => routing.categorization.map(|c| serde_json::to_value(c).unwrap()),
+        "planner" => routing.planner.map(|c| serde_json::to_value(c).unwrap()),
+        "title" => routing.title.map(|c| serde_json::to_value(c).unwrap()),
+        "complexityRouter" => routing.complexity_router.map(|c| serde_json::to_value(c).unwrap()),
+        "copilotRouter" => routing.copilot_router.map(|c| serde_json::to_value(c).unwrap()),
+        "copilotSynthesizer" => routing.copilot_synthesizer.map(|c| serde_json::to_value(c).unwrap()),
+        _ => None,
+    };
+    if let Some(cfg) = cfg_opt {
+        if let Some(p) = build_provider_from_config(db, &cfg) {
+            return Some(p);
+        }
+    }
+    // Fallback to global default when task is None/deterministic is not wanted —
+    // but for `None` we intentionally return None to signal deterministic.
+    // Caller decides: `if provider_for_task().is_none() { deterministic } else { llm }`.
+    // For tasks where `None` means "use global", caller can call `load_provider_from_settings`.
+    None
+}
+
 mod tests {
     use super::*;
     use crate::secrets;

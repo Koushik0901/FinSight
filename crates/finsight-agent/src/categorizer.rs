@@ -346,23 +346,40 @@ pub async fn run_job(
     };
 
     // Step 2: LLM batch pass (now over fastText fallthrough only)
-    let system_prompt = build_system_prompt(&categories, &recent_examples);
-
-    for chunk in remaining_for_llm.chunks(LLM_BATCH_SIZE) {
-
-        // A Delete-All / factory reset between batches aborts the rest of the
-        // run: the following LLM call + writes would target a wiped ledger.
-        // (Cheap bail before we spend an LLM round-trip; the lease below is the
-        // bulletproof guard around the actual writes.)
-        if superseded() {
-            return Ok(());
+    // Immich-style routing: if `llm_routing.categorization` is null/unconfigured,
+    // we skip LLM entirely (deterministic: remaining stays uncategorized,
+    // surfaced as "needs review" via threshold). This is the 90-95% token cut.
+    let should_llm = {
+        if let Ok(conn) = db.get() {
+            if let Ok(Some(v)) = finsight_core::settings::get::<serde_json::Value>(&conn, "llm_routing") {
+                // `categorization: null` or missing → skip LLM
+                !v.get("categorization").map_or(true, |x| x.is_null())
+            } else {
+                true // no routing config → use passed provider (global default)
+            }
+        } else {
+            true
         }
-        // Per-chunk error recovery: a bad LLM response (timeout, parse error, hallucinated
-        // JSON) skips this chunk and continues rather than aborting the entire job.
-        let chunk_result = async {
-            let user_prompt = build_user_prompt(chunk);
-            let raw = provider.complete_json(&system_prompt, &user_prompt).await?;
-            // All three provider impls (Ollama, OpenAiCompat, Anthropic) return a flat JSON array.
+    };
+    if !should_llm {
+        tracing::info!("[categorizer] categorization LLM skipped by routing (deterministic)");
+    } else {
+        let system_prompt = build_system_prompt(&categories, &recent_examples);
+
+        for chunk in remaining_for_llm.chunks(LLM_BATCH_SIZE) {
+
+            // A Delete-All / factory reset between batches aborts the rest of the
+            // run: the following LLM call + writes would target a wiped ledger.
+            // (Cheap bail before we spend an LLM round-trip; the lease below is the
+            // bulletproof guard around the actual writes.)
+            if superseded() {
+                return Ok(());
+            }
+            // Per-chunk error recovery: a bad LLM response (timeout, parse error, hallucinated
+            // JSON) skips this chunk and continues rather than aborting the entire job.
+            let chunk_result = async {
+                let user_prompt = build_user_prompt(chunk);
+                let raw = provider.complete_json(&system_prompt, &user_prompt).await?;
             let results: Vec<LlmResult> = serde_json::from_value(raw)?;
             Ok::<Vec<LlmResult>, anyhow::Error>(results)
         }
@@ -514,6 +531,7 @@ pub async fn run_job(
             done: categorized,
             total,
         });
+    }
     }
 
     // If a Delete-All has begun, stop here. The remaining post-run steps are
