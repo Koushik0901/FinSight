@@ -1217,22 +1217,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/rpc/upsert_agent_memory": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["upsert_agent_memory"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/rpc/get_account_balance_timeline": {
         parameters: {
             query?: never;
@@ -1513,6 +1497,22 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["get_journey_status"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/rpc/get_model_routing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["get_model_routing"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3453,6 +3453,22 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["set_hold"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/rpc/set_model_routing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["set_model_routing"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5626,10 +5642,12 @@ export interface components {
             groupIds?: string[];
             includeArchived?: boolean;
             includeTransfers?: boolean;
+            interval?: string | null;
             /** Format: int64 */
             maxAmountCents?: number | null;
             /** @description Optional household member id to scope the report to a single person. */
             memberId?: string | null;
+            metric?: string | null;
             /** Format: int64 */
             minAmountCents?: number | null;
             payee?: string | null;
@@ -5968,11 +5986,6 @@ export interface components {
         };
         ForgetAgentMemoryRequest: {
             id: string;
-        };
-        UpsertAgentMemoryRequest: {
-            description: string;
-            key: string;
-            kind: string;
         };
         /**
          * @description One funding template — declarative rule for how to fund a category.
@@ -6685,6 +6698,20 @@ export interface components {
             /** @description Human-readable description of what is missing. */
             message: string;
         };
+        /**
+         * @description Per-task LLM routing — Immich-style model picker. `None` = deterministic/heuristic (0 tokens).
+         *     `default` is the global `completion_provider` (existing setting); per-task `Some` overrides it.
+         */
+        ModelRoutingConfig: {
+            categorization?: Omit<components["schemas"]["CompletionProviderConfig"], "kind"> | null;
+            complexityRouter?: Omit<components["schemas"]["CompletionProviderConfig"], "kind"> | null;
+            copilotRouter?: Omit<components["schemas"]["CompletionProviderConfig"], "kind"> | null;
+            copilotSynthesizer?: Omit<components["schemas"]["CompletionProviderConfig"], "kind"> | null;
+            /** Format: float */
+            fasttextThreshold?: number;
+            planner?: Omit<components["schemas"]["CompletionProviderConfig"], "kind"> | null;
+            title?: Omit<components["schemas"]["CompletionProviderConfig"], "kind"> | null;
+        };
         MonthCloseListItem: {
             completedAt?: string | null;
             /** Format: int32 */
@@ -6758,11 +6785,6 @@ export interface components {
              * @description Net = income - expense
              */
             netCents: number;
-            /**
-             * Format: int64
-             * @description Total budgeted amount for this month (sum across all categories), as positive cents
-             */
-            budgetCents: number;
         };
         /** @description Lightweight summary for the Today screen. */
         MonthTotals: {
@@ -7797,6 +7819,9 @@ export interface components {
             /** Format: int64 */
             amountCents: number;
             month: string;
+        };
+        SetModelRoutingRequest: {
+            config: components["schemas"]["ModelRoutingConfig"];
         };
         SetNotificationPrefsRequest: {
             prefs: components["schemas"]["NotificationPrefsDto"];
@@ -10016,28 +10041,6 @@ export interface operations {
             };
         };
     };
-    upsert_agent_memory: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpsertAgentMemoryRequest"];
-            };
-        };
-        responses: {
-            /** @description Success */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
     get_account_balance_timeline: {
         parameters: {
             query?: never;
@@ -10385,6 +10388,25 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JourneyStatus"];
+                };
+            };
+        };
+    };
+    get_model_routing: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelRoutingConfig"];
                 };
             };
         };
@@ -12908,6 +12930,28 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["BudgetHold"];
                 };
+            };
+        };
+    };
+    set_model_routing: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetModelRoutingRequest"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

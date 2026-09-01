@@ -17,6 +17,7 @@ const SECTIONS = [
   ["backups", "Data & backups"],
   ["agent", "Agent"],
   ["provider", "AI Provider"],
+  ["model-routing", "Model routing"],
   ["appearance", "Appearance"],
   ["currency", "Currency"],
   ["connections", "Connections"],

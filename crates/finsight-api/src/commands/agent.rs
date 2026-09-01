@@ -53,6 +53,39 @@ pub struct ProviderTestResult {
     pub latency_ms: u64,
 }
 
+/// Per-task LLM routing — Immich-style model picker. `None` = deterministic/heuristic (0 tokens).
+/// `default` is the global `completion_provider` (existing setting); per-task `Some` overrides it.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct ModelRoutingConfig {
+    #[serde(default = "default_threshold")]
+    pub fasttext_threshold: f32,
+    pub categorization: Option<CompletionProviderConfig>,
+    pub copilot_router: Option<CompletionProviderConfig>,
+    pub copilot_synthesizer: Option<CompletionProviderConfig>,
+    pub planner: Option<CompletionProviderConfig>,
+    pub title: Option<CompletionProviderConfig>,
+    pub complexity_router: Option<CompletionProviderConfig>,
+}
+
+fn default_threshold() -> f32 {
+    0.6
+}
+impl Default for ModelRoutingConfig {
+    fn default() -> Self {
+        Self {
+            fasttext_threshold: 0.6,
+            categorization: None,
+            copilot_router: None,
+            copilot_synthesizer: None,
+            planner: None,
+            title: None,
+            complexity_router: None,
+        }
+    }
+}
+
 #[derive(serde::Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 #[schema(rename_all = "camelCase")]
@@ -90,6 +123,38 @@ pub async fn set_completion_provider(
 pub async fn get_completion_provider(state: &ApiState) -> AppResult<CompletionProviderConfig> {
     let db = (*state.db).clone();
     crate::provider::load_completion_provider_config(&db).map_err(AppError::from)
+}
+
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct SetModelRoutingRequest {
+    pub config: ModelRoutingConfig,
+}
+
+#[utoipa::path(post, path = "/api/rpc/set_model_routing", request_body(content = SetModelRoutingRequest), responses((status = 200, description = "Success")))]
+pub async fn set_model_routing(state: &ApiState, config: ModelRoutingConfig) -> AppResult<()> {
+    let db = (*state.db).clone();
+    let cfg_json = serde_json::to_value(&config).map_err(|e| AppError::new("agent", e.to_string()))?;
+    run(&db, move |conn| settings::set(conn, "llm_routing", &cfg_json))
+        .await
+        .map_err(AppError::from)?;
+    Ok(())
+}
+
+#[utoipa::path(post, path = "/api/rpc/get_model_routing", responses((status = 200, body = ModelRoutingConfig)))]
+pub async fn get_model_routing(state: &ApiState) -> AppResult<ModelRoutingConfig> {
+    let db = (*state.db).clone();
+    run(&db, |conn| {
+        let v = settings::get(conn, "llm_routing")?;
+        if let Some(val) = v {
+            serde_json::from_value::<ModelRoutingConfig>(val).map_err(|e| finsight_core::CoreError::InvalidState(e.to_string()))
+        } else {
+            Ok(ModelRoutingConfig::default())
+        }
+    })
+    .await
+    .map_err(AppError::from)
 }
 
 #[derive(serde::Deserialize, utoipa::ToSchema)]

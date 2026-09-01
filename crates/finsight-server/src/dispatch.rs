@@ -209,6 +209,10 @@ rpc_routes!(api, events, cmd, p, c:
             ok(c::agent::set_completion_provider(api, arg(&p, "config")?).await?)
         },
         "get_completion_provider" => ok(c::agent::get_completion_provider(api).await?),
+        "set_model_routing" => {
+            ok(c::agent::set_model_routing(api, arg(&p, "config")?).await?)
+        },
+        "get_model_routing" => ok(c::agent::get_model_routing(api).await?),
         "save_provider_api_key" => {
             ok(
                 c::agent::save_provider_api_key(api, arg(&p, "providerId")?, arg(&p, "key")?)

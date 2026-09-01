@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, type CompletionProviderConfig, type AgentStatus } from "../openapiClient";
+import { api, type AgentStatus, type CompletionProviderConfig, type ModelRoutingConfig } from "../openapiClient";
 import { unwrap } from "../openapiClient";
 import { isBackendAvailable } from "../../utils/runtime";
 import { invalidateDomains } from "../invalidation";
@@ -38,15 +38,31 @@ export function useAskAgent() {
 
 export function useCompletionProvider() {
   return useQuery<CompletionProviderConfig>({
-    queryKey: ["completion-provider"],
-    queryFn: async () => {
-      if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
-      return unwrap(api.getCompletionProvider());
-    },
-    staleTime: 30_000,
+    queryKey: ["completionProvider"],
+    queryFn: () => unwrap(api.getCompletionProvider()),
     enabled: isBackendAvailable(),
   });
 }
+
+export function useModelRouting() {
+  return useQuery<ModelRoutingConfig>({
+    queryKey: ["modelRouting"],
+    queryFn: () => unwrap(api.getModelRouting()),
+    enabled: isBackendAvailable(),
+  });
+}
+
+export function useSetModelRouting() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (config: ModelRoutingConfig) => unwrap(api.setModelRouting(config)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["modelRouting"] });
+    },
+  });
+}
+
+
 
 export function useSetCompletionProvider() {
   const qc = useQueryClient();

@@ -4,13 +4,14 @@ import { useFinancialMetrics, useSetFinancialAssumptions, useFinancialPhilosophy
 import { useAgentMemory, useForgetAgentMemory, useUpsertAgentMemory } from "../../api/hooks/agentMemory";
 import { useDataHealth, useCreateBackup, useStageRestore, useCancelRestore } from "../../api/hooks/dataHealth";
 import { useExportJson, useExportCsv, useAutoCategorizeEnabled, useSetAutoCategorizeEnabled } from "../../api/hooks/settings";
-import { useCompletionProvider, useSetCompletionProvider, useSaveProviderApiKey, useTestCompletionProvider, useTriggerCategorize, useListProviderModels } from "../../api/hooks/agent";
+import { useCompletionProvider, useSetCompletionProvider, useSaveProviderApiKey, useTestCompletionProvider, useTriggerCategorize, useListProviderModels, useModelRouting, useSetModelRouting } from "../../api/hooks/agent";
 import { useTweaks } from "../../state/tweaks";
+
 
 import DeleteAllDataDialog from "../../components/DeleteAllDataDialog";
 import { Toggle as Tog } from "../../components/Toggle";
 import { Section } from "./Section";
-import type { CompletionProviderConfig } from "../../api/openapiClient";
+import type { CompletionProviderConfig, ModelRoutingConfig } from "../../api/openapiClient";
 import { userErrorMessage } from "../../utils/runtime";
 
 type ProviderKind = "ollama" | "openai_compat" | "anthropic" | null;
@@ -693,6 +694,109 @@ function ProviderSection() {
   );
 }
 
+function ModelRoutingSection() {
+  const { data: routing } = useModelRouting();
+  const setRouting = useSetModelRouting();
+  const [local, setLocal] = useState<ModelRoutingConfig | null>(null);
+  const cfg = local ?? routing ?? null;
+
+  useEffect(() => {
+    if (routing && !local) setLocal(routing);
+  }, [routing, local]);
+
+  const update = (patch: Partial<ModelRoutingConfig>) => {
+    if (!cfg) return;
+    const next = { ...cfg, ...patch } as ModelRoutingConfig;
+    setLocal(next);
+  };
+  const setOverride = (key: keyof ModelRoutingConfig, val: CompletionProviderConfig | null) => {
+    if (!cfg) return;
+    const next = { ...cfg, [key]: val } as ModelRoutingConfig;
+    setLocal(next);
+  };
+  const save = async () => {
+    if (!cfg || !local) return;
+    try {
+      await setRouting.mutateAsync(local);
+      toast.success("Model routing saved");
+    } catch (e) {
+      toast.error(userErrorMessage(e, "Could not save routing"));
+    }
+  };
+
+  if (!cfg) return null;
+  const row = (label: string, desc: string, key: keyof ModelRoutingConfig) => {
+    const v = cfg[key] as unknown;
+    const isNone = v == null || (typeof v === "object" && v !== null && "kind" in v && (v as { kind: string }).kind === "unconfigured");
+    let kind: string | null = null;
+    let model: string | null = null;
+    if (v && typeof v === "object" && "kind" in v) {
+      const obj = v as { kind: string; model?: string };
+      kind = obj.kind;
+      model = obj.model ?? null;
+    }
+    return (
+      <tr key={String(key)}>
+        <td style={{ padding: "8px 12px", fontWeight: 500 }}>{label}<div className="muted" style={{ fontSize: 12 }}>{desc}</div></td>
+        <td style={{ padding: "8px 12px" }}>
+          <select
+            className="control"
+            value={isNone ? "deterministic" : kind ?? "deterministic"}
+            onChange={(e) => {
+              const k = e.target.value;
+              if (k === "deterministic") setOverride(key, null);
+              else if (k === "ollama") setOverride(key, { kind: "ollama", base_url: "http://localhost:11434", model: "qwen2.5:3b" });
+              else if (k === "anthropic") setOverride(key, { kind: "anthropic", model: "claude-3-5-haiku-latest" });
+              else setOverride(key, { kind: "openai_compat", preset: "openrouter", base_url: "https://openrouter.ai/api/v1", model: "google/gemini-2.5-flash" });
+            }}
+          >
+            <option value="deterministic">Deterministic (no LLM)</option>
+            <option value="ollama">Ollama (local)</option>
+            <option value="openai_compat">Cloud (OpenAI-compat)</option>
+            <option value="anthropic">Anthropic</option>
+          </select>
+        </td>
+        <td style={{ padding: "8px 12px", color: "var(--ink-mute)", fontSize: 12 }}>
+          {isNone ? "0 tokens" : `${kind ?? ""} ${model ?? ""}`.trim()}
+        </td>
+      </tr>
+    );
+  };
+
+  return (
+    <Section id="model-routing" title="Model routing (per task)" description="Immich-style: pick the model per use case. Deterministic = heuristic/template, 0 tokens.">
+      <div className="card">
+        <div style={{ overflowX: "auto" }}>
+          <table className="tbl" style={{ width: "100%", minWidth: 640 }}>
+            <thead><tr><th style={{ textAlign: "left", padding: "8px 12px" }}>Use case</th><th style={{ textAlign: "left", padding: "8px 12px" }}>Model</th><th style={{ textAlign: "left", padding: "8px 12px" }}>Current</th></tr></thead>
+            <tbody>
+              {row("Categorization fallback", "Low-conf < threshold → LLM", "categorization")}
+              {row("Complexity router", "simple→deep", "complexityRouter")}
+              {row("Copilot synthesizer", "Final answer (3-8 turns)", "copilotSynthesizer")}
+              {row("Planner / recipes", "Single-turn JSON plan", "planner")}
+              {row("Title", "Conversation title", "title")}
+              {row("Cheap router", "Tool loop (legacy)", "copilotRouter")}
+            </tbody>
+          </table>
+        </div>
+        <div style={{ marginTop: 16, display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+          <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <span className="muted">fastText threshold</span>
+            <input type="range" min={0.4} max={0.9} step={0.05} value={cfg.fasttextThreshold} onChange={(e) => update({ fasttextThreshold: parseFloat(e.target.value) })} />
+            <span className="num" style={{ minWidth: 32 }}>{cfg.fasttextThreshold.toFixed(2)}</span>
+          </label>
+          <span className="muted" style={{ fontSize: 12 }}>Rule → fastText ≥ threshold → LLM. Lower = more LLM.</span>
+        </div>
+        <div style={{ marginTop: 16, display: "flex", gap: 8 }}>
+          <button className="btn primary sm" type="button" onClick={() => void save()} disabled={setRouting.isPending}>Save routing</button>
+          <span className="muted" style={{ fontSize: 12, alignSelf: "center" }}>Global provider remains the default for unset rows.</span>
+        </div>
+      </div>
+    </Section>
+  );
+}
+
+
 function PrivacySection() {
   const exportJson = useExportJson();
   const exportCsv = useExportCsv();
@@ -773,6 +877,7 @@ export default function SettingsData() {
       <PrivacySection />
       <AgentSection />
       <ProviderSection />
+      <ModelRoutingSection />
     </>
   );
 }
