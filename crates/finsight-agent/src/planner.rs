@@ -39,6 +39,43 @@ pub async fn plan(
     provider_id: &str,
     model_id: &str,
 ) -> anyhow::Result<PlanResult> {
+    // Immich-style routing: `llm_routing.planner` null → deterministic (0 tokens).
+    let use_llm = {
+        if let Ok(Some(v)) = finsight_core::settings::get::<serde_json::Value>(conn, "llm_routing") {
+            !v.get("planner").map_or(true, |x| x.is_null())
+        } else {
+            true
+        }
+    };
+    if !use_llm {
+        if let Some(answer) = crate::planning::answer_finance_question(conn, question)
+            .map_err(|e| anyhow::anyhow!("planning: {e}"))?
+        {
+            // Map StructuredFinanceAnswer → PlanResult (minimal bundle for compat)
+            let bundle = finsight_core::models::AgentActionBundle {
+                id: ::uuid::Uuid::new_v4().to_string(),
+                session_id: session_id.map(|s| s.to_string()),
+                title: question.chars().take(60).collect(),
+                summary: answer.summary.clone(),
+                rationale: answer.recommendation.clone(),
+                confidence: answer.confidence,
+                status: "completed".to_string(),
+                provider_id: Some("deterministic".to_string()),
+                model_id: Some("planning-crate".to_string()),
+                created_at: ::chrono::Utc::now().to_rfc3339(),
+                updated_at: ::chrono::Utc::now().to_rfc3339(),
+                items: vec![],
+            };
+            return Ok(PlanResult {
+                bundle,
+                answer: answer.recommendation.clone(),
+                assumptions: answer.assumptions.clone(),
+                follow_up_questions: answer.follow_up_questions.clone(),
+                forecast_summary: None,
+            });
+        }
+        return Err(anyhow!("Planner: deterministic planning found no answer and LLM is disabled by routing"));
+    }
     let context = build_context(conn).map_err(|e| anyhow::anyhow!("context: {e}"))?;
     let llm_response = provider
         .complete_json(&build_system_prompt(&context), question)
@@ -56,6 +93,7 @@ pub async fn plan(
     )
     .map_err(Into::into)
 }
+
 
 pub fn build_system_prompt(ctx: &FinancialContext) -> String {
     format!(
