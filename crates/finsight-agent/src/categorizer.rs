@@ -22,6 +22,24 @@ const LLM_BATCH_SIZE: usize = 20;
 /// and the Inbox action-item query so all three stay in sync.
 pub const LOW_CONFIDENCE_THRESHOLD: f64 = 0.6;
 
+fn routing_threshold(conn: &rusqlite::Connection) -> f64 {
+    // Immich-style per-task routing: `llm_routing.fasttextThreshold` (camelCase via serde).
+    // Falls back to the const when the setting is absent or malformed.
+    if let Ok(Some(v)) = finsight_core::settings::get::<serde_json::Value>(conn, "llm_routing") {
+        if let Some(t) = v.get("fasttextThreshold").and_then(|x| x.as_f64()) {
+            if (0.0..=1.0).contains(&t) {
+                return t;
+            }
+        }
+        if let Some(t) = v.get("fasttext_threshold").and_then(|x| x.as_f64()) {
+            if (0.0..=1.0).contains(&t) {
+                return t;
+            }
+        }
+    }
+    LOW_CONFIDENCE_THRESHOLD
+}
+
 #[derive(Deserialize)]
 struct LlmResult {
     txn_id: String,
@@ -172,11 +190,10 @@ pub async fn run_job(
     });
 
     // Step 1.5: fastText local classifier (feature `fasttext-local`)
-    // Tries to categorize `remaining` without an LLM round-trip. Only
-    // predictions with prob >= LOW_CONFIDENCE_THRESHOLD and a known
-    // category slug are accepted; everything else falls through to the
-    // LLM batch. On any failure (model missing, not Send, etc.) we
-    // degrade gracefully to LLM.
+    // Tries to categorize `remaining` without an LLM round-trip. Threshold
+    // is the per-task `llm_routing.fasttextThreshold` (Immich-style) when
+    // set, else LOW_CONFIDENCE_THRESHOLD. Only predictions with
+    // prob >= threshold and a known category slug are accepted.
     let remaining_for_llm: Vec<(String, String, i64)> = {
         #[cfg(feature = "fasttext-local")]
         {
@@ -194,6 +211,10 @@ pub async fn run_job(
                     .unwrap_or_else(|_| PathBuf::from("."));
                 match crate::fasttext_predict::get_fasttext_model(&data_dir).await {
                     Ok(model) => {
+                        let threshold: f64 = {
+                            let conn = db.get().ok();
+                            conn.as_ref().map(|c| routing_threshold(c)).unwrap_or(LOW_CONFIDENCE_THRESHOLD)
+                        };
                         let mut accepted: Vec<(String, String, f64)> = Vec::new();
                         let mut fallthrough: Vec<(String, String, i64)> = Vec::new();
                         for (txn_id, merchant_raw, amount_cents) in remaining {
@@ -219,7 +240,7 @@ pub async fn run_job(
                                     fallthrough.push((txn_id, merchant_raw, amount_cents));
                                     continue;
                                 }
-                                if prob < LOW_CONFIDENCE_THRESHOLD {
+                                if prob < threshold {
                                     fallthrough.push((txn_id, merchant_raw, amount_cents));
                                     continue;
                                 }
@@ -270,7 +291,7 @@ pub async fn run_job(
                                         let candidates =
                                             json!([{"category_id": cat_id, "confidence": prob}])
                                                 .to_string();
-                                        let status = if *prob < LOW_CONFIDENCE_THRESHOLD {
+                                        let status = if *prob < threshold {
                                             "pending"
                                         } else {
                                             "accepted"
@@ -407,7 +428,6 @@ pub async fn run_job(
             let model_for_task = model_id.clone();
             // One transaction for the whole chunk — like repos/rules.rs:90-104.
             // A mid-batch failure rolls back the entire chunk rather than leaving
-            // a partial write (0 rows not 1).
             let write_res = tokio::task::spawn_blocking(move || {
                 let mut conn = db_for_chunk.get()?;
                 let tx = conn.transaction()?;
@@ -428,7 +448,6 @@ pub async fn run_job(
                         let candidates = json!([{"category_id": cat_id.clone(), "confidence": confidence}]).to_string();
                         tx.execute(
                             "INSERT INTO category_proposals \
-                                (id, txn_id, proposed_category_id, source, confidence, rationale, candidates_json, status, applied, model, created_at, reviewed_at) \
                              VALUES (?1, ?2, ?3, 'llm', ?4, ?5, ?6, ?7, 1, ?8, ?9, NULL) \
                              ON CONFLICT(txn_id) DO UPDATE SET \
                                 id = excluded.id, \
@@ -650,9 +669,7 @@ fn load_low_confidence(conn: &mut rusqlite::Connection) -> Result<Vec<(String, S
                 WHERE p.txn_id = transactions.id AND p.status <> 'pending') \
          ORDER BY ai_confidence ASC, posted_at DESC",
     )?;
-    let rows = stmt.query_map(rusqlite::params![LOW_CONFIDENCE_THRESHOLD], |r| {
-        Ok((r.get(0)?, r.get(1)?, r.get(2)?))
-    })?;
+    let rows = stmt.query_map(rusqlite::params![LOW_CONFIDENCE_THRESHOLD], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
     let mut out = Vec::new();
     for r in rows {
         out.push(r?);
