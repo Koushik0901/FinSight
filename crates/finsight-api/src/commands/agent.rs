@@ -2640,25 +2640,43 @@ fn direct_finance_answer(
     Ok(answer)
 }
 
-async fn router_classify(_provider: &Arc<dyn CompletionProvider>, question: &str) -> String {
-    // Heuristic replacement for LLM complexity router: no API cost.
-    // "deep" triggers the multi-tool ReasoningEngine (finance planning);
-    // "simple" uses the single-shot finance snapshot + template.
-    // Keep provider param for API compat (caller passes Arc<dyn CompletionProvider>).
-    let q = question.to_lowercase();
-    let deep_keywords = [
-        "plan", "allocation", "allocate", "budget", "forecast", "scenario", "should i",
-        "debt", "payoff", "pay off", "snowball", "avalanche", "investment", "invest",
-        "goal", "retire", "retirement", "pay down", "refinance", "rebalance",
-    ];
-    if deep_keywords.iter().any(|k| q.contains(k)) {
-        return "deep".to_string();
+async fn router_classify(db: &finsight_core::Db, provider: &Arc<dyn CompletionProvider>, question: &str) -> String {
+    // Immich-style: `llm_routing.complexityRouter` null → heuristic (0 tokens), else LLM
+    let use_llm = {
+        if let Ok(conn) = db.get() {
+            if let Ok(Some(v)) = finsight_core::settings::get::<serde_json::Value>(&conn, "llm_routing") {
+                !v.get("complexityRouter").map_or(true, |x| x.is_null())
+            } else { true }
+        } else { true }
+    };
+    if !use_llm {
+        let q = question.to_lowercase();
+        let deep_keywords = [
+            "plan", "allocation", "allocate", "budget", "forecast", "scenario", "should i",
+            "debt", "payoff", "pay off", "snowball", "avalanche", "investment", "invest",
+            "goal", "retire", "retirement", "pay down", "refinance", "rebalance",
+        ];
+        if deep_keywords.iter().any(|k| q.contains(k)) {
+            return "deep".to_string();
+        }
+        if question.len() > 120 && (question.to_lowercase().contains('?') || question.to_lowercase().contains("how") || question.to_lowercase().contains("what")) {
+            return "deep".to_string();
+        }
+        return "simple".to_string();
     }
-    // Long or multi-sentence finance questions are likely deep.
-    if q.len() > 120 && (q.contains('?') || q.contains("how") || q.contains("what")) {
-        return "deep".to_string();
+    // LLM path — original
+    let system = "Classify this question as 'simple' (greetings, general info, single-fact lookups) or 'deep' (financial planning, pay allocation, investment decisions, debt payoff, should-I questions). Respond with JSON only: {\"mode\": \"simple\" | \"deep\"}";
+    match provider.complete_json(system, question).await {
+        Ok(v) => {
+            if let Some(mode) = v.get("mode").and_then(|m| m.as_str()) {
+                if mode == "deep" {
+                    return "deep".to_string();
+                }
+            }
+            "simple".to_string()
+        }
+        Err(_) => "simple".to_string(),
     }
-    "simple".to_string()
 }
 
 #[derive(serde::Deserialize, utoipa::ToSchema)]
@@ -2683,13 +2701,12 @@ pub async fn ask_agent(
         ));
     };
 
+    let db = (*state.db).clone();
     let effective_mode = match mode.as_deref() {
         Some("deep") => "deep".to_string(),
         Some("quick") => "simple".to_string(),
-        _ => router_classify(&provider, &question).await,
+        _ => router_classify(&db, &provider, &question).await,
     };
-
-    let db = (*state.db).clone();
 
     if effective_mode == "deep" {
         let tools = build_toolset();
