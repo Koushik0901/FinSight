@@ -47,7 +47,7 @@ Deterministic fallback already exists (informative): `copilot_chat.rs:1705 deter
 | **Isolation Forest / One-Class SVM on (amount, freq) per merchant** | Standard tabular anomaly detection (scikit-learn). But per-merchant series in personal finance is tiny (n=5-30), so MAD already optimal. ML only helps cross-merchant anomalies (unusual category spend). Could train monthly but weak signal. Paper trend (e.g., `Explaining ensemble ML for transaction fraud` 2026) shows RF/XGBoost win on large bank datasets, not personal 1-user ledger. | Low value — MAD covers personal regime. | Local CPU | Marginal. | M. |
 | **Small LM for reason prose only** | Could keep Needle 2 or Phi-4-mini for `reason` templating offline if marketing wants prose. Not needed. | Low | Local | — | — |
 
-**Decision for A2:** **Delete LLM confirmation; template the reason and rely on existing `recompute_anomalies` + dismiss.** Token cut: 100%. Preserves auditable stats.
+**Decision for A2:** **SHIPPED 2026-09-01 — deterministic template.** `anomaly.rs` LLM `complete_json` → `anomaly_reason()` (`${merchant} $X is N× median $Y — outlier`), `provider` param kept compat but ignored, `5/5` tests, `100%` token cut.
 
 ---
 
@@ -106,7 +106,7 @@ This keeps the **Financial Freedom Framework** prompts grounded in `context.rs` 
 | A6 title | Heuristic: first 6 words of question, truncated `truncate_title` already exists in `planner.rs:246`. No LLM. |
 | A7 complexity | Intent classifier as above (2-label fastText, ~100 lines). The deterministic fallback predicate `asks_spending` already proves simple questions are regex-detectable; generalize with tiny model trained on Copilot history. |
 
-Effort: XS each, 100% token cut.
+**SHIPPED 2026-09-01 — heuristic.** `copilot_chat.rs:954` title `complete_json` → 6-word `split_whitespace().take(6)` (60 char), `agent.rs:2643` `router_classify` LLM → `deep_keywords` heuristic + `llm_routing.title`/`complexityRouter` Immich gate (`null` → heuristic, `Some` → LLM via `provider_for_task`), `0 tokens` when deterministic.
 
 ---
 
@@ -123,10 +123,9 @@ Effort: XS each, 100% token cut.
 | 7 | A4/A5 Copilot | T2 Needle 2 router (14 MB) fine-tuned on ToolSet | **~100%** | M | Medium (integration) | Best long-term dispatcher; wait for Rust sidecar demo. |
 | 8 | A4 Copilot narrow Q's | T3 Deterministic templates (extend `1705` fallback) | Proportional | S | Low | Covers ~50% questions for free. |
 
-**Conservative combined first-pass (rows 1-5): ~65-80% API bill cut with ≤2 weeks work, no accuracy loss.**
+**Conservative combined first-pass (rows 1-5): ~65-80% API bill cut with ≤2 weeks work, no accuracy loss.** **SHIPPED 2026-09-01: rows 1-3 (A2/A6/A7/A1) + Model routing table (Immich-style `llm_routing` per-task `ModelRoutingConfig` + `Settings → Model routing` 6 rows + `fastTextThreshold` slider, `provider_for_task` wiring for `categorization`/`planner`/`title`/`complexityRouter`/`copilot*`).**
 
-**Full local (1-8): ~95%+ cut, ~4-6 weeks including fine-tune & eval against `finsight-eval` harness.**
-
+**Full local (1-8): ~95%+ cut, ~4-6 weeks including fine-tune & eval against `finsight-eval` harness.** Next `planner` deterministic + `copilot` `T1` local SLM via `provider_for_task_or_global`.
 ---
 
 ## 4. Live Research Citations (checked 2026-08-31)

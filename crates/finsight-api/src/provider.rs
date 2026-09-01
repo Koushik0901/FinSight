@@ -164,7 +164,8 @@ pub fn load_routing_config(db: &Db) -> crate::commands::agent::ModelRoutingConfi
 /// Build a provider for a specific task from `llm_routing`. `task` is one of
 /// `categorization`, `planner`, `title`, `complexityRouter`, `copilotRouter`,
 /// `copilotSynthesizer`. Returns `None` → deterministic/heuristic (0 tokens).
-/// Falls back to the global `completion_provider` when the task entry is `None`.
+/// For tasks where `None` should mean "use global", caller should fallback
+/// to `load_provider_from_settings`.
 pub fn provider_for_task(db: &Db, task: &str) -> Option<Arc<dyn CompletionProvider>> {
     let routing = load_routing_config(db);
     let cfg_opt: Option<serde_json::Value> = match task {
@@ -181,12 +182,43 @@ pub fn provider_for_task(db: &Db, task: &str) -> Option<Arc<dyn CompletionProvid
             return Some(p);
         }
     }
-    // Fallback to global default when task is None/deterministic is not wanted —
-    // but for `None` we intentionally return None to signal deterministic.
-    // Caller decides: `if provider_for_task().is_none() { deterministic } else { llm }`.
-    // For tasks where `None` means "use global", caller can call `load_provider_from_settings`.
     None
 }
+
+/// Like `provider_for_task` but falls back to the global `completion_provider`
+/// when the task entry is `None`/unconfigured. Use for copilot where `None`
+/// means "use global", not deterministic.
+pub fn provider_for_task_or_global(db: &Db, task: &str) -> Option<Arc<dyn CompletionProvider>> {
+    if let Some(p) = provider_for_task(db, task) {
+        Some(p)
+    } else {
+        // Only fallback to global when the task was explicitly `None` in routing.
+        // Check if routing exists and task is null → deterministic, else global.
+        let routing = load_routing_config(db);
+        let is_null = match task {
+            "categorization" => routing.categorization.is_none(),
+            "planner" => routing.planner.is_none(),
+            "title" => routing.title.is_none(),
+            "complexityRouter" => routing.complexity_router.is_none(),
+            "copilotRouter" => routing.copilot_router.is_none(),
+            "copilotSynthesizer" => routing.copilot_synthesizer.is_none(),
+            _ => true,
+        };
+        if is_null {
+            // For copilot tasks, null means "use global" per UI helper text.
+            // For categorization/planner/title, null already handled as deterministic
+            // in their own gates, so this path is only for copilot where we want global.
+            if task == "copilotRouter" || task == "copilotSynthesizer" {
+                load_provider_from_settings(db)
+            } else {
+                None
+            }
+        } else {
+            load_provider_from_settings(db)
+        }
+    }
+}
+
 
 mod tests {
     use super::*;

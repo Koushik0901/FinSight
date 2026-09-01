@@ -2707,10 +2707,14 @@ pub async fn ask_agent(
         Some("quick") => "simple".to_string(),
         _ => router_classify(&db, &provider, &question).await,
     };
-
     if effective_mode == "deep" {
+        // Per-task routing: `llm_routing.copilotRouter`/`copilotSynthesizer` override global.
+        // `None` → use global (fallback), `Some(null)` already handled as heuristic in router_classify.
+        let router_provider = crate::provider::provider_for_task_or_global(&db, "copilotRouter").unwrap_or_else(|| Arc::clone(&provider));
+        let synth_provider = crate::provider::provider_for_task(&db, "copilotSynthesizer");
         let tools = build_toolset();
-        let provider_clone = Arc::clone(&provider);
+        let router_clone = router_provider;
+        let synth_clone = synth_provider;
         let question_clone = question.clone();
         let tool_result = run(&db, move |conn| {
             let rt = tokio::runtime::Builder::new_current_thread()
@@ -2719,12 +2723,15 @@ pub async fn ask_agent(
                 .map_err(|e| {
                     finsight_core::CoreError::InvalidState(format!("Failed to create runtime: {e}"))
                 })?;
-            rt.block_on(ReasoningEngine::run(
+            rt.block_on(ReasoningEngine::run_with_events(
                 conn,
                 &question_clone,
                 &tools,
-                provider_clone,
+                router_clone,
+                synth_clone,
                 10,
+                None,
+                |_| {},
             ))
             .map_err(|e| {
                 finsight_core::CoreError::InvalidState(format!("Reasoning engine error: {e}"))
