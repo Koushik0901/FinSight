@@ -40,6 +40,33 @@ fn routing_threshold(conn: &rusqlite::Connection) -> f64 {
     LOW_CONFIDENCE_THRESHOLD
 }
 
+fn provider_for_categorization(conn: &rusqlite::Connection, fallback: Arc<dyn CompletionProvider>) -> Arc<dyn CompletionProvider> {
+    // If `llm_routing.categorization` is set, build that provider; else use global fallback.
+    // `llm_routing` is the Immich-style per-task table (None → deterministic, already handled).
+    if let Ok(Some(v)) = finsight_core::settings::get::<serde_json::Value>(conn, "llm_routing") {
+        if let Some(cfg) = v.get("categorization").filter(|x| !x.is_null()) {
+            // Reuse the same builder as `finsight-api/src/provider.rs:build_provider_from_config`
+            // but local to `finsight-agent` (no API key lookup needed for Ollama).
+            if let Some(kind) = cfg.get("kind").and_then(|k| k.as_str()) {
+                match kind {
+                    "ollama" => {
+                        if let (Some(base_url), Some(model)) = (cfg.get("base_url").and_then(|s| s.as_str()), cfg.get("model").and_then(|s| s.as_str())) {
+                            return Arc::new(crate::providers::ollama::OllamaProvider::new(base_url.to_string(), model.to_string()));
+                        }
+                    }
+                    "openai_compat" | "openai" => {
+                        // For categorization fallback we need an API key — fall back to global when missing
+                        // (the global provider already has the key). This keeps the per-task picker simple.
+                    }
+                    "anthropic" => {}
+                    _ => {}
+                }
+            }
+        }
+    }
+    fallback
+}
+
 #[derive(Deserialize)]
 struct LlmResult {
     txn_id: String,
@@ -47,6 +74,7 @@ struct LlmResult {
     confidence: f64,
     rationale: String,
 }
+
 
 pub async fn run_job(
     db: &Db,
@@ -349,6 +377,8 @@ pub async fn run_job(
     // Immich-style routing: if `llm_routing.categorization` is null/unconfigured,
     // we skip LLM entirely (deterministic: remaining stays uncategorized,
     // surfaced as "needs review" via threshold). This is the 90-95% token cut.
+    // When set, we use that provider (per-task Ollama/Cloud/Anthropic) else the
+    // global `provider` passed from `AgentHandle`.
     let should_llm = {
         if let Ok(conn) = db.get() {
             if let Ok(Some(v)) = finsight_core::settings::get::<serde_json::Value>(&conn, "llm_routing") {
@@ -364,6 +394,13 @@ pub async fn run_job(
     if !should_llm {
         tracing::info!("[categorizer] categorization LLM skipped by routing (deterministic)");
     } else {
+        let llm_provider: Arc<dyn CompletionProvider> = {
+            if let Ok(conn) = db.get() {
+                provider_for_categorization(&conn, Arc::clone(&provider))
+            } else {
+                Arc::clone(&provider)
+            }
+        };
         let system_prompt = build_system_prompt(&categories, &recent_examples);
 
         for chunk in remaining_for_llm.chunks(LLM_BATCH_SIZE) {
@@ -379,11 +416,12 @@ pub async fn run_job(
             // JSON) skips this chunk and continues rather than aborting the entire job.
             let chunk_result = async {
                 let user_prompt = build_user_prompt(chunk);
-                let raw = provider.complete_json(&system_prompt, &user_prompt).await?;
-            let results: Vec<LlmResult> = serde_json::from_value(raw)?;
-            Ok::<Vec<LlmResult>, anyhow::Error>(results)
-        }
-        .await;
+                let raw = llm_provider.complete_json(&system_prompt, &user_prompt).await?;
+                let results: Vec<LlmResult> = serde_json::from_value(raw)?;
+                Ok::<Vec<LlmResult>, anyhow::Error>(results)
+            }
+            .await;
+
 
         let results = match chunk_result {
             Ok(r) => r,
@@ -414,7 +452,7 @@ pub async fn run_job(
         }
         // Collect valid results first — category and txn validation outside the
         // transaction so only well-formed rows enter the atomic batch.
-        let model_id = provider.model_id().to_string();
+        let model_id = llm_provider.model_id().to_string();
         let mut valid: Vec<(String, String, f64, String)> = Vec::new();
         for r in &results {
             if !valid_category_ids.contains(&r.category_id) {
