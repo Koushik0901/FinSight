@@ -5,41 +5,46 @@ use finsight_core::{
     settings, Db,
 };
 use rusqlite::params;
-use serde::Deserialize;
-use serde_json::json;
 use std::sync::Arc;
 
+#[allow(dead_code)]
 const BATCH_SIZE: usize = 20;
 
-#[derive(Deserialize)]
-struct LlmAnomalyResult {
-    txn_id: String,
-    is_anomaly: bool,
-    reason: String,
+
+fn fmt_money(cents: i64) -> String {
+    format!("${:.2}", cents as f64 / 100.0)
 }
 
-/// Detect anomalous transactions using a two-phase approach on top of the one
-/// authoritative statistics engine ([`finsight_core::anomaly`]):
+fn anomaly_reason(c: &AnomalyCandidate) -> String {
+    let mult = if c.typical_cents != 0 {
+        c.amount_cents.abs() as f64 / c.typical_cents.abs() as f64
+    } else {
+        0.0
+    };
+    let amount = fmt_money(c.amount_cents.abs());
+    let median = fmt_money(c.typical_cents.abs());
+    if mult >= 2.0 {
+        format!("{} {} is {:.1}× your median {} — outlier", c.merchant_raw, amount, mult, median)
+    } else {
+        format!("{} {} vs median {} — unusual", c.merchant_raw, amount, median)
+    }
+}
+
+
+/// Detect anomalous transactions deterministically — no LLM.
 ///
-/// 1. **Candidates:** [`statistical_outlier_candidates`] applies the same
-///    median/MAD thresholds and the same exclusions (transfers, settle-up rows,
-///    investment-account trades, user-dismissed charges) as the deterministic
-///    recompute. There is deliberately no second statistical implementation
-///    here: a divergent one could re-flag charges the user explicitly
-///    dismissed and overwrite the authoritative detector's verdicts.
-/// 2. **LLM confirmation:** candidates are sent to the LLM in batches with
-///    their historical baseline; only transactions the LLM confirms get
-///    flagged, with the LLM's human-readable reason stored as explanation.
+/// 1. **Candidates:** [`statistical_outlier_candidates`] (median/MAD, same
+///    exclusions as `recompute_anomalies`).
+/// 2. **Confirmation:** every candidate is confirmed with a templated
+///    `anomaly_reason` (`"{merchant} $X is N× median $Y — outlier"`), more
+///    auditable than LLM prose and aligned with `finance.rs` metric
+///    explanations.
 ///
-/// Only *not-yet-flagged* transactions are reviewed (the same scope the
-/// deterministic recompute just (re)computed from live data). Writes hold a
-/// reset-barrier lease across a single transactional commit, so a concurrent
-/// Delete-All can never leave these flags orphaned on a wiped ledger.
+/// Only *not-yet-flagged* transactions are reviewed. Writes hold a
+/// reset-barrier lease. `provider` is kept for API compat but ignored.
 /// Returns the number of anomalies written.
 pub async fn detect_anomalies(db: &Db, provider: Arc<dyn CompletionProvider>) -> Result<u32> {
-    // Snapshot the barrier epoch before any LLM round-trip: if a Delete-All
-    // lands while we await the provider, the lease below reports superseded
-    // and we skip writing entirely.
+    // Snapshot the barrier epoch before any provider round-trip.
     let start_epoch = db.reset_barrier().epoch();
 
     // ── Step 1: candidates from the shared core analysis ────────────────────
@@ -56,43 +61,19 @@ pub async fn detect_anomalies(db: &Db, provider: Arc<dyn CompletionProvider>) ->
         return Ok(0);
     }
 
-    // ── Step 2: LLM confirmation in batches ──────────────────────────────────
-    let mut confirmed: Vec<(String, String)> = Vec::new(); // (txn_id, reason)
+    // ── Step 2: deterministic confirmation — all statistical candidates are
+    // confirmed with a templated human-readable reason (no LLM). This is
+    // more auditable than an LLM hallucination and matches the MAD
+    // explanation style in finance.rs MetricExplanation.
+    let confirmed: Vec<(String, String)> = candidates
+        .iter()
+        .map(|c| (c.txn_id.clone(), anomaly_reason(c)))
+        .collect();
 
-    let system = "You are a transaction anomaly reviewer for a personal finance app. \
-You will receive a list of transactions that look statistically unusual compared to \
-the user's history with each merchant. Decide which are genuinely anomalous (e.g. \
-a much larger charge than usual, a duplicate, or a clear outlier). \
-Respond with a valid JSON array only — no markdown, no explanation outside the array. \
-Each item: {\"txn_id\": \"...\", \"is_anomaly\": true/false, \"reason\": \"one sentence\"}";
+    // Allow unused provider param for API compat — caller in categorizer.rs
+    // still passes Arc<dyn CompletionProvider>. Suppress warning.
+    let _ = &provider;
 
-    for chunk in candidates.chunks(BATCH_SIZE) {
-        let items: Vec<_> = chunk
-            .iter()
-            .map(|c| {
-                json!({
-                    "txn_id": c.txn_id,
-                    "merchant_raw": c.merchant_raw,
-                    "amount_cents": c.amount_cents,
-                    "historical_median_cents": c.typical_cents,
-                })
-            })
-            .collect();
-
-        let user = format!(
-            "Review these transactions for anomalies:\n{}\n\n\
-             Respond:\n[{{\"txn_id\":\"...\",\"is_anomaly\":true,\"reason\":\"...\"}}]",
-            json!(items)
-        );
-
-        let raw = provider.complete_json(system, &user).await?;
-        let results: Vec<LlmAnomalyResult> = serde_json::from_value(raw)?;
-        for r in results {
-            if r.is_anomaly {
-                confirmed.push((r.txn_id, r.reason));
-            }
-        }
-    }
 
     // ── Step 3: transactional write under the reset barrier ─────────────────
     if confirmed.is_empty() {

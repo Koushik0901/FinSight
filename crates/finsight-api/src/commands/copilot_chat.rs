@@ -951,33 +951,29 @@ pub async fn stream_copilot_message(
         },
     );
 
-    // 10. Auto-generate title for new conversations
+    // 10. Auto-generate title for new conversations — heuristic (no LLM)
     if is_first {
-        let provider_clone = Arc::clone(&provider);
         let text_clone = text.clone();
-        let prose_clone = answer.prose.clone();
         let cid = conv_id.clone();
         let db_clone = db.clone();
-        tokio::spawn(async move {
-            let system = "Generate a short 4-6 word title for this conversation. \
-                          Respond with JSON only: {\"title\": \"...\"}. \
-                          No punctuation at the end. No quotes around the title. \
-                          Be specific to the financial topic.";
-            let prompt = format!(
-                "User asked: {}\nAssistant replied: {}",
-                text_clone,
-                prose_clone.chars().take(200).collect::<String>()
-            );
-            if let Ok(v) = provider_clone.complete_json(system, &prompt).await {
-                if let Some(title) = v.get("title").and_then(|t| t.as_str()) {
-                    let title = title.to_string();
-                    let _ = run(&db_clone, move |conn| {
-                        conversations::update_conversation_title(conn, &cid, &title)
-                            .map_err(|e| finsight_core::CoreError::InvalidState(e.to_string()))
-                    })
-                    .await;
-                }
+        let title = {
+            let words: Vec<&str> = text_clone.split_whitespace().take(6).collect();
+            let mut t = words.join(" ");
+            if t.is_empty() {
+                t = "New conversation".to_string();
             }
+            if t.chars().count() > 60 {
+                t.chars().take(60).collect::<String>()
+            } else {
+                t
+            }
+        };
+        tokio::spawn(async move {
+            let _ = run(&db_clone, move |conn| {
+                conversations::update_conversation_title(conn, &cid, &title)
+                    .map_err(|e| finsight_core::CoreError::InvalidState(e.to_string()))
+            })
+            .await;
         });
     }
 

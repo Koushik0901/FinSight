@@ -2575,19 +2575,25 @@ fn direct_finance_answer(
     Ok(answer)
 }
 
-async fn router_classify(provider: &Arc<dyn CompletionProvider>, question: &str) -> String {
-    let system = "Classify this question as 'simple' (greetings, general info, single-fact lookups) or 'deep' (financial planning, pay allocation, investment decisions, debt payoff, should-I questions). Respond with JSON only: {\"mode\": \"simple\" | \"deep\"}";
-    match provider.complete_json(system, question).await {
-        Ok(v) => {
-            if let Some(mode) = v.get("mode").and_then(|m| m.as_str()) {
-                if mode == "deep" {
-                    return "deep".to_string();
-                }
-            }
-            "simple".to_string()
-        }
-        Err(_) => "simple".to_string(),
+async fn router_classify(_provider: &Arc<dyn CompletionProvider>, question: &str) -> String {
+    // Heuristic replacement for LLM complexity router: no API cost.
+    // "deep" triggers the multi-tool ReasoningEngine (finance planning);
+    // "simple" uses the single-shot finance snapshot + template.
+    // Keep provider param for API compat (caller passes Arc<dyn CompletionProvider>).
+    let q = question.to_lowercase();
+    let deep_keywords = [
+        "plan", "allocation", "allocate", "budget", "forecast", "scenario", "should i",
+        "debt", "payoff", "pay off", "snowball", "avalanche", "investment", "invest",
+        "goal", "retire", "retirement", "pay down", "refinance", "rebalance",
+    ];
+    if deep_keywords.iter().any(|k| q.contains(k)) {
+        return "deep".to_string();
     }
+    // Long or multi-sentence finance questions are likely deep.
+    if q.len() > 120 && (q.contains('?') || q.contains("how") || q.contains("what")) {
+        return "deep".to_string();
+    }
+    "simple".to_string()
 }
 
 #[derive(serde::Deserialize, utoipa::ToSchema)]
