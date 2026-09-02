@@ -220,6 +220,7 @@ pub fn provider_for_task_or_global(db: &Db, task: &str) -> Option<Arc<dyn Comple
 }
 
 
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::secrets;

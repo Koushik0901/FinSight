@@ -325,16 +325,18 @@ pub async fn stream_copilot_message(
     // 3. Build enriched question with conversation history prepended
     let enriched_question = build_question_with_history(&text, &history);
 
-    // 4. Run reasoning engine (deep mode, same as ask_agent)
+    // 4. Run reasoning engine (deep mode, same as ask_agent) — per-task Immich routing
     let tools = build_toolset();
-    // Model tiers: with a configured fast router model, the cheap router drives
-    // the tool-selection turns and the configured (strong) model synthesizes the
-    // final answer; otherwise one model does both.
-    let (provider_clone, synthesizer_clone) =
-        match crate::provider::build_copilot_router_from_settings(&db) {
-            Some(router) => (router, Some(Arc::clone(&provider))),
-            None => (Arc::clone(&provider), None),
-        };
+    // Model tiers: `llm_routing.copilotRouter`/`copilotSynthesizer` per-task override global (Immich-style).
+    // `copilotRouter` None → use global (fallback); `Some` → that provider (cheap router, max_tokens 1024).
+    // `copilotSynthesizer` None → single-model; `Some` → strong synthesizer re-writes final answer.
+    // Legacy `copilot.router_model` (build_copilot_router_from_settings) kept as fallback for existing installs.
+    let legacy_router = crate::provider::build_copilot_router_from_settings(&db);
+    let provider_clone = crate::provider::provider_for_task_or_global(&db, "copilotRouter")
+        .or_else(|| legacy_router.clone())
+        .unwrap_or_else(|| Arc::clone(&provider));
+    let synthesizer_clone = crate::provider::provider_for_task(&db, "copilotSynthesizer")
+        .or_else(|| legacy_router.as_ref().map(|_| Arc::clone(&provider)));
     let question_for_engine = enriched_question.clone();
     let emitted_live_tool_frames = Arc::new(AtomicBool::new(false));
     emit_copilot_frame(
