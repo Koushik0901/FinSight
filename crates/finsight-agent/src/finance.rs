@@ -1936,6 +1936,63 @@ pub fn run_emergency_fund_scenarios(
         assumptions,
     })
 }
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SinkingFundItem {
+    pub name: String,
+    pub annual_cents: i64,
+    pub months_until_due: u32,
+    pub monthly_cents: i64,
+    pub total_until_due_cents: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SinkingFundScenarios {
+    pub items: Vec<SinkingFundItem>,
+    pub total_monthly_cents: i64,
+    pub total_annual_cents: i64,
+    pub assumptions: Vec<String>,
+    pub missing_data: Vec<MissingDataItem>,
+}
+
+/// Dedicated sinking-fund planning for annual / irregular expenses that do not
+/// fit a monthly budget envelope: car maintenance, travel, insurance, repairs,
+/// taxes, annual subscriptions. Each fund is `annual_cents / 12` per month,
+/// independent of due date; the due-date version tells you how much must be
+/// set aside *before* the bill arrives.
+///
+/// Deterministic, no LLM — the same `metrics::non_investment_txn_predicate`
+/// and `snapshot` philosophy as every other `run_*` engine: numbers come from
+/// local data, citations are explicit, assumptions are surfaced.
+pub fn run_sinking_fund_scenarios(
+    conn: &mut Connection,
+    funds: Vec<(String, i64, u32)>,
+) -> rusqlite::Result<SinkingFundScenarios> {
+    let _snapshot = build_snapshot(conn).ok();
+    let mut items = Vec::new();
+    let mut total_monthly: i64 = 0;
+    let mut total_annual: i64 = 0;
+    for (name, annual_cents, months_until_due) in funds {
+        let annual = annual_cents.max(0);
+        // Integer monthlyEquivalent (cents*1/12) with half-up rounding: (cents+6)/12
+        // matches `GoalPeriod` monthlyEquivalent pattern, no float drift.
+        let monthly = if annual == 0 { 0 } else { (annual + 6) / 12 };
+        let total_until_due = monthly.saturating_mul(months_until_due as i64);
+        total_monthly = total_monthly.saturating_add(monthly);
+        total_annual = total_annual.saturating_add(annual);
+        items.push(SinkingFundItem { name, annual_cents: annual, months_until_due, monthly_cents: monthly, total_until_due_cents: total_until_due });
+    }
+    let assumptions = vec![
+        "Monthly sinking fund = annual / 12 (rounded half-up, integer cents, no float drift).".to_string(),
+        "Due-date total = monthly × months_until_due (set aside linearly; does not assume interest).".to_string(),
+        "Funds are independent — total monthly is the sum across all sinking funds.".to_string(),
+    ];
+    let mut missing_data = Vec::new();
+    if items.is_empty() {
+        missing_data.push(MissingDataItem::linked("No sinking funds provided — add annual expenses like insurance, taxes, or car maintenance.", "Create sinking funds", AppRoute::Goals.path()));
+    }
+    Ok(SinkingFundScenarios { items, total_monthly_cents: total_monthly, total_annual_cents: total_annual, assumptions, missing_data })
+}
+
 
 /// Add `months` calendar months to a date, clamping the day to the last valid
 /// day of the resulting month.
@@ -3750,6 +3807,28 @@ mod tests {
         assert!(plan.funds.is_empty());
         assert!(plan.missing_data.is_empty());
         assert_eq!(plan.total_shortfall_monthly_cents, 0);
+    }
+
+    #[test]
+    fn run_sinking_fund_scenarios_computes_monthly_for_annual_expenses() {
+        let (_dir, db) = fresh();
+        let mut conn = db.get().unwrap();
+        let scenarios = run_sinking_fund_scenarios(
+            &mut conn,
+            vec![
+                ("Car maintenance".to_string(), 120_000, 12),
+                ("Travel".to_string(), 60_000, 6),
+            ],
+        )
+        .unwrap();
+        assert_eq!(scenarios.items.len(), 2);
+        assert_eq!(scenarios.items[0].monthly_cents, 10_000);
+        assert_eq!(scenarios.items[1].monthly_cents, 5_000);
+        assert_eq!(scenarios.items[0].total_until_due_cents, 120_000);
+        assert_eq!(scenarios.items[1].total_until_due_cents, 30_000);
+        assert_eq!(scenarios.total_monthly_cents, 15_000);
+        assert_eq!(scenarios.total_annual_cents, 180_000);
+        assert!(scenarios.assumptions.iter().any(|a| a.contains("annual / 12")));
     }
 
     #[test]

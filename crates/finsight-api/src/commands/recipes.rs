@@ -223,7 +223,7 @@ pub async fn trigger_recipe(state: &ApiState, id: String) -> AppResult<String> {
             }
         }
     } else {
-        let Some(provider) = provider_opt else {
+        let Some(provider) = &provider_opt else {
             return Err(AppError::new(
                 "no_provider",
                 "Configure an AI provider in Settings → Agent before running recipes.",
@@ -260,8 +260,13 @@ pub async fn trigger_recipe(state: &ApiState, id: String) -> AppResult<String> {
 
     let run_id = recipe_run.id.clone();
     let prompt_for_persist = prompt.clone();
-    let provider_id = provider.provider_id().to_string();
-    let model_id = provider.model_id().to_string();
+    let (provider_id, model_id) = if is_deterministic {
+        ("deterministic".to_string(), "deterministic".to_string())
+    } else {
+        // provider is Some here (else branch returned early if None)
+        let p = provider_opt.as_ref().unwrap();
+        (p.provider_id().to_string(), p.model_id().to_string())
+    };
     match run(&db, move |conn| {
         let result = planner::persist_plan(
             conn,

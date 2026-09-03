@@ -1926,6 +1926,36 @@
         }
       }
     },
+    "/api/rpc/export_transactions_csv": {
+      "post": {
+        "tags": [
+          "finsight_api::commands::transactions"
+        ],
+        "operationId": "export_transactions_csv",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExportTransactionsCsvRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/rpc/forget_agent_memory": {
       "post": {
         "tags": [
@@ -1945,6 +1975,36 @@
         "responses": {
           "200": {
             "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/rpc/get_account_balance_timeline": {
+      "post": {
+        "tags": [
+          "finsight_api::commands::accounts"
+        ],
+        "operationId": "get_account_balance_timeline",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GetAccountBalanceTimelineRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountBalanceTimeline"
+                }
+              }
+            }
           }
         }
       }
