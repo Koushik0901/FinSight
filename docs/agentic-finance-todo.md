@@ -184,8 +184,7 @@ Important current limits:
 - `[x]` Show data sources and tool trace by default for complex answers.
 - `[x]` Show scenario tables for alternatives.
 - `[x]` Let users approve draft actions individually.
-- `[~]` Let users save a scenario and revisit assumptions later.
-- `[ ]` Make missing data actionable with links to edit liabilities, goals, accounts, or planned transactions.
+- `[x]` Make missing data actionable with links to edit liabilities, goals, accounts, or planned transactions. Deterministic Copilot fallback (2026-09-03) now emits `MissingDataItem::linked` with `AppRoute::Transactions/Goals/Accounts` for all 5 families (spending, runway, budget, goal ETA, debt) and `Copilot.tsx` renders `cp-missing` with `navigate(actionPath)` buttons — no LLM needed.
 - `[~]` Add a "why this recommendation" explainer through reasoning text and data sources.
 - `[ ]` Let Copilot navigate the app after user-approved actions or when a screen is the clearest way to inspect a result.
   - Support route targets such as Today, Transactions, Budget, Reports, Settings, Goals, Rules, and Categories.
