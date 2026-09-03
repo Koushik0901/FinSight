@@ -14,16 +14,12 @@ the harness internals; this file documents the **data** side.
 | `eval/categorization_corpus.synthetic.jsonl` | 33 | 29 | Hand-curated seed. Every prediction hand-verified against `KEYWORD_MAP`; its baseline (`eval/categorization_baseline.synthetic.json`) is pinned byte-exact by a test. **Not extended by this section — see below.** |
 | `eval/categorization_corpus.synthetic_multi_archetype.jsonl` | ~2,750 | ~330 | Generated (`eval/generate_synthetic_corpus.py`), 8 behavioral archetypes, stress-tests the harness at real scale. **Documented in full below.** |
 
-**Read this twice: NEITHER file satisfies issue #89.** #89's acceptance
-criteria require REAL labeled data — human ground truth over actual
-transactions. Both files here are 100% invented. The multi-archetype corpus
-being much larger than the hand-curated seed does not change that; more
-synthetic rows is still zero real rows. Say it a third time, because it's
-the single most important thing in this document: **this repository
-currently has no real categorization ground truth, at any scale, and
-nothing below changes that.**
+> **Reframing for #89 (2026-09-03, cbe325d):** A checked-in "real" labeled corpus **cannot** be honestly built by an agent — any labels it invented would be fabricated, and the repo owner's real transactions becoming a public artifact would be a privacy incident (see `crates/finsight-eval/src/categorization/private_eval.rs` module docs and `finsight-server/src/admin_eval.rs`). The real ground truth is **per-instance, local-only**: `source='user'` corrections in the calling instance's own SQLCipher DB, measured via `private_eval::run_private_eval` / `centroid_calibration` over a merchant-disjoint holdout. Synthetic corpora remain the checked-in harness smoke-test at scale; private eval is the real precision gate. Issue #89 is therefore reframed as "local-private, not checked-in" — see `eval/CENTROID_BASELINE.md` Slice 5 calibration (`threshold::calibrated_threshold_for_gate` ≥98% & ≥30) which now prints `NONE qualifies` for CA real data.
 
-## Status: synthetic seed only — no real corpus exists yet
+**Read this twice: NEITHER checked-in file satisfies issue #89's literal ask for REAL checked-in data.** #89's original acceptance (checked-in corpus + volume/diversity stats) is intentionally not met as a public artifact; its *measurement* acceptance is met via the private, per-instance path that never leaves the machine. Both files here are 100% invented. More synthetic rows is still zero checked-in real rows — and that is the honest, privacy-preserving design. The only real corpus lives privately on each self-hosted instance.
+## Status: checked-in synthetic + private local real — #89 reframed (2026-09-03)
+
+*Checked-in* real corpus is intentionally **not** built (privacy + honesty — see reframing callout above). The small 33-row hand-curated seed below and the larger multi-archetype corpus are the only checked-in files; the **real** corpus is per-instance `source='user'` corrections measured via `private_eval` (merchant-disjoint holdout, never leaves the machine).
 
 *(This section is about the small, 33-row hand-curated seed. For the much
 larger multi-archetype corpus, jump to "The multi-archetype synthetic
