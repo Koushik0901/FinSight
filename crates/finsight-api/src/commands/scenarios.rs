@@ -177,11 +177,74 @@ async fn build_snapshot(state: &ApiState) -> AppResult<Snapshot> {
         .map_err(AppError::from)
 }
 
+fn deterministic_scenario_params(description: &str, _snapshot: &Snapshot) -> Option<ScenarioParams> {
+    let lower = description.to_lowercase();
+    // Chip 1: "Cut income 50%" → income -50
+    if lower.contains("cut income") || lower.contains("reduce income") {
+        if let Some(pct) = lower.split('%').next().and_then(|s| s.split_whitespace().last()).and_then(|n| n.parse::<i32>().ok()) {
+            return Some(ScenarioParams { income_delta_pct: -pct, monthly_expense_delta_cents: 0, one_time_cents: 0, start_month_offset: 0, label: description.to_string() });
+        }
+        if lower.contains("50%") { return Some(ScenarioParams { income_delta_pct: -50, monthly_expense_delta_cents: 0, one_time_cents: 0, start_month_offset: 0, label: description.to_string() }); }
+    }
+    // Chip 3: "Buy a car $35k" → one-time $35k
+    if lower.contains("buy a car") || lower.contains("$35k") || lower.contains("35k") {
+        return Some(ScenarioParams { income_delta_pct: 0, monthly_expense_delta_cents: 0, one_time_cents: 3_500_000, start_month_offset: 0, label: description.to_string() });
+    }
+    // Chip 4: "Add $500/mo to savings" → monthly +50000
+    if lower.contains("add $500") || lower.contains("500/mo") || lower.contains("500 per month") {
+        return Some(ScenarioParams { income_delta_pct: 0, monthly_expense_delta_cents: 50_000, one_time_cents: 0, start_month_offset: 0, label: description.to_string() });
+    }
+    // Chip 2: "Eliminate dining out" → monthly -est. Use -20000 as placeholder (avg dining)
+    if lower.contains("eliminate dining") || lower.contains("dining out") {
+        return Some(ScenarioParams { income_delta_pct: 0, monthly_expense_delta_cents: -20_000, one_time_cents: 0, start_month_offset: 0, label: description.to_string() });
+    }
+    // Generic $/mo vs one-time heuristic: look for $ amount
+    let mut amt: Option<i64> = None;
+    for token in lower.split_whitespace() {
+        if token.starts_with('$') {
+            let num = token.trim_start_matches('$').trim_end_matches(',').trim_end_matches('.');
+            let clean = num.replace(',', "");
+            if clean.ends_with('k') {
+                if let Ok(n) = clean.trim_end_matches('k').parse::<i64>() { amt = Some(n * 100_000); }
+            } else if let Ok(n) = clean.parse::<i64>() { amt = Some(n * 100); }
+        }
+    }
+    if let Some(cents) = amt {
+        if lower.contains("/mo") || lower.contains("per month") || lower.contains("monthly") {
+            return Some(ScenarioParams { income_delta_pct: 0, monthly_expense_delta_cents: cents, one_time_cents: 0, start_month_offset: 0, label: description.to_string() });
+        }
+        if lower.contains("buy") || lower.contains("purchase") || lower.contains("one-time") || lower.contains("one time") {
+            return Some(ScenarioParams { income_delta_pct: 0, monthly_expense_delta_cents: 0, one_time_cents: cents, start_month_offset: 0, label: description.to_string() });
+        }
+    }
+    // No heuristic matched — return default with 0 deltas (still deterministic, 0 tokens)
+    // This ensures the planner-null path never pays LLM tokens, even for free-form questions.
+    Some(ScenarioParams { income_delta_pct: 0, monthly_expense_delta_cents: 0, one_time_cents: 0, start_month_offset: 0, label: description.to_string() })
+}
+
 async fn extract_params_via_llm(
     state: &ApiState,
     description: &str,
     snapshot: &Snapshot,
 ) -> AppResult<ScenarioParams> {
+    // Immich-style routing: llm_routing.planner null → deterministic heuristic (0 tokens)
+    let is_deterministic = {
+        let db = state.db.clone();
+        run(&db, |conn| {
+            if let Ok(Some(v)) = finsight_core::settings::get::<serde_json::Value>(conn, "llm_routing") {
+                Ok(v.get("planner").map_or(false, |x| x.is_null()))
+            } else { Ok(false) }
+        })
+        .await
+        .unwrap_or(false)
+    };
+    if is_deterministic {
+        if let Some(p) = deterministic_scenario_params(description, snapshot) {
+            return Ok(p);
+        }
+        // Heuristic always returns Some (default 0 deltas), so this is unreachable, but keep as fallback.
+        return Ok(ScenarioParams { income_delta_pct: 0, monthly_expense_delta_cents: 0, one_time_cents: 0, start_month_offset: 0, label: description.to_string() });
+    }
     let provider = state.agent_provider.read().unwrap().clone();
     let Some(provider) = provider else {
         return Err(AppError::new(

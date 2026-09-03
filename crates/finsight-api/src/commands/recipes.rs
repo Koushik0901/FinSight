@@ -169,13 +169,7 @@ pub async fn trigger_recipe(state: &ApiState, id: String) -> AppResult<String> {
             AppError::new("recipe.not_found", format!("Recipe '{id}' was not found."))
         })?;
 
-    let provider = state.agent_provider.read().unwrap().clone();
-    let Some(provider) = provider else {
-        return Err(AppError::new(
-            "no_provider",
-            "Configure an AI provider in Settings → Agent before running recipes.",
-        ));
-    };
+    let provider_opt = state.agent_provider.read().unwrap().clone();
 
     // Snapshot the ledger epoch before build_context + the LLM call so we can
     // refuse to persist the bundle if a Delete-All lands during the run.
@@ -199,16 +193,53 @@ pub async fn trigger_recipe(state: &ApiState, id: String) -> AppResult<String> {
     };
 
     let prompt = format!("[Recipe: {}] {}", recipe.title, recipe.prompt_template);
-    let llm_json = match provider
-        .complete_json(&planner::build_system_prompt(&ctx), &prompt)
+    // Immich-style routing: llm_routing.planner null → deterministic (0 tokens, planning crate)
+    let is_deterministic = run(&db, |conn| {
+        if let Ok(Some(v)) = finsight_core::settings::get::<serde_json::Value>(conn, "llm_routing") {
+            Ok(v.get("planner").map_or(false, |x| x.is_null()))
+        } else { Ok(false) }
+    })
+    .await
+    .unwrap_or(false);
+    let llm_json = if is_deterministic {
+        match run(&db, {
+            let prompt = prompt.clone();
+            move |conn| finsight_agent::planning::answer_finance_question(conn, &prompt).map_err(|e| finsight_core::error::CoreError::InvalidState(e.to_string()))
+        })
         .await
-    {
-        Ok(json) => json,
-        Err(err) => {
-            let run_id = recipe_run.id.clone();
-            let message = err.to_string();
-            let _ = run(&db, move |conn| recipes::fail_run(conn, &run_id, &message)).await;
-            return Err(AppError::new("recipe.llm", err.to_string()));
+        {
+            Ok(Some(answer)) => serde_json::to_value(&answer).unwrap_or(serde_json::Value::Null),
+            Ok(None) => {
+                let msg = "Planner: deterministic planning found no answer and LLM is disabled by routing";
+                let run_id = recipe_run.id.clone();
+                let _ = run(&db, move |conn| recipes::fail_run(conn, &run_id, msg)).await;
+                return Err(AppError::new("recipe.planner", msg.to_string()));
+            }
+            Err(err) => {
+                let run_id = recipe_run.id.clone();
+                let message = err.to_string();
+                let _ = run(&db, move |conn| recipes::fail_run(conn, &run_id, &message)).await;
+                return Err(AppError::new("recipe.planner", err.to_string()));
+            }
+        }
+    } else {
+        let Some(provider) = provider_opt else {
+            return Err(AppError::new(
+                "no_provider",
+                "Configure an AI provider in Settings → Agent before running recipes.",
+            ));
+        };
+        match provider
+            .complete_json(&planner::build_system_prompt(&ctx), &prompt)
+            .await
+        {
+            Ok(json) => json,
+            Err(err) => {
+                let run_id = recipe_run.id.clone();
+                let message = err.to_string();
+                let _ = run(&db, move |conn| recipes::fail_run(conn, &run_id, &message)).await;
+                return Err(AppError::new("recipe.llm", err.to_string()));
+            }
         }
     };
 
