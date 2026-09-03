@@ -782,8 +782,8 @@ function ModelRoutingSection() {
         <div style={{ marginTop: 16, display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
           <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <span className="muted">fastText threshold</span>
-            <input type="range" min={0.4} max={0.9} step={0.05} value={cfg.fasttextThreshold} onChange={(e) => update({ fasttextThreshold: parseFloat(e.target.value) })} />
-            <span className="num" style={{ minWidth: 32 }}>{cfg.fasttextThreshold.toFixed(2)}</span>
+            <input type="range" min={0.4} max={0.9} step={0.05} value={cfg.fasttextThreshold ?? 0.6} onChange={(e) => update({ fasttextThreshold: parseFloat(e.target.value) })} />
+            <span className="num" style={{ minWidth: 32 }}>{(cfg.fasttextThreshold ?? 0.6).toFixed(2)}</span>
           </label>
           <span className="muted" style={{ fontSize: 12 }}>Rule → fastText ≥ threshold → LLM. Lower = more LLM.</span>
         </div>

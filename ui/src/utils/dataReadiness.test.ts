@@ -16,7 +16,6 @@ const month = (
   incomeCents,
   expenseCents,
   netCents: incomeCents - expenseCents,
-  budgetCents: 0,
 });
 
 const account = (balanceKnown: boolean | undefined): AccountSummary => ({

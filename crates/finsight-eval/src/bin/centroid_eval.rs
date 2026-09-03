@@ -340,6 +340,51 @@ centroid precision by score threshold (holdout)"
             p.n_predicted,
         );
     }
+    // --- Slice 5 calibration (issue #93) ------------------------------------
+    let calibrated = finsight_eval::categorization::threshold::calibrated_threshold_for_gate(&sweep);
+    println!("\nSlice 5 calibration (auto-apply gate: \u{2265}98% precision & \u{2265}30 predictions, holdout sweep):");
+    match &calibrated {
+        Some(pt) => println!(
+            "  QUALIFIED: threshold {:.2} \u{2192} precision {:.1}% ({}/{}), coverage {:.1}% \u{2014} this band WOULD qualify for auto-apply.",
+            pt.threshold,
+            pt.precision.unwrap_or(0.0) * 100.0,
+            pt.n_correct,
+            pt.n_predicted,
+            pt.coverage * 100.0
+        ),
+        None => println!(
+            "  NONE qualifies \u{2014} no confidence band meets the \u{2265}98%/\u{2265}30 gate on this merchant-disjoint holdout.\n  Result: centroid proposals must stay review-only (applied=0), as required by epic #74.\n  This is the measured Slice 5 answer, derived from the holdout curve, not a guessed constant."
+        ),
+    }
+    // --- Slice 7 constrained LLM fallback (issue #95) -------------------------
+    let fallback_matrix = ConfusionMatrix::build("centroid+llm~", &holdout, |ex| {
+        match vector_by_id.get(ex.id.as_str()) {
+            Some(v) => finsight_eval::categorization::centroid_predictor::predict_with_constrained_fallback(
+                v,
+                &ex.merchant_text,
+                &prototypes,
+                MIN_SCORE,
+            ),
+            None => Prediction::abstain(),
+        }
+    });
+    let n_fallback_fired = (fallback_matrix.n_predicted() as i64 - centroid_matrix.n_predicted() as i64).max(0) as u64;
+    println!("\nSlice 7 constrained LLM fallback (bounded to abstain band only):");
+    println!(
+        "  centroid          {:>9.1}% precision {}/{} (coverage {:.1}%)",
+        centroid_matrix.precision().unwrap_or(0.0) * 100.0,
+        centroid_matrix.n_correct(),
+        centroid_matrix.n_predicted(),
+        centroid_matrix.coverage() * 100.0
+    );
+    println!(
+        "  centroid+llm~     {:>9.1}% precision {}/{} (coverage {:.1}%), +{} rows recovered from abstains",
+        fallback_matrix.precision().unwrap_or(0.0) * 100.0,
+        fallback_matrix.n_correct(),
+        fallback_matrix.n_predicted(),
+        fallback_matrix.coverage() * 100.0,
+        n_fallback_fired
+    );
 
     // --- error analysis ----------------------------------------------------
     // Aggregate precision says how often the pass is wrong; it says nothing

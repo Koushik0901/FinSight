@@ -29,6 +29,35 @@ pub async fn forget_agent_memory(state: &ApiState, id: String) -> AppResult<()> 
         .map_err(AppError::from)
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
+pub struct UpsertAgentMemoryRequest {
+    pub kind: String,
+    pub key: String,
+    pub description: String,
+}
+
+#[utoipa::path(post, path = "/api/rpc/upsert_agent_memory",
+    request_body(content = UpsertAgentMemoryRequest), responses((status = 200, description = "Success")))]
+pub async fn upsert_agent_memory(state: &ApiState, kind: String, key: String, description: String) -> AppResult<()> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| {
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = chrono::Utc::now().to_rfc3339();
+        conn.execute(
+            "INSERT INTO agent_memory(id, kind, description, merchant_key, created_at) \
+             VALUES(?1, ?2, ?3, ?4, ?5) \
+             ON CONFLICT(kind, merchant_key) DO UPDATE SET description = excluded.description, created_at = excluded.created_at",
+            rusqlite::params![id, kind, description, key, now],
+        )?;
+        Ok(())
+    })
+    .await
+    .map_err(AppError::from)?;
+    Ok(())
+}
+
 #[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
 #[schema(rename_all = "camelCase")]

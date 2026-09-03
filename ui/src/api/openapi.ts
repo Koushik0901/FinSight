@@ -1185,22 +1185,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/rpc/export_transactions_csv": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["export_transactions_csv"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/rpc/forget_agent_memory": {
         parameters: {
             query?: never;
@@ -1211,22 +1195,6 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["forget_agent_memory"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/rpc/get_account_balance_timeline": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["get_account_balance_timeline"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3997,6 +3965,22 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["update_transaction"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/rpc/upsert_agent_memory": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["upsert_agent_memory"];
         delete?: never;
         options?: never;
         head?: never;
@@ -8370,6 +8354,11 @@ export interface components {
             proposed_rule?: components["schemas"]["ProposedRuleDto"] | null;
             transaction: components["schemas"]["Transaction"];
         };
+        UpsertAgentMemoryRequest: {
+            description: string;
+            key: string;
+            kind: string;
+        };
         /** @enum {string} */
         Urgency: "critical" | "normal" | "low";
         /** @enum {string} */
@@ -9996,29 +9985,6 @@ export interface operations {
             };
         };
     };
-    export_transactions_csv: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ExportTransactionsCsvRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": string;
-                };
-            };
-        };
-    };
     forget_agent_memory: {
         parameters: {
             query?: never;
@@ -10038,29 +10004,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
-            };
-        };
-    };
-    get_account_balance_timeline: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["GetAccountBalanceTimelineRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AccountBalanceTimeline"];
-                };
             };
         };
     };
@@ -13681,6 +13624,28 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["UpdateTxnResult"];
                 };
+            };
+        };
+    };
+    upsert_agent_memory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpsertAgentMemoryRequest"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

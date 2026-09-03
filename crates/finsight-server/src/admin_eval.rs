@@ -24,7 +24,6 @@
 //! `Display` impl — which always bundles the N/merchant counts (and the
 //! small-N caveat, when it applies) together with any percentage. There is
 //! no JSON field a caller could pluck a bare number from.
-
 use crate::auth::AdminUser;
 use crate::state::ServerState;
 use axum::extract::State;
