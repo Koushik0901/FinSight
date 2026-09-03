@@ -1722,146 +1722,80 @@ fn deterministic_copilot_fallback(
     question: &str,
 ) -> Result<Option<AgentAnswer>, finsight_core::CoreError> {
     let q = question.to_lowercase();
+    // 1) Top spending — existing, keep first
     let asks_spending = (q.contains("spend") || q.contains("spent") || q.contains("expense"))
-        && (q.contains("most")
-            || q.contains("top")
-            || q.contains("category")
-            || q.contains("month"));
-    if !asks_spending {
-        return Ok(None);
-    }
-
-    let rows = top_spending_categories_this_month(conn)
-        .map_err(|e| finsight_core::CoreError::InvalidState(e.to_string()))?;
-    if rows.is_empty() {
-        return Ok(Some(AgentAnswer {
-            prose: "I could not find cleared spending transactions for the current month. If this looks wrong, check the transaction dates, account sync status, and whether expenses are imported as negative amounts.".to_string(),
-            reasoning: "The deterministic fallback queried current-month negative transactions grouped by category and found no rows.".to_string(),
-            plan: Vec::new(),
-            trace: vec!["Called tool: get_top_spending_categories".to_string()],
-            changes: Vec::new(),
-            action_label: None,
-            action_path: None,
-            bundle_id: None,
-            assumptions: vec![
-                "Current month is calculated from the local database clock.".to_string(),
-                "Expenses are treated as negative transaction amounts.".to_string(),
-            ],
-            data_sources: vec!["Local transactions table".to_string()],
-            // Nothing imported this month — send them where transactions
-            // come from rather than just stating the gap.
-            missing_data: vec![MissingDataItem::linked(
-                "No current-month expense rows were found.",
-                "Import transactions",
-                finsight_core::routes::AppRoute::Transactions.path(),
-            )],
-            alternatives: Vec::new(),
-            follow_up_questions: vec![
-                "Show the largest individual transactions this month.".to_string(),
-                "Compare this month against last month.".to_string(),
-            ],
-            response_blocks: Vec::new(),
-        }));
-    }
-
-    let total_cents: i64 = rows.iter().map(|row| row.amount_cents).sum();
-    let top = &rows[0];
-    let prose = format!(
-        "Your largest spending category this month is **{}** at {}, across {} transaction{}. That is about {:.0}% of the categorized spending I found for the month.",
-        top.category,
-        format_cents(top.amount_cents),
-        top.transaction_count,
-        if top.transaction_count == 1 { "" } else { "s" },
-        if total_cents > 0 {
-            (top.amount_cents as f64 / total_cents as f64) * 100.0
-        } else {
-            0.0
+        && (q.contains("most") || q.contains("top") || q.contains("category") || q.contains("month"));
+    if asks_spending {
+        let rows = top_spending_categories_this_month(conn).map_err(|e| finsight_core::CoreError::InvalidState(e.to_string()))?;
+        if rows.is_empty() {
+            return Ok(Some(AgentAnswer {
+                prose: "I could not find cleared spending transactions for the current month. If this looks wrong, check the transaction dates, account sync status, and whether expenses are imported as negative amounts.".to_string(),
+                reasoning: "The deterministic fallback queried current-month negative transactions grouped by category and found no rows.".to_string(),
+                plan: Vec::new(),
+                trace: vec!["Called tool: get_top_spending_categories".to_string()],
+                changes: Vec::new(),
+                action_label: None,
+                action_path: None,
+                bundle_id: None,
+                assumptions: vec!["Current month is calculated from the local database clock.".to_string(), "Expenses are treated as negative transaction amounts.".to_string()],
+                data_sources: vec!["Local transactions table".to_string()],
+                missing_data: vec![MissingDataItem::linked("No current-month expense rows were found.", "Import transactions", finsight_core::routes::AppRoute::Transactions.path())],
+                alternatives: Vec::new(),
+                follow_up_questions: vec!["Show the largest individual transactions this month.".to_string(), "Compare this month against last month.".to_string()],
+                response_blocks: Vec::new(),
+            }));
         }
-    );
-
-    let table = AgentResponseBlock::Table(AgentTableBlock {
-        title: Some("Top spending categories this month".to_string()),
-        columns: vec![
-            "Category".to_string(),
-            "Spent".to_string(),
-            "Transactions".to_string(),
-        ],
-        rows: rows
-            .iter()
-            .map(|row| {
-                vec![
-                    row.category.clone(),
-                    format_cents(row.amount_cents),
-                    row.transaction_count.to_string(),
-                ]
-            })
-            .collect(),
-    });
-    let chart = AgentResponseBlock::BarChart(AgentChartBlock {
-        title: Some("Spending by category".to_string()),
-        series_label: Some("Spent".to_string()),
-        data: rows
-            .iter()
-            .map(|row| AgentChartPoint {
-                label: row.category.clone(),
-                value: row.amount_cents as f64 / 100.0,
-            })
-            .collect(),
-    });
-    let metrics = AgentResponseBlock::MetricGrid {
-        metrics: vec![
-            AgentMetricBlock {
-                label: "Top category".to_string(),
-                value: top.category.clone(),
-                detail: Some(format!(
-                    "{} transaction{}",
-                    top.transaction_count,
-                    if top.transaction_count == 1 { "" } else { "s" }
-                )),
-                tone: Some("neutral".to_string()),
-            },
-            AgentMetricBlock {
-                label: "Top category spend".to_string(),
-                value: format_cents(top.amount_cents),
-                detail: Some("Current month".to_string()),
-                tone: Some("warning".to_string()),
-            },
-            AgentMetricBlock {
-                label: "Total in top categories".to_string(),
-                value: format_cents(total_cents),
-                detail: Some(format!("{} categories", rows.len())),
-                tone: Some("neutral".to_string()),
-            },
-        ],
-    };
-
-    Ok(Some(AgentAnswer {
-        prose,
-        reasoning: "Deterministic fallback queried current-month negative transactions, grouped them by category, and ranked categories by total spend.".to_string(),
-        plan: Vec::new(),
-        trace: vec!["Called tool: get_top_spending_categories".to_string()],
-        changes: Vec::new(),
-        action_label: None,
-        action_path: None,
-        bundle_id: None,
-        assumptions: vec![
-            "Current month is calculated from the local database clock.".to_string(),
-            "Expenses are treated as negative transaction amounts.".to_string(),
-            "Uncategorized transactions are grouped as Uncategorized.".to_string(),
-        ],
-        data_sources: vec![
-            "Local transactions table".to_string(),
-            "Local categories table".to_string(),
-        ],
-        missing_data: Vec::new(),
-        alternatives: Vec::new(),
-        follow_up_questions: vec![
-            "Show the largest individual transactions in this category.".to_string(),
-            "Compare this category against last month.".to_string(),
-            "Help me reduce this category next month.".to_string(),
-        ],
-        response_blocks: vec![metrics, table, chart],
-    }))
+        let total_cents: i64 = rows.iter().map(|row| row.amount_cents).sum();
+        let top = &rows[0];
+        let prose = format!("Your largest spending category this month is **{}** at {}, across {} transaction{}. That is about {:.0}% of the categorized spending I found for the month.", top.category, format_cents(top.amount_cents), top.transaction_count, if top.transaction_count == 1 { "" } else { "s" }, if total_cents > 0 { (top.amount_cents as f64 / total_cents as f64) * 100.0 } else { 0.0 });
+        let table = AgentResponseBlock::Table(AgentTableBlock { title: Some("Top spending categories this month".to_string()), columns: vec!["Category".to_string(), "Spent".to_string(), "Transactions".to_string()], rows: rows.iter().map(|row| vec![row.category.clone(), format_cents(row.amount_cents), row.transaction_count.to_string()]).collect() });
+        let chart = AgentResponseBlock::BarChart(AgentChartBlock { title: Some("Spending by category".to_string()), series_label: Some("Spent".to_string()), data: rows.iter().map(|row| AgentChartPoint { label: row.category.clone(), value: row.amount_cents as f64 / 100.0 }).collect() });
+        let metrics = AgentResponseBlock::MetricGrid { metrics: vec![AgentMetricBlock { label: "Top category".to_string(), value: top.category.clone(), detail: Some(format!("{} transaction{}", top.transaction_count, if top.transaction_count == 1 { "" } else { "s" })), tone: Some("neutral".to_string()) }, AgentMetricBlock { label: "Top category spend".to_string(), value: format_cents(top.amount_cents), detail: Some("Current month".to_string()), tone: Some("warning".to_string()) }, AgentMetricBlock { label: "Total in top categories".to_string(), value: format_cents(total_cents), detail: Some(format!("{} categories", rows.len())), tone: Some("neutral".to_string()) }] };
+        return Ok(Some(AgentAnswer { prose, reasoning: "Deterministic fallback queried current-month negative transactions, grouped them by category, and ranked categories by total spend.".to_string(), plan: Vec::new(), trace: vec!["Called tool: get_top_spending_categories".to_string()], changes: Vec::new(), action_label: None, action_path: None, bundle_id: None, assumptions: vec!["Current month is calculated from the local database clock.".to_string(), "Expenses are treated as negative transaction amounts.".to_string(), "Uncategorized transactions are grouped as Uncategorized.".to_string()], data_sources: vec!["Local transactions table".to_string(), "Local categories table".to_string()], missing_data: Vec::new(), alternatives: Vec::new(), follow_up_questions: vec!["Show the largest individual transactions in this category.".to_string(), "Compare this category against last month.".to_string(), "Help me reduce this category next month.".to_string()], response_blocks: vec![metrics, table, chart] }));
+    }
+    // 2) Runway / cashflow — "how long will my money last"
+    let asks_runway = q.contains("runway") || (q.contains("how long") && (q.contains("money") || q.contains("last") || q.contains("burn")));
+    if asks_runway {
+        let total_balance: i64 = conn.query_row("SELECT COALESCE(SUM(balance_cents),0) FROM accounts WHERE archived_at IS NULL", [], |r| r.get(0)).unwrap_or(0);
+        let spent_this_month: i64 = conn.query_row("SELECT COALESCE(SUM(CASE WHEN amount_cents<0 THEN -amount_cents ELSE 0 END),0) FROM transactions WHERE is_transfer=0 AND posted_at >= date('now','start of month')", [], |r| r.get(0)).unwrap_or(0);
+        let day = chrono::Datelike::day(&chrono::Utc::now()) as i64;
+        let daily_burn = if day > 0 { spent_this_month / day } else { 0 };
+        let runway_days = if daily_burn > 0 { total_balance / daily_burn } else { 0 };
+        let prose = if daily_burn > 0 { format!("At your current burn of {} / day, your ${:.0} balance gives about **{} days** of runway.", format_cents(daily_burn), total_balance as f64 / 100.0, runway_days) } else { format!("Your current balance is {}. No burn detected this month yet, so runway is not calculable — check that expenses are imported.", format_cents(total_balance)) };
+        return Ok(Some(AgentAnswer { prose, reasoning: "Deterministic fallback computed runway as total balance / avg daily burn this month.".to_string(), plan: Vec::new(), trace: vec!["Queried accounts and this-month transactions".to_string()], changes: Vec::new(), action_label: None, action_path: None, bundle_id: None, assumptions: vec!["Burn = this-month outflows / day of month".to_string(), "Balance = sum of non-archived accounts".to_string()], data_sources: vec!["Local accounts + transactions".to_string()], missing_data: if daily_burn == 0 { vec![MissingDataItem::linked("No spend this month", "Import transactions", finsight_core::routes::AppRoute::Transactions.path())] } else { Vec::new() }, alternatives: Vec::new(), follow_up_questions: vec!["Show my monthly burn trend.".to_string()], response_blocks: Vec::new() }));
+    }
+    // 3) Budget overages — "which budgets are over"
+    let asks_budget = q.contains("budget") && (q.contains("over") || q.contains("envelope") || q.contains("left"));
+    if asks_budget {
+        let month = chrono::Utc::now().format("%Y-%m").to_string();
+        let over: Vec<(String,i64,i64)> = conn.prepare("SELECT c.label, b.budgeted_cents, COALESCE(SUM(CASE WHEN t.amount_cents<0 THEN -t.amount_cents ELSE 0 END),0) as spent FROM budgets b JOIN categories c ON c.id=b.category_id LEFT JOIN transactions t ON t.category_id=c.id AND t.posted_at >= ?1 AND t.posted_at < date(?1,'+1 month') AND t.is_transfer=0 WHERE b.month=?1 GROUP BY c.label, b.budgeted_cents HAVING spent > b.budgeted_cents").ok().and_then(|mut stmt| stmt.query_map([format!("{}-01", month)], |r| Ok((r.get::<_,String>(0)?, r.get::<_,i64>(1)?, r.get::<_,i64>(2)?))).ok().and_then(|rows| rows.collect::<Result<Vec<_>,_>>().ok()).unwrap_or_default()).unwrap_or_default();
+        if over.is_empty() {
+            return Ok(Some(AgentAnswer { prose: format!("No budget envelopes are over for {} — all spending is within budget.", month), reasoning: "Deterministic fallback checked current-month budgets vs spend.".to_string(), plan: Vec::new(), trace: vec!["Queried budgets + transactions".to_string()], changes: Vec::new(), action_label: None, action_path: None, bundle_id: None, assumptions: vec!["Current month".to_string()], data_sources: vec!["Local budgets + transactions".to_string()], missing_data: Vec::new(), alternatives: Vec::new(), follow_up_questions: vec!["Show my budget vs actual table.".to_string()], response_blocks: Vec::new() }));
+        }
+        let prose = format!("{} envelope{} over budget this month: {}.", over.len(), if over.len()==1 {""} else {"s"}, over.iter().map(|(l,b,s)| format!("{} ({} / {})", l, format_cents(*s), format_cents(*b))).collect::<Vec<_>>().join(", "));
+        return Ok(Some(AgentAnswer { prose, reasoning: "Deterministic fallback compared each envelope's budgeted vs spent.".to_string(), plan: Vec::new(), trace: vec!["Queried budgets + transactions".to_string()], changes: Vec::new(), action_label: None, action_path: None, bundle_id: None, assumptions: vec!["Current month".to_string()], data_sources: vec!["Local budgets + transactions".to_string()], missing_data: Vec::new(), alternatives: Vec::new(), follow_up_questions: vec!["Show my budget vs actual table.".to_string()], response_blocks: Vec::new() }));
+    }
+    // 4) Goal ETA — "when will I reach my goal"
+    let asks_goal_eta = q.contains("goal") && (q.contains("when") || q.contains("eta") || q.contains("reach") || q.contains("how long"));
+    if asks_goal_eta {
+        let goals: Vec<(String,i64,i64)> = conn.prepare("SELECT name, target_cents, current_cents FROM goals WHERE archived_at IS NULL LIMIT 3").ok().and_then(|mut stmt| stmt.query_map([], |r| Ok((r.get::<_,String>(0)?, r.get::<_,i64>(1)?, r.get::<_,i64>(2)?))).ok().and_then(|rows| rows.collect::<Result<Vec<_>,_>>().ok()).unwrap_or_default()).unwrap_or_default();
+        if goals.is_empty() {
+            return Ok(Some(AgentAnswer { prose: "You have no active goals. Create a goal in Goals to get an ETA.".to_string(), reasoning: "Deterministic fallback listed goals and found none.".to_string(), plan: Vec::new(), trace: vec!["Queried goals".to_string()], changes: Vec::new(), action_label: None, action_path: None, bundle_id: None, assumptions: Vec::new(), data_sources: vec!["Local goals".to_string()], missing_data: vec![MissingDataItem::linked("No goals", "Create a goal", finsight_core::routes::AppRoute::Goals.path())], alternatives: Vec::new(), follow_up_questions: Vec::new(), response_blocks: Vec::new() }));
+        }
+        let prose = goals.iter().map(|(n,t,c)| format!("{}: {} / {} ({:.0}%)", n, format_cents(*c), format_cents(*t), if *t>0 { *c as f64 / *t as f64 *100.0 } else {0.0})).collect::<Vec<_>>().join("; ");
+        return Ok(Some(AgentAnswer { prose: format!("Your goals: {}. Tell me your monthly contribution to get an ETA.", prose), reasoning: "Deterministic fallback listed active goals.".to_string(), plan: Vec::new(), trace: vec!["Queried goals".to_string()], changes: Vec::new(), action_label: None, action_path: None, bundle_id: None, assumptions: Vec::new(), data_sources: vec!["Local goals".to_string()], missing_data: Vec::new(), alternatives: Vec::new(), follow_up_questions: vec!["How much can you save per month?".to_string()], response_blocks: Vec::new() }));
+    }
+    // 5) Debt payoff — snowball/avalanche
+    let asks_debt = q.contains("debt") && (q.contains("payoff") || q.contains("avalanche") || q.contains("snowball") || q.contains("which first"));
+    if asks_debt {
+        let debts: Vec<(String,i64)> = conn.prepare("SELECT name, balance_cents FROM liabilities WHERE archived_at IS NULL ORDER BY balance_cents ASC LIMIT 5").ok().and_then(|mut stmt| stmt.query_map([], |r| Ok((r.get::<_,String>(0)?, r.get::<_,i64>(1)?))).ok().and_then(|rows| rows.collect::<Result<Vec<_>,_>>().ok()).unwrap_or_default()).unwrap_or_default();
+        if debts.is_empty() {
+            return Ok(Some(AgentAnswer { prose: "No debts found. Add liabilities in Accounts to get a payoff ranking.".to_string(), reasoning: "Deterministic fallback listed liabilities and found none.".to_string(), plan: Vec::new(), trace: vec!["Queried liabilities".to_string()], changes: Vec::new(), action_label: None, action_path: None, bundle_id: None, assumptions: Vec::new(), data_sources: vec!["Local liabilities".to_string()], missing_data: vec![MissingDataItem::linked("No liabilities", "Add debt", finsight_core::routes::AppRoute::Accounts.path())], alternatives: Vec::new(), follow_up_questions: Vec::new(), response_blocks: Vec::new() }));
+        }
+        let prose = format!("Debts by snowball (smallest first): {}. Avalanche would sort by APR — tell me APRs if you want that ranking.", debts.iter().map(|(n,b)| format!("{} ({})", n, format_cents(*b))).collect::<Vec<_>>().join(", "));
+        return Ok(Some(AgentAnswer { prose, reasoning: "Deterministic fallback ranked liabilities by balance ASC (snowball).".to_string(), plan: Vec::new(), trace: vec!["Queried liabilities".to_string()], changes: Vec::new(), action_label: None, action_path: None, bundle_id: None, assumptions: vec!["Snowball = smallest balance first".to_string()], data_sources: vec!["Local liabilities".to_string()], missing_data: Vec::new(), alternatives: Vec::new(), follow_up_questions: vec!["Show avalanche order.".to_string()], response_blocks: Vec::new() }));
+    }
+    Ok(None)
 }
 
 struct SpendingCategoryRow {
