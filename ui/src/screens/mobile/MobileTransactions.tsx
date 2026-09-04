@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useAccounts } from "../../api/hooks/accounts";
 import { useCategoriesWithSpending } from "../../api/hooks/transactions";
-import { useInfiniteTransactions, TXN_PAGE_SIZE } from "../../api/hooks/transactions";
+import { useInfiniteTransactions } from "../../api/hooks/transactions";
 import type { Transaction, TxnFilterInput } from "../../api/openapiClient";
 import { money } from "../../utils/format";
 import { useDebouncedValue } from "../../utils/useDebouncedValue";
@@ -63,7 +63,7 @@ export default function MobileTransactions() {
 
   const filterValue: Omit<TxnFilterInput, "limit" | "offset"> = useMemo(() => {
     let startDate: string | null = null;
-    let endDate: string | null = null;
+    const endDate: string | null = null;
     if (dateRange !== "all") {
       const now = new Date();
       if (dateRange === "week") {
@@ -229,7 +229,6 @@ export default function MobileTransactions() {
               const acct = accountById[t.account_id];
               const spendType = spendingTypeLabel(t.category_id ?? null, categories as unknown as Array<{ id: string; spendingType?: string; label: string }>);
               const subtitle = `${catLabel ?? "Uncategorized"}${spendType ? ` · ${spendType}` : ""} · ${relativeDate(t.posted_at)}${acct ? ` · ${acct.name}` : ""}`;
-              const amt = money(t.amount_cents, { currency: primaryCurrency });
               // Keep desktop snake_case + mobile camelCase both covered
               const isAnomaly = (t as unknown as { is_anomaly?: boolean }).is_anomaly ?? t.is_anomaly ?? false;
               return (

@@ -67,7 +67,8 @@ function SavingsRateSparkline({ points }: { points: Array<{ month: string; savin
 
   return (
     <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} aria-label="Savings rate history">
-      <path d={path} fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" />
+      {/* Mount-only draw-in: history refetches only on month nav, no keying. */}
+      <path className="plot-draw" pathLength={1} d={path} fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" />
     </svg>
   );
 }

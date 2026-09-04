@@ -1,6 +1,6 @@
 import React from "react";
 import { afterEach, describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { axe } from "vitest-axe";
 import Settings from "./Settings";
 import { createWrapper } from "../test-utils";
@@ -55,6 +55,18 @@ vi.mock("../api/hooks/agent", () => ({
   })),
   useTriggerCategorize: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
   useListProviderModels: vi.fn(() => ({ data: ["llama3.2"] })),
+  useModelRouting: vi.fn(() => ({
+    data: {
+      fasttextThreshold: 0.6,
+      categorization: null,
+      complexityRouter: null,
+      copilotRouter: null,
+      copilotSynthesizer: null,
+      planner: null,
+      title: null,
+    },
+  })),
+  useSetModelRouting: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false })),
 }));
 vi.mock("../api/openapiClient", () => ({
   unwrap: async (p: Promise<{ status: "ok" | "error"; data?: unknown; error?: { message: string } }>) => { const r = await p; if (r.status === "error") throw new Error(r.error?.message ?? "command failed"); return r.data; },
@@ -129,6 +141,7 @@ vi.mock("../api/hooks/metrics", () => ({
 vi.mock("../api/hooks/agentMemory", () => ({
   useAgentMemory: vi.fn(() => ({ data: [{ id: "m1", kind: "correction", description: "Amazon is Shopping, not Uncategorized", merchantKey: "amazon", createdAt: "2026-01-01" }] })),
   useForgetAgentMemory: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false })),
+  useUpsertAgentMemory: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false })),
 }));
 vi.mock("../api/hooks/simplefin", () => ({
   useSimpleFinStatus: vi.fn(() => ({ data: { configured: false } })),
@@ -268,7 +281,10 @@ describe("Settings — AI Provider panel", () => {
 
     fireEvent.change(screen.getByPlaceholderText(/e\.g\. gpt-4o-mini/i), { target: { value: "gpt-4o-mini" } });
     fireEvent.change(screen.getByPlaceholderText(/sk-…/i), { target: { value: "sk-or-test" } });
-    fireEvent.click(screen.getByRole("button", { name: /save/i }));
+    // The Agent section's "Save preference" button is also on the page; click the
+    // provider panel's Save (same footer row as the panel-only Cancel button).
+    const providerFooter = screen.getByRole("button", { name: "Cancel" }).parentElement as HTMLElement;
+    fireEvent.click(within(providerFooter).getByRole("button", { name: /^save$/i }));
 
     await waitFor(() => {
       expect(saveKey).toHaveBeenCalledWith({ providerId: "openrouter", key: "sk-or-test" });

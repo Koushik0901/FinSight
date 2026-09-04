@@ -34,7 +34,7 @@ export function SegmentBar({
       <div className="cp-bar-track">
         <div
           data-testid="segment-bar-fill"
-          className="cp-bar-fill"
+          className="cp-bar-fill plot-grow-x"
           style={{ width: `${pct}%`, background: color, opacity: dimmed ? 0.4 : 1 }}
         />
       </div>
@@ -98,7 +98,7 @@ export function ConfidenceBadge({ confidence, color }: { confidence: number; col
   return (
     <div className="cp-conf">
       <div className="cp-conf-track">
-        <div data-testid="confidence-fill" className="cp-conf-fill" style={{ width: `${pct}%`, background: color }} />
+        <div data-testid="confidence-fill" className="cp-conf-fill plot-grow-x" style={{ width: `${pct}%`, background: color }} />
       </div>
       <span className="cp-conf-num mono">{pct}%</span>
     </div>

@@ -15,6 +15,7 @@ import { unwrap } from "../api/openapiClient";
 import PlanNextMonthModal from "./PlanNextMonthModal";
 import EmptyState from "../components/EmptyState";
 import PageHeader from "../components/PageHeader";
+import Reveal from "../components/Reveal";
 import { money } from "../utils/format";
 import { getBudgetReadiness } from "../utils/dataReadiness";
 type SortKey = "group" | "stress" | "size" | "activity";
@@ -179,14 +180,15 @@ function EnvelopeCard({ env, editing, onEdit, donor, memberShareCents, memberNam
   const perDay = remaining > 0 ? Math.round(remaining / daysLeft) : 0;
 
   return (
-    <div
-      className="card"
-      style={{
-        padding: 22,
-        borderColor: status.tone === "negative" ? "var(--negative)" : status.tone === "warning" ? "var(--warning)" : "var(--line)",
-        background: status.tone === "negative" ? "var(--negative-2)" : status.tone === "warning" ? "var(--warning-2)" : "var(--surface)",
-      }}
-    >
+    <Reveal>
+      <div
+        className="card"
+        style={{
+          padding: 22,
+          borderColor: status.tone === "negative" ? "var(--negative)" : status.tone === "warning" ? "var(--warning)" : "var(--line)",
+          background: status.tone === "negative" ? "var(--negative-2)" : status.tone === "warning" ? "var(--warning-2)" : "var(--surface)",
+        }}
+      >
       <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
         <div>
           <div className="row row-sm" style={{ alignItems: "center", marginBottom: 8 }}>
@@ -204,6 +206,7 @@ function EnvelopeCard({ env, editing, onEdit, donor, memberShareCents, memberNam
 
       <div className="goal-bar" style={{ marginTop: 16, height: 7 }}>
         <span
+          className="plot-grow-x"
           style={{
             width: `${pct}%`,
             background: status.tone === "negative" ? "var(--negative)" : status.tone === "warning" ? "var(--warning)" : env.categoryColor || "var(--accent)",
@@ -278,7 +281,8 @@ function EnvelopeCard({ env, editing, onEdit, donor, memberShareCents, memberNam
       <div className="row row-sm" style={{ marginTop: 14 }}>
         <button className="btn ghost sm" type="button" onClick={onEdit}>{editing ? "Editing…" : env.budgetCents > 0 ? "Adjust budget" : "Set budget"}</button>
       </div>
-    </div>
+      </div>
+    </Reveal>
   );
 }
 
@@ -867,7 +871,6 @@ export default function Budget() {
       });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      const lower = msg.toLowerCase();
       const isLocked = msg.includes("MONTH_LOCKED");
       if (isLocked) {
         setGoalLockedPendingGoalId(firstGoal.id);

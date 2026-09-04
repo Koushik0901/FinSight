@@ -23,7 +23,10 @@ export function SpendTimelineCard({ block }: { block: Block }) {
           >
             {p.annotation && <span className="cp-tl-note">{p.annotation}</span>}
             <span className="cp-tl-val mono">{money(p.amountCents)}</span>
-            <div className="cp-tl-bar" style={{ height: `${Math.max(4, (p.amountCents / max) * 100)}%` }} />
+            <div
+              className="cp-tl-bar plot-grow-y"
+              style={{ height: `${Math.max(4, (p.amountCents / max) * 100)}%`, animationDelay: `${Math.min(i, 5) * 40}ms` }}
+            />
             <span className="cp-tl-label">{p.label}</span>
           </div>
         ))}

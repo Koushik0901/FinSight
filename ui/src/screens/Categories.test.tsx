@@ -31,6 +31,7 @@ vi.mock("../api/hooks/transactions", () => ({
   })),
   useCreateCategoryGroup: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue({ id: "g3", label: "New Group", hint: null, sort_order: 2 }), isPending: false })),
   useSetCategoryGroup: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false })),
+  useSetCategoryRollover: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false })),
 }));
 
 describe("Categories — empty state", () => {

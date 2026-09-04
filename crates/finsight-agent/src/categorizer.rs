@@ -40,7 +40,10 @@ fn routing_threshold(conn: &rusqlite::Connection) -> f64 {
     LOW_CONFIDENCE_THRESHOLD
 }
 
-fn provider_for_categorization(conn: &rusqlite::Connection, fallback: Arc<dyn CompletionProvider>) -> Arc<dyn CompletionProvider> {
+fn provider_for_categorization(
+    conn: &rusqlite::Connection,
+    fallback: Arc<dyn CompletionProvider>,
+) -> Arc<dyn CompletionProvider> {
     // If `llm_routing.categorization` is set, build that provider; else use global fallback.
     // `llm_routing` is the Immich-style per-task table (None → deterministic, already handled).
     if let Ok(Some(v)) = finsight_core::settings::get::<serde_json::Value>(conn, "llm_routing") {
@@ -50,8 +53,14 @@ fn provider_for_categorization(conn: &rusqlite::Connection, fallback: Arc<dyn Co
             if let Some(kind) = cfg.get("kind").and_then(|k| k.as_str()) {
                 match kind {
                     "ollama" => {
-                        if let (Some(base_url), Some(model)) = (cfg.get("base_url").and_then(|s| s.as_str()), cfg.get("model").and_then(|s| s.as_str())) {
-                            return Arc::new(crate::providers::ollama::OllamaProvider::new(base_url.to_string(), model.to_string()));
+                        if let (Some(base_url), Some(model)) = (
+                            cfg.get("base_url").and_then(|s| s.as_str()),
+                            cfg.get("model").and_then(|s| s.as_str()),
+                        ) {
+                            return Arc::new(crate::providers::ollama::OllamaProvider::new(
+                                base_url.to_string(),
+                                model.to_string(),
+                            ));
                         }
                     }
                     "openai_compat" | "openai" => {
@@ -74,7 +83,6 @@ struct LlmResult {
     confidence: f64,
     rationale: String,
 }
-
 
 pub async fn run_job(
     db: &Db,
@@ -241,7 +249,9 @@ pub async fn run_job(
                     Ok(model) => {
                         let threshold: f64 = {
                             let conn = db.get().ok();
-                            conn.as_ref().map(|c| routing_threshold(c)).unwrap_or(LOW_CONFIDENCE_THRESHOLD)
+                            conn.as_ref()
+                                .map(|c| routing_threshold(c))
+                                .unwrap_or(LOW_CONFIDENCE_THRESHOLD)
                         };
                         let mut accepted: Vec<(String, String, f64)> = Vec::new();
                         let mut fallthrough: Vec<(String, String, i64)> = Vec::new();
@@ -249,11 +259,10 @@ pub async fn run_job(
                             if superseded() {
                                 return Ok(());
                             }
-                            let text =
-                                crate::fasttext_predict::merchant_text_for_model(
-                                    &merchant_raw,
-                                    amount_cents,
-                                );
+                            let text = crate::fasttext_predict::merchant_text_for_model(
+                                &merchant_raw,
+                                amount_cents,
+                            );
                             let pred = tokio::task::spawn_blocking({
                                 let m = model.clone();
                                 let t = text.clone();
@@ -381,7 +390,9 @@ pub async fn run_job(
     // global `provider` passed from `AgentHandle`.
     let should_llm = {
         if let Ok(conn) = db.get() {
-            if let Ok(Some(v)) = finsight_core::settings::get::<serde_json::Value>(&conn, "llm_routing") {
+            if let Ok(Some(v)) =
+                finsight_core::settings::get::<serde_json::Value>(&conn, "llm_routing")
+            {
                 // `categorization: null` or missing → skip LLM
                 !v.get("categorization").map_or(true, |x| x.is_null())
             } else {
@@ -404,7 +415,6 @@ pub async fn run_job(
         let system_prompt = build_system_prompt(&categories, &recent_examples);
 
         for chunk in remaining_for_llm.chunks(LLM_BATCH_SIZE) {
-
             // A Delete-All / factory reset between batches aborts the rest of the
             // run: the following LLM call + writes would target a wiped ledger.
             // (Cheap bail before we spend an LLM round-trip; the lease below is the
@@ -416,74 +426,75 @@ pub async fn run_job(
             // JSON) skips this chunk and continues rather than aborting the entire job.
             let chunk_result = async {
                 let user_prompt = build_user_prompt(chunk);
-                let raw = llm_provider.complete_json(&system_prompt, &user_prompt).await?;
+                let raw = llm_provider
+                    .complete_json(&system_prompt, &user_prompt)
+                    .await?;
                 let results: Vec<LlmResult> = serde_json::from_value(raw)?;
                 Ok::<Vec<LlmResult>, anyhow::Error>(results)
             }
             .await;
 
+            let results = match chunk_result {
+                Ok(r) => r,
+                Err(e) => {
+                    tracing::error!("[categorizer] chunk failed, skipping: {e}");
+                    on_event(AgentEvent::CategorizationProgress {
+                        import_id: import_id.clone(),
+                        done: categorized,
+                        total,
+                    });
+                    continue;
+                }
+            };
 
-        let results = match chunk_result {
-            Ok(r) => r,
-            Err(e) => {
-                tracing::error!("[categorizer] chunk failed, skipping: {e}");
-                on_event(AgentEvent::CategorizationProgress {
-                    import_id: import_id.clone(),
-                    done: categorized,
-                    total,
-                });
-                continue;
+            // The txn_ids actually sent in this chunk. The LLM sometimes echoes a
+            // garbled or hallucinated id; writing it would violate the
+            // categorizations.txn_id foreign key and abort the whole job.
+            let chunk_txn_ids: std::collections::HashSet<&str> =
+                chunk.iter().map(|(id, _, _)| id.as_str()).collect();
+
+            // Hold one reset lease across this chunk's writes. A Delete-All draining
+            // the barrier waits for it, so these categorizations can only land
+            // before the wipe; and if a reset already committed, `superseded()` is
+            // true and we stop before writing into the wiped ledger.
+            let lease = db.reset_barrier().writer_lease(start_epoch).await;
+            if lease.superseded() {
+                return Ok(());
             }
-        };
-
-        // The txn_ids actually sent in this chunk. The LLM sometimes echoes a
-        // garbled or hallucinated id; writing it would violate the
-        // categorizations.txn_id foreign key and abort the whole job.
-        let chunk_txn_ids: std::collections::HashSet<&str> =
-            chunk.iter().map(|(id, _, _)| id.as_str()).collect();
-
-        // Hold one reset lease across this chunk's writes. A Delete-All draining
-        // the barrier waits for it, so these categorizations can only land
-        // before the wipe; and if a reset already committed, `superseded()` is
-        // true and we stop before writing into the wiped ledger.
-        let lease = db.reset_barrier().writer_lease(start_epoch).await;
-        if lease.superseded() {
-            return Ok(());
-        }
-        // Collect valid results first — category and txn validation outside the
-        // transaction so only well-formed rows enter the atomic batch.
-        let model_id = llm_provider.model_id().to_string();
-        let mut valid: Vec<(String, String, f64, String)> = Vec::new();
-        for r in &results {
-            if !valid_category_ids.contains(&r.category_id) {
-                tracing::warn!(
+            // Collect valid results first — category and txn validation outside the
+            // transaction so only well-formed rows enter the atomic batch.
+            let model_id = llm_provider.model_id().to_string();
+            let mut valid: Vec<(String, String, f64, String)> = Vec::new();
+            for r in &results {
+                if !valid_category_ids.contains(&r.category_id) {
+                    tracing::warn!(
                     "[categorizer] LLM returned unknown category_id '{}' for txn '{}', skipping",
                     r.category_id,
                     r.txn_id
                 );
-                continue;
+                    continue;
+                }
+                if !chunk_txn_ids.contains(r.txn_id.as_str()) {
+                    tracing::warn!(
+                        "[categorizer] LLM returned unknown txn_id '{}', skipping",
+                        r.txn_id
+                    );
+                    continue;
+                }
+                valid.push((
+                    r.txn_id.clone(),
+                    r.category_id.clone(),
+                    r.confidence,
+                    r.rationale.clone(),
+                ));
             }
-            if !chunk_txn_ids.contains(r.txn_id.as_str()) {
-                tracing::warn!(
-                    "[categorizer] LLM returned unknown txn_id '{}', skipping",
-                    r.txn_id
-                );
-                continue;
-            }
-            valid.push((
-                r.txn_id.clone(),
-                r.category_id.clone(),
-                r.confidence,
-                r.rationale.clone(),
-            ));
-        }
-        if !valid.is_empty() {
-            let db_for_chunk = db.clone();
-            let valid_for_task = valid.clone();
-            let model_for_task = model_id.clone();
-            // One transaction for the whole chunk — like repos/rules.rs:90-104.
-            // A mid-batch failure rolls back the entire chunk rather than leaving
-            let write_res = tokio::task::spawn_blocking(move || {
+            if !valid.is_empty() {
+                let db_for_chunk = db.clone();
+                let valid_for_task = valid.clone();
+                let model_for_task = model_id.clone();
+                // One transaction for the whole chunk — like repos/rules.rs:90-104.
+                // A mid-batch failure rolls back the entire chunk rather than leaving
+                let write_res = tokio::task::spawn_blocking(move || {
                 let mut conn = db_for_chunk.get()?;
                 let tx = conn.transaction()?;
                 {
@@ -535,41 +546,47 @@ pub async fn run_job(
                 Ok::<_, anyhow::Error>(valid_for_task.len() as u32)
             })
             .await;
-            match write_res {
-                Ok(Ok(n)) => categorized += n,
-                Ok(Err(e)) => {
-                    tracing::error!("[categorizer] chunk transaction failed, rolled back: {e}");
-                    if let Ok(conn) = db.get() {
-                        let mut warnings: Vec<String> =
-                            finsight_core::settings::get(&conn, "data.agent_warnings")
-                                .unwrap_or(None)
-                                .unwrap_or_default();
-                        warnings.push(format!("categorizer chunk failed: {e}"));
-                        let _ =
-                            finsight_core::settings::set(&conn, "data.agent_warnings", &warnings);
+                match write_res {
+                    Ok(Ok(n)) => categorized += n,
+                    Ok(Err(e)) => {
+                        tracing::error!("[categorizer] chunk transaction failed, rolled back: {e}");
+                        if let Ok(conn) = db.get() {
+                            let mut warnings: Vec<String> =
+                                finsight_core::settings::get(&conn, "data.agent_warnings")
+                                    .unwrap_or(None)
+                                    .unwrap_or_default();
+                            warnings.push(format!("categorizer chunk failed: {e}"));
+                            let _ = finsight_core::settings::set(
+                                &conn,
+                                "data.agent_warnings",
+                                &warnings,
+                            );
+                        }
                     }
-                }
-                Err(e) => {
-                    tracing::error!("[categorizer] chunk task join error: {e}");
-                    if let Ok(conn) = db.get() {
-                        let mut warnings: Vec<String> =
-                            finsight_core::settings::get(&conn, "data.agent_warnings")
-                                .unwrap_or(None)
-                                .unwrap_or_default();
-                        warnings.push(format!("categorizer join error: {e}"));
-                        let _ =
-                            finsight_core::settings::set(&conn, "data.agent_warnings", &warnings);
+                    Err(e) => {
+                        tracing::error!("[categorizer] chunk task join error: {e}");
+                        if let Ok(conn) = db.get() {
+                            let mut warnings: Vec<String> =
+                                finsight_core::settings::get(&conn, "data.agent_warnings")
+                                    .unwrap_or(None)
+                                    .unwrap_or_default();
+                            warnings.push(format!("categorizer join error: {e}"));
+                            let _ = finsight_core::settings::set(
+                                &conn,
+                                "data.agent_warnings",
+                                &warnings,
+                            );
+                        }
                     }
                 }
             }
+            drop(lease);
+            on_event(AgentEvent::CategorizationProgress {
+                import_id: import_id.clone(),
+                done: categorized,
+                total,
+            });
         }
-        drop(lease);
-        on_event(AgentEvent::CategorizationProgress {
-            import_id: import_id.clone(),
-            done: categorized,
-            total,
-        });
-    }
     }
 
     // If a Delete-All has begun, stop here. The remaining post-run steps are
@@ -725,7 +742,9 @@ fn load_low_confidence(conn: &mut rusqlite::Connection) -> Result<Vec<(String, S
                 WHERE p.txn_id = transactions.id AND p.status <> 'pending') \
          ORDER BY ai_confidence ASC, posted_at DESC",
     )?;
-    let rows = stmt.query_map(rusqlite::params![LOW_CONFIDENCE_THRESHOLD], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+    let rows = stmt.query_map(rusqlite::params![LOW_CONFIDENCE_THRESHOLD], |r| {
+        Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+    })?;
     let mut out = Vec::new();
     for r in rows {
         out.push(r?);

@@ -14,6 +14,7 @@ import GoalDrawer from "../components/GoalDrawer";
 import EmptyState from "../components/EmptyState";
 import { ExplainDrawer } from "../components/ExplainInspector";
 import PageHeader from "../components/PageHeader";
+import Reveal from "../components/Reveal";
 
 type GoalFilter = "all" | "save-by-date" | "build-balance" | "debt-payoff" | "spending-cap" | "sinking-fund" | "needed-for-spending";
 
@@ -83,7 +84,6 @@ function paceLabel(goal: GoalDto) {
   }
   return { label: "On track", className: "chip accent" };
 }
-
 function GoalCard({ goal, onEdit, onExplain, linkedAccountName, onTogglePause, pausePending, pausedByUser }: { goal: GoalDto; onEdit: (goal: GoalDto) => void; onExplain: (goal: GoalDto) => void; linkedAccountName: string | null; onTogglePause: (goal: GoalDto) => void; pausePending: boolean; pausedByUser: boolean }) {
   const pct = goal.targetCents > 0 ? Math.min(100, Math.round((goal.currentCents / goal.targetCents) * 100)) : 0;
   const pace = paceLabel(goal);
@@ -94,7 +94,8 @@ function GoalCard({ goal, onEdit, onExplain, linkedAccountName, onTogglePause, p
   const displayMonthly = money(monthlyEquivalentCents(goal));
 
   return (
-    <div className="card" style={{ padding: 22 }}>
+    <Reveal>
+      <div className="card" style={{ padding: 22 }}>
       <div className="goal-card-row">
         <div>
           <div className="row row-sm wrap" style={{ marginBottom: 10 }}>
@@ -149,7 +150,8 @@ function GoalCard({ goal, onEdit, onExplain, linkedAccountName, onTogglePause, p
           </div>
         </div>
       </div>
-    </div>
+      </div>
+    </Reveal>
   );
 }
 
@@ -169,7 +171,10 @@ export function monthsUntil(targetDate: string | null, now: Date = new Date()): 
   today.setHours(0, 0, 0, 0);
   const diffMs = target.getTime() - today.getTime();
   const diffDays = diffMs / (1000 * 60 * 60 * 24);
-  return Math.ceil(diffDays / 30);
+  // A target that is today or already past has 0 months left — never a
+  // negative count. (Math.ceil of a small negative fraction is -0, and callers
+  // and tests compare the result with Object.is, so -0 must not escape.)
+  return Math.max(0, Math.ceil(diffDays / 30));
 }
 
 export function requiredMonthly(goal: GoalDto, now: Date = new Date()): number {
@@ -284,42 +289,44 @@ function GoalsHorizon({ goals }: { goals: GoalDto[] }) {
           <h2 className="h1" style={{ fontSize: 22, marginTop: 4 }}>When each goal lands.</h2>
         </div>
       </div>
-      <div className="card" style={{ padding: 26 }}>
-        <div style={{ position: "relative", height: 20, marginBottom: 8 }}>
-          {ticks.map((tick, i) =>
-            i === ticks.length - 1 ? (
-              <span key={i} className="muted mono" style={{ position: "absolute", right: 0, fontSize: 11, whiteSpace: "nowrap" }}>{tick.label}</span>
-            ) : (
-              <span key={i} className="muted mono" style={{ position: "absolute", left: `${tick.xPercent}%`, fontSize: 11, whiteSpace: "nowrap" }}>{tick.label}</span>
-            )
-          )}
-        </div>
-        <div style={{ position: "relative", paddingTop: 8 }}>
-          <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 2, background: "var(--accent)", boxShadow: "0 0 8px var(--accent)" }} />
-          {rows.map((row) => {
-            const color = row.needsAttention ? "var(--negative)" : "var(--accent)";
-            const labelOnLeft = row.xPercent > 50;
-            const labelStyle = labelOnLeft
-              ? { position: "absolute" as const, right: `calc(${100 - row.xPercent}% + 14px)`, top: "50%", transform: "translateY(-50%)", fontSize: 13, whiteSpace: "nowrap" as const, textAlign: "right" as const }
-              : { position: "absolute" as const, left: `calc(${row.xPercent}% + 14px)`, top: "50%", transform: "translateY(-50%)", fontSize: 13, whiteSpace: "nowrap" as const };
-            const required = requiredMonthly(row.goal);
-            const underfunded = Math.max(0, required - row.goal.monthlyCents);
-            const tooltip = underfunded > 0 ? `Need ${money(required)}/mo to hit target` : undefined;
-            return (
-              <div key={row.goal.id} style={{ position: "relative", height: 44, display: "flex", alignItems: "center" }} title={tooltip}>
-                <div style={{ position: "absolute", left: 0, top: "50%", width: `${row.xPercent}%`, height: 1, background: "var(--hairline)" }} />
-                <div style={{ position: "absolute", left: 0, top: "50%", width: `${(row.xPercent * row.pct) / 100}%`, height: 2, background: color }} />
-                <div style={{ position: "absolute", left: `${row.xPercent}%`, top: "50%", transform: "translate(-50%, -50%)", width: 10, height: 10, borderRadius: "50%", border: `2px solid ${color}`, background: "var(--surface)" }} />
-                <div style={labelStyle}>
-                  {row.goal.name} <span className="muted mono" style={{ fontSize: 12 }}>· {etaLabel(row.months)} · <span className="blurable">{money(row.goal.targetCents)}</span></span>
-                  {row.needsAttention && <span className="mono" style={{ fontSize: 12, color: "var(--negative)" }}> · Behind schedule</span>}
-                  {underfunded > 0 && <span className="mono" style={{ fontSize: 12, color: "var(--negative)" }} title={tooltip}> · Need {money(required)}/mo</span>}
+      <Reveal>
+        <div className="card" style={{ padding: 26 }}>
+          <div style={{ position: "relative", height: 20, marginBottom: 8 }}>
+            {ticks.map((tick, i) =>
+              i === ticks.length - 1 ? (
+                <span key={i} className="muted mono" style={{ position: "absolute", right: 0, fontSize: 11, whiteSpace: "nowrap" }}>{tick.label}</span>
+              ) : (
+                <span key={i} className="muted mono" style={{ position: "absolute", left: `${tick.xPercent}%`, fontSize: 11, whiteSpace: "nowrap" }}>{tick.label}</span>
+              )
+            )}
+          </div>
+          <div style={{ position: "relative", paddingTop: 8 }}>
+            <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 2, background: "var(--accent)", boxShadow: "0 0 8px var(--accent)" }} />
+            {rows.map((row) => {
+              const color = row.needsAttention ? "var(--negative)" : "var(--accent)";
+              const labelOnLeft = row.xPercent > 50;
+              const labelStyle = labelOnLeft
+                ? { position: "absolute" as const, right: `calc(${100 - row.xPercent}% + 14px)`, top: "50%", transform: "translateY(-50%)", fontSize: 13, whiteSpace: "nowrap" as const, textAlign: "right" as const }
+                : { position: "absolute" as const, left: `calc(${row.xPercent}% + 14px)`, top: "50%", transform: "translateY(-50%)", fontSize: 13, whiteSpace: "nowrap" as const };
+              const required = requiredMonthly(row.goal);
+              const underfunded = Math.max(0, required - row.goal.monthlyCents);
+              const tooltip = underfunded > 0 ? `Need ${money(required)}/mo to hit target` : undefined;
+              return (
+                <div key={row.goal.id} style={{ position: "relative", height: 44, display: "flex", alignItems: "center" }} title={tooltip}>
+                  <div style={{ position: "absolute", left: 0, top: "50%", width: `${row.xPercent}%`, height: 1, background: "var(--hairline)" }} />
+                  <div style={{ position: "absolute", left: 0, top: "50%", width: `${(row.xPercent * row.pct) / 100}%`, height: 2, background: color }} />
+                  <div style={{ position: "absolute", left: `${row.xPercent}%`, top: "50%", transform: "translate(-50%, -50%)", width: 10, height: 10, borderRadius: "50%", border: `2px solid ${color}`, background: "var(--surface)" }} />
+                  <div style={labelStyle}>
+                    {row.goal.name} <span className="muted mono" style={{ fontSize: 12 }}>· {etaLabel(row.months)} · <span className="blurable">{money(row.goal.targetCents)}</span></span>
+                    {row.needsAttention && <span className="mono" style={{ fontSize: 12, color: "var(--negative)" }}> · Behind schedule</span>}
+                    {underfunded > 0 && <span className="mono" style={{ fontSize: 12, color: "var(--negative)" }} title={tooltip}> · Need {money(required)}/mo</span>}
+                  </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
-      </div>
+      </Reveal>
     </section>
   );
 }

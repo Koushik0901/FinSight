@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { createWrapper } from "../test-utils";
 import * as metricsHooks from "../api/hooks/metrics";
+import { PhilosophySection } from "./Settings";
 
 /**
  * The philosophy preferences are not cosmetic: they set the debt-payoff order
@@ -33,7 +34,6 @@ async function renderSection(philosophy: unknown) {
     mutateAsync,
     isPending: false,
   } as unknown as ReturnType<typeof metricsHooks.useSetFinancialPhilosophy>);
-  const { PhilosophySection } = await import("./Settings");
   return render(<PhilosophySection />, { wrapper: createWrapper() });
 }
 

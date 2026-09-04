@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { axe } from "vitest-axe";
 import { BottomNav } from "./BottomNav";
 import { createWrapperWithEntries } from "../test-utils";
@@ -80,11 +80,13 @@ describe("BottomNav", () => {
     }
   });
 
-  it("closes the More sheet after selecting a destination", () => {
+  it("closes the More sheet after selecting a destination", async () => {
     renderAt("/");
     fireEvent.click(screen.getByText("More"));
     expect(screen.getByRole("dialog")).toBeInTheDocument();
     fireEvent.click(screen.getByText("Settings"));
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    // Drawer keeps its mount for the 180ms exit animation (3630f24) before
+    // unmounting, so the disappearance is async.
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   });
 });

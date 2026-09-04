@@ -10,7 +10,6 @@ import { useNetWorth, useNetWorthHistory } from "../../api/hooks/networth";
 import { useBudgetEnvelopes } from "../../api/hooks/budget";
 import { useTransactions } from "../../api/hooks/transactions";
 import { money } from "../../utils/format";
-import { accountTypeColor } from "../../utils/accountColor";
 import * as I from "../../components/Icons";
 import { CopilotNudge } from "../../components/CopilotNudge";
 import { MobileStat, MobileStatRow } from "../../components/mobile/MobileStat";
@@ -20,7 +19,7 @@ import { BottomSheet } from "../../components/mobile/BottomSheet";
 import NetWorthChart from "../../components/NetWorthChart";
 import { UnconvertedCurrencies } from "../../components/UnconvertedCurrencies";
 import ExplainInspector from "../../components/ExplainInspector";
-
+import Reveal from "../../components/Reveal";
 function minutesAgoLabel(iso: string | null | undefined): string {
   if (!iso) return "Not yet scanned";
   const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60_000);
@@ -45,13 +44,37 @@ export default function MobileToday() {
   const { data: envelopes = [] } = useBudgetEnvelopes();
   const { data: recentTxns = [] } = useTransactions({ accountId: null, limit: 5, offset: 0, search: null, filterPreset: null, startDate: null, endDate: null });
 
-  const [range] = useState<"6M">("6M");
   const [explainKey, setExplainKey] = useState<string | null>(null);
 
   const days = 180;
   const { data: nwHistory = [] } = useNetWorthHistory(days);
 
   const isLoading = accLoading;
+
+  // Memos run before any early return so hook order never depends on data state.
+  const budgetRemaining = useMemo(() => {
+    return envelopes.reduce((sum, e) => {
+      const available = (e.budgetCents ?? 0) + (e.carryoverCents ?? 0) + ((e as unknown as { transferCents?: number }).transferCents ?? 0);
+      return sum + (available - e.spentCents);
+    }, 0);
+  }, [envelopes]);
+
+  const budgetPercentUsed = useMemo(() => {
+    const totalBudget = envelopes.reduce((s, e) => s + (e.budgetCents ?? 0) + (e.carryoverCents ?? 0), 0);
+    const totalSpent = envelopes.reduce((s, e) => s + e.spentCents, 0);
+    if (totalBudget <= 0) return null;
+    return Math.round((totalSpent / totalBudget) * 100);
+  }, [envelopes]);
+
+  const consciousTotals = useMemo(() => {
+    const byType: Record<string, number> = { Need: 0, Want: 0, Saving: 0, Investment: 0 };
+    for (const c of cats) {
+      const t = (c as unknown as { spendingType?: string }).spendingType ?? "Want";
+      byType[t] = (byType[t] ?? 0) + (c.thisMonthCents ?? 0);
+    }
+    const total = Object.values(byType).reduce((s, v) => s + v, 0) || 1;
+    return { byType, total };
+  }, [cats]);
 
   if (isLoading) {
     return (
@@ -90,21 +113,6 @@ export default function MobileToday() {
   const liquidCents = metrics?.liquidCents ?? 0;
   const runwayDays = metrics?.runwayDays ?? null;
 
-  // Remaining budget: sum of envelope remaining
-  const budgetRemaining = useMemo(() => {
-    return envelopes.reduce((sum, e) => {
-      const available = (e.budgetCents ?? 0) + (e.carryoverCents ?? 0) + ((e as unknown as { transferCents?: number }).transferCents ?? 0);
-      return sum + (available - e.spentCents);
-    }, 0);
-  }, [envelopes]);
-
-  const budgetPercentUsed = useMemo(() => {
-    const totalBudget = envelopes.reduce((s, e) => s + (e.budgetCents ?? 0) + (e.carryoverCents ?? 0), 0);
-    const totalSpent = envelopes.reduce((s, e) => s + e.spentCents, 0);
-    if (totalBudget <= 0) return null;
-    return Math.round((totalSpent / totalBudget) * 100);
-  }, [envelopes]);
-
   const savingsRate = savingsRateHistory.length > 0 ? savingsRateHistory[savingsRateHistory.length - 1]?.savingsRatePct ?? null : null;
   const health = healthScore?.total ?? null;
   const now = new Date();
@@ -124,17 +132,6 @@ export default function MobileToday() {
       : shouldShowMonthlyReview
         ? { heading: `Close out ${prevMonthLabel}`, label: "Start close", route: "/close" }
         : { heading: "You're all caught up", label: "View categories", route: "/categories" };
-
-  // Conscious spending allocation (Need/Want/Saving)
-  const consciousTotals = useMemo(() => {
-    const byType: Record<string, number> = { Need: 0, Want: 0, Saving: 0, Investment: 0 };
-    for (const c of cats) {
-      const t = (c as unknown as { spendingType?: string }).spendingType ?? "Want";
-      byType[t] = (byType[t] ?? 0) + (c.thisMonthCents ?? 0);
-    }
-    const total = Object.values(byType).reduce((s, v) => s + v, 0) || 1;
-    return { byType, total };
-  }, [cats]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16, padding: 16, paddingBottom: 24 }}>
@@ -164,9 +161,11 @@ export default function MobileToday() {
           {totalSpendRaw > 0 ? `${money(totalSpendRaw)} spent this month` : "Fresh month, fresh baseline."} · Agent {minutesAgoLabel(agentStatus?.lastScanAt)}
         </span>
         {nwHistory.length > 1 ? (
-          <div style={{ margin: "4px -8px 0" }}>
-            <NetWorthChart points={nwHistory.slice(-30)} rangeLabel="6M" embed />
-          </div>
+          <Reveal>
+            <div style={{ margin: "4px -8px 0" }}>
+              <NetWorthChart points={nwHistory.slice(-30)} rangeLabel="6M" embed />
+            </div>
+          </Reveal>
         ) : null}
         {metrics?.unconvertedHoldings ? <UnconvertedCurrencies holdings={metrics.unconvertedHoldings} primary={metrics.currency} /> : null}
       </section>
@@ -197,12 +196,14 @@ export default function MobileToday() {
       {/* Conscious spending allocation - horizontal bar */}
       {activeCats.length > 0 ? (
         <MobileSection title="Conscious spending" description="How this month's spending splits">
-          <div style={{ display: "flex", height: 12, borderRadius: 999, overflow: "hidden", background: "var(--surface-2)", gap: 2 }}>
-            <span style={{ flex: (consciousTotals.byType.Need ?? 0) / consciousTotals.total, background: "#60A5FA", borderRadius: 999 }} title={`Need ${money(consciousTotals.byType.Need ?? 0)}`} />
-            <span style={{ flex: (consciousTotals.byType.Want ?? 0) / consciousTotals.total, background: "#FB923C", borderRadius: 999 }} title={`Want ${money(consciousTotals.byType.Want ?? 0)}`} />
-            <span style={{ flex: (consciousTotals.byType.Saving ?? 0) / consciousTotals.total, background: "#34D399", borderRadius: 999 }} title={`Saving ${money(consciousTotals.byType.Saving ?? 0)}`} />
-            <span style={{ flex: (consciousTotals.byType.Investment ?? 0) / consciousTotals.total, background: "#A78BFA", borderRadius: 999 }} title={`Investment ${money(consciousTotals.byType.Investment ?? 0)}`} />
-          </div>
+          <Reveal>
+            <div style={{ display: "flex", height: 12, borderRadius: 999, overflow: "hidden", background: "var(--surface-2)", gap: 2 }}>
+              <span className="plot-grow-x" style={{ flex: (consciousTotals.byType.Need ?? 0) / consciousTotals.total, background: "#60A5FA", borderRadius: 999, animationDelay: "0ms" }} title={`Need ${money(consciousTotals.byType.Need ?? 0)}`} />
+              <span className="plot-grow-x" style={{ flex: (consciousTotals.byType.Want ?? 0) / consciousTotals.total, background: "#FB923C", borderRadius: 999, animationDelay: "40ms" }} title={`Want ${money(consciousTotals.byType.Want ?? 0)}`} />
+              <span className="plot-grow-x" style={{ flex: (consciousTotals.byType.Saving ?? 0) / consciousTotals.total, background: "#34D399", borderRadius: 999, animationDelay: "80ms" }} title={`Saving ${money(consciousTotals.byType.Saving ?? 0)}`} />
+              <span className="plot-grow-x" style={{ flex: (consciousTotals.byType.Investment ?? 0) / consciousTotals.total, background: "#A78BFA", borderRadius: 999, animationDelay: "120ms" }} title={`Investment ${money(consciousTotals.byType.Investment ?? 0)}`} />
+            </div>
+          </Reveal>
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap", fontSize: 12, color: "var(--ink-mute)" }}>
             <span><span style={{ width: 8, height: 8, borderRadius: "50%", background: "#60A5FA", display: "inline-block", marginRight: 6 }} />Need {Math.round(((consciousTotals.byType.Need ?? 0) / consciousTotals.total) * 100)}%</span>
             <span><span style={{ width: 8, height: 8, borderRadius: "50%", background: "#FB923C", display: "inline-block", marginRight: 6 }} />Want {Math.round(((consciousTotals.byType.Want ?? 0) / consciousTotals.total) * 100)}%</span>

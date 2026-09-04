@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import type { CommandName } from "../api/commandNames";
 import { _createTestResponders, _fallbackForTest, installMockBackend } from "./mockBackend";
 import goalsFixture from "../pwa/fixtures/goals.json";

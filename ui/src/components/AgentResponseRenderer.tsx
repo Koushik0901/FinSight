@@ -3,6 +3,7 @@ import rehypeSanitize from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
 import { ResponsiveContainer, BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip } from "recharts";
 import type { AgentAnswer, AgentResponseBlock } from "../api/openapiClient";
+import { usePlotAnim } from "../utils/plotMotion";
 
 const chartTooltipStyle = {
   background: "var(--elevated)",
@@ -73,6 +74,7 @@ function TableBlock({ block }: { block: Extract<AgentResponseBlock, { kind: "tab
 
 function ChartBlock({ block }: { block: Extract<AgentResponseBlock, { kind: "barChart" | "lineChart" }> }) {
   const seriesLabel = block.seriesLabel ?? "Value";
+  const anim = usePlotAnim();
   const safeData = block.data.filter((point) => Number.isFinite(point.value));
   if (safeData.length === 0) return null;
 
@@ -87,7 +89,7 @@ function ChartBlock({ block }: { block: Extract<AgentResponseBlock, { kind: "bar
               <XAxis dataKey="label" tick={chartAxisTick} axisLine={{ stroke: "var(--line)" }} tickLine={false} />
               <YAxis tick={chartAxisTick} axisLine={false} tickLine={false} width={48} />
               <Tooltip cursor={{ fill: "var(--surface-2)" }} contentStyle={chartTooltipStyle} labelStyle={{ color: "var(--ink-mute)" }} />
-              <Bar dataKey="value" name={seriesLabel} fill="var(--accent)" radius={[6, 6, 0, 0]} maxBarSize={40} />
+              <Bar dataKey="value" name={seriesLabel} fill="var(--accent)" radius={[6, 6, 0, 0]} maxBarSize={40} {...anim} />
             </BarChart>
           ) : (
             <LineChart data={safeData} margin={{ top: 16, right: 20, bottom: 8, left: 8 }}>
@@ -103,6 +105,7 @@ function ChartBlock({ block }: { block: Extract<AgentResponseBlock, { kind: "bar
                 strokeWidth={2}
                 dot={{ r: 4, fill: "var(--accent)", strokeWidth: 0 }}
                 activeDot={{ r: 6 }}
+                {...anim}
               />
             </LineChart>
           )}

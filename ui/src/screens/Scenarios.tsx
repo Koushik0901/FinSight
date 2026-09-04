@@ -22,6 +22,7 @@ import {
 } from "../api/hooks/useScenarios";
 import { useCategoriesWithSpending } from "../api/hooks/transactions";
 import * as I from "../components/Icons";
+import Reveal from "../components/Reveal";
 import Button from "../components/Button";
 import Card from "../components/Card";
 import Badge from "../components/Badge";
@@ -57,6 +58,11 @@ function ForecastChart({
   const stressing = (scen[scen.length - 1] ?? 0) < (base[base.length - 1] ?? 0);
   const color = stressing ? "var(--negative)" : "var(--accent)";
 
+  // Replay identity: scenario runs (chips/form/combined/reopen) and the range
+  // toggle are discrete clicks that replace these arrays wholesale, so remount
+  // the strokes and redraw exactly when the plotted data changes.
+  const seriesKey = `${base.join(",")}|${scen.join(",")}`;
+
   const path = (vals: number[]) =>
     vals
       .map((v, i) => {
@@ -67,21 +73,25 @@ function ForecastChart({
       .join(" ");
 
   return (
-    <Card style={{ padding: "22px 8px 8px" }}>
-      <svg viewBox="0 0 100 42" preserveAspectRatio="none" style={{ width: "100%", height: 200, display: "block" }}>
-        <line x1="0" y1={(38 - ((0 - min) / span) * 34).toFixed(1)} x2="100" y2={(38 - ((0 - min) / span) * 34).toFixed(1)} stroke="var(--hairline)" strokeWidth="0.4" />
-        <path d={path(base)} fill="none" stroke="var(--ink)" strokeWidth="1" />
-        <path d={path(scen)} fill="none" stroke={color} strokeWidth="1.2" strokeDasharray="2.5 2" />
-      </svg>
-      <div className="row-md" style={{ fontSize: 12, color: "var(--ink-mute)", padding: "8px 12px 0" }}>
-        <span className="row-xs">
-          <span style={{ width: 14, height: 2, background: "var(--ink)", display: "inline-block" }} />current path
-        </span>
-        <span className="row-xs">
-          <span style={{ width: 14, height: 2, background: color, display: "inline-block" }} />with scenario
-        </span>
-      </div>
-    </Card>
+    <Reveal>
+      <Card style={{ padding: "22px 8px 8px" }}>
+        <svg viewBox="0 0 100 42" preserveAspectRatio="none" style={{ width: "100%", height: 200, display: "block" }}>
+          <line x1="0" y1={(38 - ((0 - min) / span) * 34).toFixed(1)} x2="100" y2={(38 - ((0 - min) / span) * 34).toFixed(1)} stroke="var(--hairline)" strokeWidth="0.4" />
+          <path key={seriesKey} className="plot-draw" pathLength={1} d={path(base)} fill="none" stroke="var(--ink)" strokeWidth="1" />
+          {/* Scenario fades in (not stroke-drawn): .plot-draw forces dasharray:1, which
+              would erase this line's dashed "hypothetical" styling. */}
+          <path key={seriesKey} className="plot-fade" d={path(scen)} fill="none" stroke={color} strokeWidth="1.2" strokeDasharray="2.5 2" />
+        </svg>
+        <div className="row-md" style={{ fontSize: 12, color: "var(--ink-mute)", padding: "8px 12px 0" }}>
+          <span className="row-xs">
+            <span style={{ width: 14, height: 2, background: "var(--ink)", display: "inline-block" }} />current path
+          </span>
+          <span className="row-xs">
+            <span style={{ width: 14, height: 2, background: color, display: "inline-block" }} />with scenario
+          </span>
+        </div>
+      </Card>
+    </Reveal>
   );
 }
 

@@ -211,6 +211,7 @@ function MilestoneCard({
             }}
           >
             <div
+              className="plot-grow-x"
               style={{
                 width: `${pct}%`,
                 height: "100%",
@@ -311,6 +312,7 @@ export default function MobileJourney() {
           style={{ height: 4, borderRadius: "var(--radius-pill)", background: "var(--line)", overflow: "hidden" }}
         >
           <div
+            className="plot-grow-x"
             style={{
               width: `${(data.completedCount / 7) * 100}%`,
               height: "100%",

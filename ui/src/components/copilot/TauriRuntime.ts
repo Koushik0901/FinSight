@@ -30,7 +30,6 @@ import type {
   ConversationMessage,
   CopilotStreamFrame,
   CopilotDonePayload,
-  CopilotResponseBlock,
   MissingDataItem,
 } from "../../api/openapiClient";
 

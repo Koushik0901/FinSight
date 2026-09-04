@@ -10,6 +10,7 @@ import { BottomSheet } from "../../components/mobile/BottomSheet";
 import { SegmentedControl } from "../../components/mobile/SegmentedControl";
 import { MobileEmptyState } from "../../components/mobile/MobileEmptyState";
 import { money } from "../../utils/format";
+import Reveal from "../../components/Reveal";
 import type { BudgetEnvelope } from "../../api/openapiClient";
 
 function envelopeStatus(env: BudgetEnvelope) {
@@ -30,14 +31,13 @@ type Filter = "all" | "over" | "watch" | "ok";
 
 export default function MobileBudget() {
   const todayMonth = new Date().toISOString().slice(0, 7);
-  const [viewMonth, setViewMonth] = useState(todayMonth);
+  const [viewMonth] = useState(todayMonth);
   const monthBefore = (m: string, n: number) => {
     const [y, mo] = m.split("-").map(Number);
     const d = new Date((y as number), (mo as number) - 1 - n, 1);
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
   };
   const monthAfter = (m: string, n: number) => monthBefore(m, -n);
-  const displayMonth = new Date(viewMonth + "-01T00:00:00").toLocaleDateString("en-US", { month: "long", year: "numeric" });
   const { data: envelopes = [], isLoading } = useBudgetEnvelopes(viewMonth);
   const { data: hold } = useHold(viewMonth);
   const holdCents = (hold as unknown as { amountCents: number } | null)?.amountCents ?? 0;
@@ -59,12 +59,6 @@ export default function MobileBudget() {
     const pct = totalBudget > 0 ? Math.round((totalSpent / totalBudget) * 100) : 0;
     return { totalBudget, totalSpent, remaining, pct };
   }, [envelopes]);
-
-  const conscious = useMemo(() => {
-    // Budget envelopes don't carry spendingType directly; use categories mapping
-    // For mobile, show a simple allocation bar from available vs spent
-    return null;
-  }, []);
 
   const filtered = useMemo(() => {
     if (filter === "all") return envelopes;
@@ -128,9 +122,11 @@ export default function MobileBudget() {
           {money(totals.remaining, { currency: primaryCurrency })}
         </span>
         <span className="mobile-stat-sub">{totals.remaining < 0 ? "over budget" : "left to spend"} · {totals.pct}% used</span>
-        <div style={{ height: 8, background: "var(--surface-2)", borderRadius: 999, overflow: "hidden", marginTop: 8 }}>
-          <div style={{ width: `${Math.min(100, totals.pct)}%`, height: "100%", background: totals.pct > 100 ? "var(--negative)" : totals.pct > 90 ? "var(--warning)" : "var(--accent)", borderRadius: 999 }} />
-        </div>
+        <Reveal>
+          <div style={{ height: 8, background: "var(--surface-2)", borderRadius: 999, overflow: "hidden", marginTop: 8 }}>
+            <div className="plot-grow-x" style={{ width: `${Math.min(100, totals.pct)}%`, height: "100%", background: totals.pct > 100 ? "var(--negative)" : totals.pct > 90 ? "var(--warning)" : "var(--accent)", borderRadius: 999 }} />
+          </div>
+        </Reveal>
         <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "var(--ink-mute)", marginTop: 6 }}>
           <span className="money">{money(totals.totalSpent)} spent</span>
           <span className="money">of {money(totals.totalBudget)}</span>
@@ -220,7 +216,6 @@ export default function MobileBudget() {
             const available = env.budgetCents + env.carryoverCents;
             const remaining = available - env.spentCents;
             const pct = available > 0 ? Math.min(100, (env.spentCents / available) * 100) : 0;
-            const tone = s.tone === "negative" ? "var(--negative)" : s.tone === "warning" ? "var(--warning)" : s.tone === "positive" ? "var(--positive)" : "var(--accent)";
             return (
               <MobileListItem
                 key={env.categoryId}
@@ -265,9 +260,11 @@ export default function MobileBudget() {
                     <span className={`chip ${s.tone === "negative" ? "negative" : s.tone === "warning" ? "warning" : s.tone === "positive" ? "positive" : "accent"}`}>{s.label}</span>
                   </div>
 
-                  <div style={{ height: 8, background: "var(--surface-2)", borderRadius: 999, overflow: "hidden" }}>
-                    <div style={{ width: `${pct}%`, height: "100%", background: s.tone === "negative" ? "var(--negative)" : s.tone === "warning" ? "var(--warning)" : detail.categoryColor ?? "var(--accent)", borderRadius: 999 }} />
-                  </div>
+                  <Reveal>
+                    <div style={{ height: 8, background: "var(--surface-2)", borderRadius: 999, overflow: "hidden" }}>
+                      <div style={{ width: `${pct}%`, height: "100%", background: s.tone === "negative" ? "var(--negative)" : s.tone === "warning" ? "var(--warning)" : detail.categoryColor ?? "var(--accent)", borderRadius: 999 }} />
+                    </div>
+                  </Reveal>
                   <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "var(--ink-mute)" }}>
                     <span className="money">{money(detail.spentCents)} spent</span>
                     <span className="money">of {money(available)}</span>

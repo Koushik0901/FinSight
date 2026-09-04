@@ -10,7 +10,7 @@ import { MobileEmptyState } from "../../components/mobile/MobileEmptyState";
 import { BottomSheet } from "../../components/mobile/BottomSheet";
 import GoalDrawer from "../../components/GoalDrawer";
 import { SegmentedControl } from "../../components/mobile/SegmentedControl";
-
+import Reveal from "../../components/Reveal";
 const TYPE_LABELS: Record<string, string> = {
   "save-by-date": "Save by date",
   "build-balance": "Build balance",
@@ -135,9 +135,11 @@ export default function MobileGoals() {
 
               <div style={{ marginTop: 2 }}>
                 <div style={{ fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--ink-faint)", fontWeight: 600 }}>{goal.goalType === "spending-cap" ? "This month" : "Progress"}</div>
-                <div style={{ height: 8, background: "var(--surface-2)", borderRadius: 999, overflow: "hidden", marginTop: 6 }}>
-                  <div style={{ width: `${pct}%`, height: "100%", background: goal.goalType === "spending-cap" && goal.currentCents > goal.targetCents ? "var(--negative)" : "var(--accent)", borderRadius: 999 }} />
-                </div>
+                <Reveal>
+                  <div style={{ height: 8, background: "var(--surface-2)", borderRadius: 999, overflow: "hidden", marginTop: 6 }}>
+                    <div className="plot-grow-x" style={{ width: `${pct}%`, height: "100%", background: goal.goalType === "spending-cap" && goal.currentCents > goal.targetCents ? "var(--negative)" : "var(--accent)", borderRadius: 999 }} />
+                  </div>
+                </Reveal>
                 <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6, fontSize: 13 }}>
                   <span className="money" style={{ fontWeight: 650 }}>{money(goal.currentCents)}</span>
                   <span className="money" style={{ color: "var(--ink-mute)" }}>of {money(goal.targetCents)}</span>
@@ -174,9 +176,11 @@ export default function MobileGoals() {
                     <div style={{ fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--ink-faint)", fontWeight: 600 }}>Target</div>
                     <div className="money" style={{ fontSize: 24, fontWeight: 750, letterSpacing: "-0.02em", marginTop: 4 }}>{money(detail.targetCents)}</div>
                     <div style={{ fontSize: 12, color: "var(--ink-mute)", marginTop: 4 }}>{money(detail.currentCents)} saved · {pct}% · {detailProjection?.eta ? `ETA ${detailProjection.eta}` : detail.targetDate ? `due ${formatCalendarDate(detail.targetDate, { month: "short", year: "numeric" })}` : ""}</div>
-                    <div style={{ height: 8, background: "var(--surface-2)", borderRadius: 999, overflow: "hidden", marginTop: 10 }}>
-                      <div style={{ width: `${pct}%`, height: "100%", background: "var(--accent)", borderRadius: 999 }} />
-                    </div>
+                    <Reveal>
+                      <div style={{ height: 8, background: "var(--surface-2)", borderRadius: 999, overflow: "hidden", marginTop: 10 }}>
+                        <div className="plot-grow-x" style={{ width: `${pct}%`, height: "100%", background: "var(--accent)", borderRadius: 999 }} />
+                      </div>
+                    </Reveal>
                   </div>
 
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>

@@ -30,14 +30,21 @@ pub fn upsert_correction(
     merchant_key: &str,
     description: &str,
 ) -> CoreResult<()> {
+    upsert(conn, "correction", merchant_key, description)
+}
+
+/// Insert or replace one agent memory entry, deduped per (kind, key) — the
+/// general form behind `upsert_correction` and the Settings preference memory
+/// panel (`kind` = preference/philosophy/risk_tolerance, key = merchant_key).
+pub fn upsert(conn: &mut Connection, kind: &str, key: &str, description: &str) -> CoreResult<()> {
     let id = Uuid::new_v4().to_string();
     let now = Utc::now().to_rfc3339();
     conn.execute(
         "INSERT INTO agent_memory(id, kind, description, merchant_key, created_at) \
-         VALUES(?1, 'correction', ?2, ?3, ?4) \
+         VALUES(?1, ?2, ?3, ?4, ?5) \
          ON CONFLICT(kind, merchant_key) DO UPDATE SET \
             description = excluded.description, created_at = excluded.created_at",
-        params![id, description, merchant_key, now],
+        params![id, kind, description, key, now],
     )?;
     Ok(())
 }
@@ -70,5 +77,22 @@ mod tests {
         assert_eq!(all[0].kind, "correction");
         forget(&mut conn, &all[0].id).unwrap();
         assert_eq!(list(&mut conn).unwrap().len(), 0);
+    }
+
+    #[test]
+    fn upsert_dedupes_by_kind_and_key() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        upsert(&mut conn, "preference", "currency", "EUR").unwrap();
+        upsert(&mut conn, "preference", "currency", "USD").unwrap();
+        upsert(&mut conn, "preference", "locale", "en").unwrap();
+        let all = list(&mut conn).unwrap();
+        assert_eq!(all.len(), 2);
+        let currency = all
+            .iter()
+            .find(|m| m.merchant_key.as_deref() == Some("currency"))
+            .unwrap();
+        assert_eq!(currency.description, "USD");
+        assert_eq!(currency.kind, "preference");
     }
 }

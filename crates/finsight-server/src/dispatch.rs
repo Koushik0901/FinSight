@@ -592,6 +592,13 @@ rpc_routes!(api, events, cmd, p, c:
         // ── insights ──
         "list_agent_memory" => ok(c::insights::list_agent_memory(api).await?),
         "forget_agent_memory" => ok(c::insights::forget_agent_memory(api, arg(&p, "id")?).await?),
+        "upsert_agent_memory" => ok(c::insights::upsert_agent_memory(
+            api,
+            arg(&p, "kind")?,
+            arg(&p, "key")?,
+            arg(&p, "description")?,
+        )
+        .await?),
         "get_financial_health_score" => ok(c::insights::get_financial_health_score(api).await?),
 
         // ── investments ──

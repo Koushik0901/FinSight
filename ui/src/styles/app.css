@@ -5775,3 +5775,101 @@ body {
     transform: scale(.985);
   }
 }
+
+/* ── Plot motion primitives ──────────────────────────────────────────────
+   Shared by every plot family (CSS width/height fills, SVG polylines, segments).
+   - .plot-grow-x / .plot-grow-y — mount reveal for fills. GPU-only scale, so
+     width/height morphs of an already-mounted bar keep their own transition.
+   - .plot-draw — SVG path stroke draw-in. Requires pathLength="1" on the path;
+     dasharray/dashoffset come from the class, so solid lines only.
+   - .plot-fade — companion fade for the fill/grid under a drawing line,
+     delayed so the stroke leads and the area catches up.
+   - Stagger rows by overriding animation-delay inline (style={{ animationDelay }})
+     or with per-child rules.
+   The global prefers-reduced-motion guard kills all of these instantly. */
+
+.plot-grow-x {
+  transform-origin: left center;
+  animation: plot-grow-x 850ms var(--ease-out-expo) both;
+}
+
+.plot-grow-y {
+  transform-origin: center bottom;
+  animation: plot-grow-y 850ms var(--ease-out-expo) both;
+}
+
+@keyframes plot-grow-x {
+  from { transform: scaleX(0); }
+}
+
+@keyframes plot-grow-y {
+  from { transform: scaleY(0); }
+}
+
+.plot-draw {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: plot-draw 850ms var(--ease-out-expo) both;
+}
+
+.plot-fade {
+  animation: plot-fade 600ms var(--ease-out-quart) 0.25s both;
+}
+
+@keyframes plot-fade {
+  from { opacity: 0; }
+}
+
+.plot-pop {
+  animation: plot-pop 420ms var(--ease-out-expo) both;
+}
+
+@keyframes plot-pop {
+  from { transform: scale(0); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+.plot-grid-fade {
+  animation: plot-fade 500ms var(--ease-out-quart) both;
+}
+
+/* ── Reveal on scroll ────────────────────────────────────────────────────
+   .reveal wraps any plot/card. Children’s .plot-* only run when
+   the wrapper has .is-visible (toggled by IntersectionObserver). */
+.reveal:not(.is-visible) .plot-grow-x,
+.reveal:not(.is-visible) .plot-grow-y,
+.reveal:not(.is-visible) .plot-draw,
+.reveal:not(.is-visible) .plot-pop {
+  animation: none !important;
+  opacity: 0;
+}
+.reveal:not(.is-visible) .plot-fade,
+.reveal:not(.is-visible) .plot-grid-fade {
+  animation: none !important;
+  opacity: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .reveal:not(.is-visible) .plot-grow-x,
+  .reveal:not(.is-visible) .plot-grow-y,
+  .reveal:not(.is-visible) .plot-draw,
+  .reveal:not(.is-visible) .plot-pop,
+  .reveal:not(.is-visible) .plot-fade,
+  .reveal:not(.is-visible) .plot-grid-fade {
+    opacity: 1;
+  }
+}
+
+/* ── Plot fill morphs (per-family) ───────────────────────────────────────
+   Width transitions for bars that REFETCH in place: once mounted, their
+   inline width changes on a live node, so it transitions instead of
+   replaying the mount grow above. Coexists with plot-grow-* (transform
+   animation vs. width transition). Reduced-motion guard shortens these
+   too, which is correct. */
+.pb-fill,
+.recovery-fill {
+  transition: width var(--dur-slow) var(--ease-out-expo);
+}
+
+.stream > span {
+  transition: width var(--dur-slow) var(--ease-out-expo);
+}

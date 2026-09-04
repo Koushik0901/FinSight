@@ -107,12 +107,15 @@ describe("Scenarios screen", () => {
   it("renders the header and suggested chips", () => {
     render(<Scenarios />, { wrapper: createWrapper() });
     expect(screen.getByText("Imagine a future, see the math.")).toBeInTheDocument();
-    expect(screen.getByText("Cut income 50%")).toBeInTheDocument();
+    // Every starting point is also offered under "Combine variables" (as a
+    // selection toggle with aria-pressed); the runnable chips carry no
+    // aria-pressed, which keeps this query unambiguous.
+    expect(screen.getByText("Cut income 50%", { selector: "button:not([aria-pressed])" })).toBeInTheDocument();
   });
 
   it("running a chip shows the verdict panel", async () => {
     render(<Scenarios />, { wrapper: createWrapper() });
-    fireEvent.click(screen.getByText("Buy a car $35k"));
+    fireEvent.click(screen.getByText("Buy a car $35k", { selector: "button:not([aria-pressed])" }));
     await waitFor(() => expect(runMutate).toHaveBeenCalled());
     await waitFor(() =>
       expect(screen.getByText("You can do this — here's what changes.")).toBeInTheDocument()

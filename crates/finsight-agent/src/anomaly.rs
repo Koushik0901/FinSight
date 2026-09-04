@@ -10,7 +10,6 @@ use std::sync::Arc;
 #[allow(dead_code)]
 const BATCH_SIZE: usize = 20;
 
-
 fn fmt_money(cents: i64) -> String {
     format!("${:.2}", cents as f64 / 100.0)
 }
@@ -24,12 +23,17 @@ fn anomaly_reason(c: &AnomalyCandidate) -> String {
     let amount = fmt_money(c.amount_cents.abs());
     let median = fmt_money(c.typical_cents.abs());
     if mult >= 2.0 {
-        format!("{} {} is {:.1}× your median {} — outlier", c.merchant_raw, amount, mult, median)
+        format!(
+            "{} {} is {:.1}× your median {} — outlier",
+            c.merchant_raw, amount, mult, median
+        )
     } else {
-        format!("{} {} vs median {} — unusual", c.merchant_raw, amount, median)
+        format!(
+            "{} {} vs median {} — unusual",
+            c.merchant_raw, amount, median
+        )
     }
 }
-
 
 /// Detect anomalous transactions deterministically — no LLM.
 ///
@@ -73,7 +77,6 @@ pub async fn detect_anomalies(db: &Db, provider: Arc<dyn CompletionProvider>) ->
     // Allow unused provider param for API compat — caller in categorizer.rs
     // still passes Arc<dyn CompletionProvider>. Suppress warning.
     let _ = &provider;
-
 
     // ── Step 3: transactional write under the reset barrier ─────────────────
     if confirmed.is_empty() {

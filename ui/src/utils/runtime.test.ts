@@ -50,9 +50,13 @@ describe("isBackendAvailable — RPC transport availability (pure PWA)", () => {
     (window as unknown as { __FINSIGHT_HTTP__?: unknown }).__FINSIGHT_HTTP__ = true;
     expect(isBackendAvailable()).toBe(true);
   });
-  it("false when neither HTTP shim nor mock is present", () => {
+  it("true in a plain browser without any shim — RPC is same-origin fetch now", () => {
+    // The httpBackend shim (which installed __FINSIGHT_HTTP__) was deleted; the
+    // HTTP transport is always available via fetch/openapi-fetch, so a shimless
+    // browser session still has a working backend. Gating on the flag disabled
+    // production queries (fixed in 2fb822b).
     setLocation("https://myhost.ts.net");
-    expect(isBackendAvailable()).toBe(false);
+    expect(isBackendAvailable()).toBe(true);
   });
   it("true when mock harness is installed (design harness / tests)", () => {
     setLocation("http://127.0.0.1:5173");

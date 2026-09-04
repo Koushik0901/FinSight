@@ -4,7 +4,7 @@ import { AbstractAgent, type BaseEvent, type RunAgentInput } from "@ag-ui/client
 import { Observable } from "rxjs";
 import { api } from "../../../api/openapiClient";
 import { COPILOT_STREAM_FRAME } from "../../../api/eventNames";
-import type { ChatHistoryEntry, CopilotStreamFrame, MissingDataItem } from "../../../api/openapiClient";
+import type { ChatHistoryEntry, CopilotStreamFrame } from "../../../api/openapiClient";
 import { serializeFinanceArtifactEnvelope } from "./artifacts";
 import { normalizeCopilotStreamFrame } from "../streamFrame";
 

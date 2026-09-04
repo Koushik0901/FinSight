@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import EmptyState from "../components/EmptyState";
 import PageHeader from "../components/PageHeader";
+import Reveal from "../components/Reveal";
 import {
   useCategoriesWithSpending,
   useSetCategorySpendingType,
@@ -286,10 +287,11 @@ export default function Categories() {
             </div>
           )}
         </div>
-
-        <div className="stream" style={{ height: 18, borderRadius: 6 }}>
-          {active.map((category) => <span key={category.id} title={`${category.label} · ${money(valueFor(category, scope))}`} style={{ width: `${totalThis > 0 ? (valueFor(category, scope) / totalThis) * 100 : 0}%`, background: category.color || "var(--accent)" }} />)}
-        </div>
+        <Reveal>
+          <div className="stream" style={{ height: 18, borderRadius: 6 }}>
+            {active.map((category, idx) => <span key={category.id} className="plot-grow-x" title={`${category.label} · ${money(valueFor(category, scope))}`} style={{ width: `${totalThis > 0 ? (valueFor(category, scope) / totalThis) * 100 : 0}%`, background: category.color || "var(--accent)", animationDelay: `${Math.min(idx * 40, 240)}ms` }} />)}
+          </div>
+        </Reveal>
 
         {biggestDrop && biggestRise && biggestDrop.delta < 0 && biggestRise.delta > 0 && (
           <p className="muted" style={{ marginTop: 18, marginBottom: 0 }}>
@@ -363,7 +365,7 @@ export default function Categories() {
                         </div>
                       )}
                     </td>
-                    <td><div className="row row-sm" style={{ alignItems: "center" }}><div className={`goal-bar ${over ? "negative" : ""}`} style={{ width: 180, height: 6 }}><span style={{ width: `${pct}%`, background: over ? "var(--negative)" : category.color || "var(--accent)" }} /></div><span className={`num ${over ? "neg" : "muted"}`} style={{ fontSize: 12 }}>{Math.round(pct)}%</span></div></td>
+                    <td><Reveal><div className="row row-sm" style={{ alignItems: "center" }}><div className={`goal-bar ${over ? "negative" : ""}`} style={{ width: 180, height: 6 }}><span className="plot-grow-x" style={{ width: `${pct}%`, background: over ? "var(--negative)" : category.color || "var(--accent)" }} /></div><span className={`num ${over ? "neg" : "muted"}`} style={{ fontSize: 12 }}>{Math.round(pct)}%</span></div></Reveal></td>
                     <td className="right"><span className="money">{money(current)}</span></td>
                     {compareLabel && <td className="right"><span className="money muted">{compare > 0 ? money(compare) : "—"}</span></td>}
                     <td className="right"><span className={`money ${over ? "neg" : "muted"}`}>{budget > 0 ? money(budget) : "—"}</span></td>

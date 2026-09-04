@@ -4,6 +4,7 @@ import { money } from "../../utils/format";
 import { MobileSection, MobileList, MobileListItem } from "../../components/mobile/MobileList";
 import { MobileStat, MobileStatRow } from "../../components/mobile/MobileStat";
 import * as I from "../../components/Icons";
+import Reveal from "../../components/Reveal";
 
 export default function MobileReports() {
   const { data: history = [] } = useBudgetHistory(6);
@@ -27,24 +28,27 @@ export default function MobileReports() {
         <div style={{ padding: 16, border: "1px solid var(--line)", borderRadius: 16, background: "var(--surface)" }}>
           <div style={{ fontSize: 12, color: "var(--ink-faint)", fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase" }}>6-month spent</div>
           {monthlyTotals.length > 0 ? (
-            <div style={{ display: "flex", alignItems: "end", gap: 6, height: 120, marginTop: 12 }}>
-              {monthlyTotals.map((m) => (
-                <div key={m.label} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
-                  <div
-                    title={`${m.label}: ${money(m.spent)}`}
-                    style={{
-                      width: "100%",
-                      height: `${Math.max(8, (m.spent / maxSpent) * 100)}%`,
-                      minHeight: 8,
-                      background: m === last ? "var(--accent)" : "var(--line-2)",
-                      borderRadius: 6,
-                      transition: "height 300ms ease",
-                    }}
-                  />
-                  <span style={{ fontSize: 10, color: "var(--ink-faint)", fontWeight: 600, whiteSpace: "nowrap" }}>{m.label.slice(0, 3)}</span>
-                </div>
-              ))}
-            </div>
+            <Reveal>
+              <div style={{ display: "flex", alignItems: "end", gap: 6, height: 120, marginTop: 12 }}>
+                {monthlyTotals.map((m) => (
+                  <div key={m.label} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+                    <div
+                      className="plot-grow-y"
+                      title={`${m.label}: ${money(m.spent)}`}
+                      style={{
+                        width: "100%",
+                        height: `${Math.max(8, (m.spent / maxSpent) * 100)}%`,
+                        minHeight: 8,
+                        background: m === last ? "var(--accent)" : "var(--line-2)",
+                        borderRadius: 6,
+                        transition: "height 300ms ease",
+                      }}
+                    />
+                    <span style={{ fontSize: 10, color: "var(--ink-faint)", fontWeight: 600, whiteSpace: "nowrap" }}>{m.label.slice(0, 3)}</span>
+                  </div>
+                ))}
+              </div>
+            </Reveal>
           ) : (
             <div style={{ height: 120, display: "grid", placeItems: "center", color: "var(--ink-faint)", fontSize: 13, marginTop: 8, background: "var(--surface-2)", borderRadius: 12 }}>
               No history yet — import more months

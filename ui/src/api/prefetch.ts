@@ -65,7 +65,10 @@ const D = {
     fn: async () => unwrapResult(await api.getSpendingBreakdown()),
   }, // Budget.tsx inline
   budgetEnvelopes: {
-    key: ["budget-envelopes"],
+    // useBudgetEnvelopes() keys on `month ?? "current"` (month-scoped
+    // envelopes landed after this descriptor was written) — warming the bare
+    // key never matched the screen's read, so Budget refetched on first paint.
+    key: ["budget-envelopes", "current"],
     fn: async () => unwrapResult(await api.listBudgetEnvelopes()),
   }, // useBudgetEnvelopes
   budgetHistory5: {

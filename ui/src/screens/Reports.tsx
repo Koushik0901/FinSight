@@ -11,8 +11,11 @@ import MemberSwitcher from "../components/MemberSwitcher";
 import { UnconvertedCurrencies } from "../components/UnconvertedCurrencies";
 import PageHeader from "../components/PageHeader";
 import EmptyState from "../components/EmptyState";
+import CountUp from "../components/CountUp";
+import Reveal from "../components/Reveal";
 import { getReportReadiness } from "../utils/dataReadiness";
 import ReportCanvas from "../components/reportWidgets/ReportCanvas";
+import { usePlotAnim } from "../utils/plotMotion";
 import { ComposedChart, Bar, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, CartesianGrid, ReferenceLine } from "recharts";
 type Scope = "month" | "quarter" | "year" | "all";
 
@@ -47,6 +50,8 @@ export function buildReportCsv(data: ReportData): string {
 type BudgetVsActualRow = { month: string; label: string; budget: number; expense: number; variance: number };
 
 function BudgetVsActualChart({ data, onNavigateBudget }: { data: ReportData; onNavigateBudget: () => void }) {
+  const barAnim = usePlotAnim();
+  const lineAnim = usePlotAnim({ begin: 140 });
   const monthly = data.monthly;
   const hasBudget = monthly.some((m) => getBudgetCents(m) > 0);
   const chartData: BudgetVsActualRow[] = monthly.map((m) => {
@@ -76,9 +81,9 @@ function BudgetVsActualChart({ data, onNavigateBudget }: { data: ReportData; onN
       </div>
     );
   }
-
   return (
-    <div className="card" style={{ padding: 16 }} data-testid="budget-vs-actual">
+    <Reveal>
+      <div className="card" style={{ padding: 16 }} data-testid="budget-vs-actual">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
         <div>
           <h3 className="h3" style={{ margin: 0 }}>Budget vs Actual</h3>
@@ -87,15 +92,21 @@ function BudgetVsActualChart({ data, onNavigateBudget }: { data: ReportData; onN
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap", textAlign: "right" }}>
           <div>
             <div className="eyebrow" style={{ fontSize: 10 }}>Total budgeted</div>
-            <div className="money" style={{ fontWeight: 700, fontSize: 14 }}>{money(Math.round(totalBudget * 100))}</div>
+            <div className="money" style={{ fontWeight: 700, fontSize: 14 }}>
+              <CountUp value={totalBudget} format={(v) => money(Math.round(v * 100))} />
+            </div>
           </div>
           <div>
             <div className="eyebrow" style={{ fontSize: 10 }}>Total spent</div>
-            <div className="money" style={{ fontWeight: 700, fontSize: 14 }}>{money(Math.round(totalExpense * 100))}</div>
+            <div className="money" style={{ fontWeight: 700, fontSize: 14 }}>
+              <CountUp value={totalExpense} format={(v) => money(Math.round(v * 100))} />
+            </div>
           </div>
           <div>
             <div className="eyebrow" style={{ fontSize: 10 }}>Variance</div>
-            <div style={{ fontWeight: 700, fontSize: 14, color: totalVariance >= 0 ? "var(--positive, #16a34a)" : "var(--negative)" }}>{totalVariance >= 0 ? "+" : ""}{money(Math.round(totalVariance * 100))}</div>
+            <div style={{ fontWeight: 700, fontSize: 14, color: totalVariance >= 0 ? "var(--positive, #16a34a)" : "var(--negative)" }}>
+              <CountUp value={totalVariance} format={(v) => (v > 0 ? "+" : "") + money(Math.round(v * 100))} />
+            </div>
             <div className="muted" style={{ fontSize: 10 }}>{totalVariance >= 0 ? "Under budget" : "Over budget"}</div>
           </div>
         </div>
@@ -110,11 +121,22 @@ function BudgetVsActualChart({ data, onNavigateBudget }: { data: ReportData; onN
             <Tooltip
               formatter={(value: number, name: string) => [`$${Number(value).toFixed(2)}`, name === "budget" ? "Budgeted" : name === "expense" ? "Actual" : name]}
               labelFormatter={(l) => `Month: ${l}`}
-              contentStyle={{ borderRadius: 10, border: "1px solid var(--line)", fontSize: 12 }}
+              cursor={{ fill: "var(--surface-2)" }}
+              contentStyle={{ borderRadius: 10, border: "1px solid var(--line)", background: "var(--elevated)", fontSize: 12 }}
+              itemStyle={{ color: "var(--ink)" }}
+              labelStyle={{ color: "var(--ink-mute)" }}
             />
             <Legend verticalAlign="top" height={24} iconType="plainline" formatter={(value) => <span style={{ fontSize: 12 }}>{value === "budget" ? "Budgeted" : value === "expense" ? "Actual spend" : value}</span>} />
-            <Bar dataKey="expense" name="expense" fill="var(--accent, #84cc16)" radius={[8, 8, 0, 0]} barSize={22} />
-            <Line type="monotone" dataKey="budget" name="budget" stroke="#0ea5e9" strokeWidth={2.5} dot={{ r: 3, strokeWidth: 2 }} activeDot={{ r: 5 }} />
+            <Bar
+              dataKey="expense"
+              name="expense"
+              fill="var(--accent, #84cc16)"
+              radius={[8, 8, 0, 0]}
+              barSize={22}
+              {...barAnim}
+              activeBar={{ fill: "color-mix(in srgb, var(--accent) 70%, #fff)" }}
+            />
+            <Line type="monotone" dataKey="budget" name="budget" stroke="#0ea5e9" strokeWidth={2.5} dot={{ r: 3, strokeWidth: 2 }} activeDot={{ r: 5 }} {...lineAnim} />
             <ReferenceLine y={0} stroke="var(--line)" />
           </ComposedChart>
         </ResponsiveContainer>
@@ -140,7 +162,8 @@ function BudgetVsActualChart({ data, onNavigateBudget }: { data: ReportData; onN
           );
         })}
       </div>
-    </div>
+      </div>
+    </Reveal>
   );
 }
 
@@ -264,17 +287,19 @@ export default function Reports() {
 
       {/* Pinned header stats — never draggable, always first */}
       <div className="stat-row" style={{ marginBottom: 18 }}>
-        <div className="stat"><div className="label">Savings rate</div><div className="value">{readiness.savingsRate === "reliable" ? `${savingsRate}%` : "—"}</div><div className="sub">{readiness.savingsRate === "reliable" ? "Income kept after spending" : "Needs income and spending"}</div></div>
-        <div className="stat"><div className="label">Net worth</div><div className="value money">{readiness.netWorth === "reliable" ? money(netWorth) : "—"}</div><div className="sub">{readiness.netWorth === "reliable" ? "Confirmed balances" : "Needs a confirmed balance"}</div></div>
-        <div className="stat"><div className="label">Average monthly spend</div><div className="value money">{readiness.averageSpend !== "unavailable" ? money(avgMonthlyExpense) : "—"}</div><div className="sub">{readiness.averageSpend === "reliable" ? "Across active months" : readiness.averageSpend === "estimated" ? "Early estimate · one active month" : "Needs spending history"}</div></div>
-        <div className="stat accent"><div className="label">Runway</div><div className="value">{runwayMonths ?? "—"}</div><div className="sub">{runwayMonths !== null ? "Months of typical spending covered" : "Needs about a month of history"}</div>{yoyDeltaPct !== null && <div className="muted" style={{ fontSize: 11, marginTop: 6 }}>{yoyDeltaPct >= 0 ? "↑" : "↓"} {Math.abs(yoyDeltaPct)}% vs same months last year</div>}</div>
+        <div className="stat"><div className="label">Savings rate</div><div className="value">{readiness.savingsRate === "reliable" ? <CountUp value={savingsRate} format={(v) => `${Math.round(v)}%`} /> : "—"}</div><div className="sub">{readiness.savingsRate === "reliable" ? "Income kept after spending" : "Needs income and spending"}</div></div>
+        <div className="stat"><div className="label">Net worth</div><div className="value money">{readiness.netWorth === "reliable" ? <CountUp value={netWorth} format={(v) => money(Math.round(v))} /> : "—"}</div><div className="sub">{readiness.netWorth === "reliable" ? "Confirmed balances" : "Needs a confirmed balance"}</div></div>
+        <div className="stat"><div className="label">Average monthly spend</div><div className="value money">{readiness.averageSpend !== "unavailable" ? <CountUp value={avgMonthlyExpense} format={(v) => money(Math.round(v))} /> : "—"}</div><div className="sub">{readiness.averageSpend === "reliable" ? "Across active months" : readiness.averageSpend === "estimated" ? "Early estimate · one active month" : "Needs spending history"}</div></div>
+        <div className="stat accent"><div className="label">Runway</div><div className="value">{runwayMonths !== null ? <CountUp value={runwayMonths} format={(v) => `${Math.round(v)}`} /> : "—"}</div><div className="sub">{runwayMonths !== null ? "Months of typical spending covered" : "Needs about a month of history"}</div>{yoyDeltaPct !== null && <div className="muted" style={{ fontSize: 11, marginTop: 6 }}>{yoyDeltaPct >= 0 ? "↑" : "↓"} {Math.abs(yoyDeltaPct)}% vs same months last year</div>}</div>
       </div>
 
       {/* P0: Budget vs Actual overlay — trending budgeted vs spent */}
       {data && <BudgetVsActualChart data={data} onNavigateBudget={() => navigate("/budget")} />}
 
       {/* Customizable canvas — vertical stack, drag-handle reorder, pretty on mobile & desktop */}
-      <ReportCanvas memberId={memberId} />
+      <Reveal>
+        <ReportCanvas memberId={memberId} />
+      </Reveal>
       {/* Tail hint for mobile */}
       <div className="muted" style={{ textAlign: "center", fontSize: 11, marginTop: 18, padding: "0 12px", lineHeight: 1.5 }}>
         Tip: on mobile, use the grip to drag and the ↑↓ buttons to nudge. Each widget&apos;s <span style={{ color: "var(--ink)", fontWeight: 600 }}>⋯ → Edit</span> lets you change data slice and chart type.

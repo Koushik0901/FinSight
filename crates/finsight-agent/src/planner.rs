@@ -41,7 +41,8 @@ pub async fn plan(
 ) -> anyhow::Result<PlanResult> {
     // Immich-style routing: `llm_routing.planner` null → deterministic (0 tokens).
     let use_llm = {
-        if let Ok(Some(v)) = finsight_core::settings::get::<serde_json::Value>(conn, "llm_routing") {
+        if let Ok(Some(v)) = finsight_core::settings::get::<serde_json::Value>(conn, "llm_routing")
+        {
             !v.get("planner").map_or(true, |x| x.is_null())
         } else {
             true
@@ -74,7 +75,9 @@ pub async fn plan(
                 forecast_summary: None,
             });
         }
-        return Err(anyhow!("Planner: deterministic planning found no answer and LLM is disabled by routing"));
+        return Err(anyhow!(
+            "Planner: deterministic planning found no answer and LLM is disabled by routing"
+        ));
     }
     let context = build_context(conn).map_err(|e| anyhow::anyhow!("context: {e}"))?;
     let llm_response = provider
@@ -93,7 +96,6 @@ pub async fn plan(
     )
     .map_err(Into::into)
 }
-
 
 pub fn build_system_prompt(ctx: &FinancialContext) -> String {
     format!(

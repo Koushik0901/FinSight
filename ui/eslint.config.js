@@ -27,6 +27,19 @@ export default tseslint.config(
     files: ["**/*.{ts,tsx}"],
   })),
   {
+    // ag-ui/Tauri copilot adapters are interim code written against a moving
+    // @ag-ui surface; the @ts-nocheck at their top is deliberate and tracked as
+    // typing debt (snake_case envelope adapters), not an accidental escape.
+    files: [
+      "src/components/copilot/TauriRuntime.ts",
+      "src/components/copilot/streamFrame.ts",
+      "src/components/copilot/agUi/**",
+    ],
+    rules: {
+      "@typescript-eslint/ban-ts-comment": ["error", { "ts-nocheck": false }],
+    },
+  },
+  {
     files: ["**/*.{ts,tsx}"],
     plugins: {
       "react-hooks": reactHooks,

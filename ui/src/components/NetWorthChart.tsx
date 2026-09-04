@@ -1,3 +1,4 @@
+import Reveal from "./Reveal";
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import type { NetWorthPoint } from "../api/openapiClient";
 import { compactMoney } from "../utils/format";
@@ -62,6 +63,11 @@ export default function NetWorthChart({ points, controls, rangeLabel = "6 months
   const lineColor = lastVal >= 0 ? "var(--accent)" : "var(--negative)";
   const showDots = points.length <= MAX_DOTS;
 
+  // Replay identity for the draw-in: range/account switches replace the points
+  // array wholesale (discrete), so remount the strokes and redraw exactly then.
+  // Deliberately ignores `w` — ResizeObserver width re-renders must not replay.
+  const seriesKey = `${points.length}:${points[0]!.date}:${points[points.length - 1]!.date}:${lastVal}`;
+
   // End-value callout, kept inside the frame.
   const label = compactMoney(lastVal);
   const labelY = Math.max(16, last.y - 16);
@@ -71,70 +77,68 @@ export default function NetWorthChart({ points, controls, rangeLabel = "6 months
   const labelEvery = Math.max(1, Math.ceil((points.length - 1) / 6));
 
   return (
-    <div className={`bigchart${embed ? " bigchart-embed" : ""}`}>
-      {!embed && (
-        <div className="bigchart-head">
-          <div>
-            <h2 className="h3">Net worth · last {rangeLabel}</h2>
-            <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>Assets minus liabilities, marked monthly.</div>
+    <Reveal>
+      <div className={`bigchart${embed ? " bigchart-embed" : ""}`}>
+        {!embed && (
+          <div className="bigchart-head">
+            <div>
+              <h2 className="h3">Net worth · last {rangeLabel}</h2>
+              <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>Assets minus liabilities, marked monthly.</div>
+            </div>
+            {controls}
           </div>
-          {controls}
+        )}
+        <div ref={wrapRef} style={{ width: "100%" }}>
+          <svg viewBox={`0 0 ${w} ${HEIGHT}`} style={{ width: "100%", height: HEIGHT, display: "block" }} role="img" aria-label={`${subject} trend, currently ${label}`}>
+            <defs>
+              <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={lineColor} stopOpacity="0.28" />
+                <stop offset="60%" stopColor={lineColor} stopOpacity="0.05" />
+                <stop offset="100%" stopColor={lineColor} stopOpacity="0" />
+              </linearGradient>
+            </defs>
+            {Array.from({ length: GRID_LINES }, (_, i) => {
+              const y = PAD_TOP + ((i + 1) / (GRID_LINES + 1)) * (HEIGHT - PAD_TOP - PAD_BOTTOM);
+              return <line key={i} className="plot-grid-fade" style={{ animationDelay: `${i * 80}ms` }} x1={PAD_X} x2={w - PAD_X} y1={y} y2={y} stroke="var(--line)" strokeWidth="1" />;
+            })}
+            <path key={`${seriesKey}-area`} className="plot-fade" d={areaD} fill={`url(#${gradId})`} stroke="none" />
+            <path key={`${seriesKey}-line`} className="plot-draw" pathLength={1} d={lineD} fill="none" stroke={lineColor} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+            {showDots && linePts.slice(0, -1).map((pt, i) => (
+              <circle key={`${points[i]!.date}-${i}`} className="plot-pop" style={{ animationDelay: `${500 + i * 70}ms`, transformOrigin: `${pt.x}px ${pt.y}px` }} cx={pt.x.toFixed(1)} cy={pt.y.toFixed(1)} r="3.5" fill="var(--elevated)" stroke={lineColor} strokeWidth="1.8" />
+            ))}
+            <circle className="plot-pop" style={{ animationDelay: "950ms", transformOrigin: `${last.x}px ${last.y}px` }} cx={last.x.toFixed(1)} cy={last.y.toFixed(1)} r="6.5" fill={lineColor} stroke="var(--elevated)" strokeWidth="2.5" />
+            <text className="plot-fade" style={{ animationDelay: "1050ms", font: "600 15px var(--sans, sans-serif)" }} x={labelX.toFixed(1)} y={labelY.toFixed(1)} textAnchor="end" fill={lineColor}>
+              {label}
+            </text>
+          </svg>
         </div>
-      )}
-      <div ref={wrapRef} style={{ width: "100%" }}>
-        <svg viewBox={`0 0 ${w} ${HEIGHT}`} style={{ width: "100%", height: HEIGHT, display: "block" }} role="img" aria-label={`${subject} trend, currently ${label}`}>
-          <defs>
-            <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={lineColor} stopOpacity="0.28" />
-              <stop offset="60%" stopColor={lineColor} stopOpacity="0.05" />
-              <stop offset="100%" stopColor={lineColor} stopOpacity="0" />
-            </linearGradient>
-          </defs>
-          {Array.from({ length: GRID_LINES }, (_, i) => {
-            const y = PAD_TOP + ((i + 1) / (GRID_LINES + 1)) * (HEIGHT - PAD_TOP - PAD_BOTTOM);
-            return <line key={i} x1={PAD_X} x2={w - PAD_X} y1={y} y2={y} stroke="var(--line)" strokeWidth="1" />;
+        <div style={{ position: "relative", height: 16, marginTop: 6 }}>
+          {points.map((p, i) => {
+            const show = i % labelEvery === 0 || i === points.length - 1;
+            if (!show) return null;
+            const isLast = i === points.length - 1;
+            const isFirst = i === 0;
+            return (
+              <span
+                key={`${p.date}-${i}`}
+                className="plot-fade"
+                style={{
+                  position: "absolute",
+                  left: `${(xOf(i) / w) * 100}%`,
+                  transform: isLast ? "translateX(-100%)" : isFirst ? "translateX(0)" : "translateX(-50%)",
+                  fontSize: 11,
+                  color: "var(--ink-faint)",
+                  fontFamily: "var(--mono)",
+                  whiteSpace: "nowrap",
+                  animationDelay: `${900 + i * 40}ms`,
+                }}
+              >
+                {formatCalendarDate(p.date, { month: "short" })}
+              </span>
+            );
           })}
-          <path d={areaD} fill={`url(#${gradId})`} stroke="none" />
-          <path d={lineD} fill="none" stroke={lineColor} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
-          {showDots && linePts.slice(0, -1).map((pt, i) => (
-            <circle key={`${points[i]!.date}-${i}`} cx={pt.x.toFixed(1)} cy={pt.y.toFixed(1)} r="3.5" fill="var(--elevated)" stroke={lineColor} strokeWidth="1.8" />
-          ))}
-          <circle cx={last.x.toFixed(1)} cy={last.y.toFixed(1)} r="6.5" fill={lineColor} stroke="var(--elevated)" strokeWidth="2.5" />
-          <text
-            x={labelX.toFixed(1)}
-            y={labelY.toFixed(1)}
-            textAnchor="end"
-            fill={lineColor}
-            style={{ font: "600 15px var(--sans, sans-serif)" }}
-          >
-            {label}
-          </text>
-        </svg>
+        </div>
       </div>
-      <div style={{ position: "relative", height: 16, marginTop: 6 }}>
-        {points.map((p, i) => {
-          const show = i % labelEvery === 0 || i === points.length - 1;
-          if (!show) return null;
-          const isLast = i === points.length - 1;
-          const isFirst = i === 0;
-          return (
-            <span
-              key={`${p.date}-${i}`}
-              style={{
-                position: "absolute",
-                left: `${(xOf(i) / w) * 100}%`,
-                transform: isLast ? "translateX(-100%)" : isFirst ? "translateX(0)" : "translateX(-50%)",
-                fontSize: 11,
-                color: "var(--ink-faint)",
-                fontFamily: "var(--mono)",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {formatCalendarDate(p.date, { month: "short" })}
-            </span>
-          );
-        })}
-      </div>
-    </div>
+    </Reveal>
   );
 }

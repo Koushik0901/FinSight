@@ -6370,6 +6370,29 @@
           }
         }
       }
+    },
+    "/api/rpc/upsert_agent_memory": {
+      "post": {
+        "tags": [
+          "finsight_api::commands::insights"
+        ],
+        "operationId": "upsert_agent_memory",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpsertAgentMemoryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -18419,6 +18442,25 @@
           },
           "transaction": {
             "$ref": "#/components/schemas/Transaction"
+          }
+        }
+      },
+      "UpsertAgentMemoryRequest": {
+        "type": "object",
+        "required": [
+          "kind",
+          "key",
+          "description"
+        ],
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
           }
         }
       },

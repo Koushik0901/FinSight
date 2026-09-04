@@ -1,4 +1,5 @@
 import { useState } from "react";
+import Reveal from "../components/Reveal";
 import { useCashflowForecast } from "../api/hooks/cashflow";
 import { useFinancialMetrics } from "../api/hooks/metrics";
 import type { CashflowForecast, CashflowEvent } from "../api/openapiClient";
@@ -83,8 +84,10 @@ function ProjectedBalanceChart({ forecast, currency }: { forecast: CashflowForec
         {lo < 0 && hi > 0 && <line x1="0" y1={y(0)} x2={W} y2={y(0)} stroke="var(--negative)" strokeWidth="1" opacity="0.5" />}
         {/* Buffer line */}
         <line x1="0" y1={bufferY} x2={W} y2={bufferY} stroke="var(--warning)" strokeWidth="1" strokeDasharray="5 5" opacity="0.75" />
-        <path d={areaPath} fill="url(#cf-fill)" />
-        <path d={linePath} fill="none" stroke="var(--accent)" strokeWidth="2" />
+        {/* Mount-only draw-in: buffer/horizon/merchant edits refetch continuously,
+            so no keying — the animation runs once when the chart first mounts. */}
+        <path className="plot-fade" d={areaPath} fill="url(#cf-fill)" />
+        <path className="plot-draw" pathLength={1} d={linePath} fill="none" stroke="var(--accent)" strokeWidth="2" />
         {/* Event markers: income above, outflow below the line. */}
         {markers.map(({ e, i }, k) => (
           <circle
@@ -168,21 +171,23 @@ export default function Cashflow() {
             </div>
           </section>
 
-          <section className="card">
-            <div className="eyebrow">Projected balance</div>
-            <ProjectedBalanceChart forecast={forecast} currency={currency} />
-            {forecast.firstBreachDate ? (
-              <div className="explain-warn caution" style={{ marginTop: 14 }}>
-                <span className="explain-warn-ic" aria-hidden="true">!</span>
-                <span>Your balance dips to <b className="money">{money(forecast.lowestBalanceCents, cur)}</b> on <b>{shortDate(forecast.lowestDate)}</b>, {bufferCents > 0 ? "below your buffer" : "its lowest"} — the tight point{forecast.firstBreachDate !== forecast.lowestDate ? `, first crossing the line on ${shortDate(forecast.firstBreachDate)}` : ""}.</span>
-              </div>
-            ) : (
-              <div className="explain-warn info" style={{ marginTop: 14 }}>
-                <span className="explain-warn-ic" aria-hidden="true">i</span>
-                <span>Your balance stays above {bufferCents > 0 ? "your buffer" : "zero"} the whole window — lowest is <b className="money">{money(forecast.lowestBalanceCents, cur)}</b> on {shortDate(forecast.lowestDate)}.</span>
-              </div>
-            )}
-          </section>
+          <Reveal>
+            <section className="card">
+              <div className="eyebrow">Projected balance</div>
+              <ProjectedBalanceChart forecast={forecast} currency={currency} />
+              {forecast.firstBreachDate ? (
+                <div className="explain-warn caution" style={{ marginTop: 14 }}>
+                  <span className="explain-warn-ic" aria-hidden="true">!</span>
+                  <span>Your balance dips to <b className="money">{money(forecast.lowestBalanceCents, cur)}</b> on <b>{shortDate(forecast.lowestDate)}</b>, {bufferCents > 0 ? "below your buffer" : "its lowest"} — the tight point{forecast.firstBreachDate !== forecast.lowestDate ? `, first crossing the line on ${shortDate(forecast.firstBreachDate)}` : ""}.</span>
+                </div>
+              ) : (
+                <div className="explain-warn info" style={{ marginTop: 14 }}>
+                  <span className="explain-warn-ic" aria-hidden="true">i</span>
+                  <span>Your balance stays above {bufferCents > 0 ? "your buffer" : "zero"} the whole window — lowest is <b className="money">{money(forecast.lowestBalanceCents, cur)}</b> on {shortDate(forecast.lowestDate)}.</span>
+                </div>
+              )}
+            </section>
+          </Reveal>
 
           <div className="cf-grid">
             <section className="card">

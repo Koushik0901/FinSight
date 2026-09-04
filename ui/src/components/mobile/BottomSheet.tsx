@@ -121,7 +121,6 @@ export function BottomSheet({
         className={`mobile-sheet-root${open ? " open" : ""}`}
         aria-hidden={open ? undefined : true}
       >
-        {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */}
         <div
           className="mobile-sheet-backdrop"
           onClick={onClose}

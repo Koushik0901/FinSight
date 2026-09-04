@@ -725,6 +725,8 @@ function ModelRoutingSection() {
   };
 
   if (!cfg) return null;
+  // Optional in the config: unset rows fall back to the routing default of 0.6.
+  const fasttextThreshold = cfg.fasttextThreshold ?? 0.6;
   const row = (label: string, desc: string, key: keyof ModelRoutingConfig) => {
     const v = cfg[key] as unknown;
     const isNone = v == null || (typeof v === "object" && v !== null && "kind" in v && (v as { kind: string }).kind === "unconfigured");
@@ -741,6 +743,7 @@ function ModelRoutingSection() {
         <td style={{ padding: "8px 12px" }}>
           <select
             className="control"
+            aria-label={`${label} model`}
             value={isNone ? "deterministic" : kind ?? "deterministic"}
             onChange={(e) => {
               const k = e.target.value;
@@ -782,8 +785,8 @@ function ModelRoutingSection() {
         <div style={{ marginTop: 16, display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
           <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <span className="muted">fastText threshold</span>
-            <input type="range" min={0.4} max={0.9} step={0.05} value={cfg.fasttextThreshold} onChange={(e) => update({ fasttextThreshold: parseFloat(e.target.value) })} />
-            <span className="num" style={{ minWidth: 32 }}>{cfg.fasttextThreshold.toFixed(2)}</span>
+            <input type="range" min={0.4} max={0.9} step={0.05} value={fasttextThreshold} onChange={(e) => update({ fasttextThreshold: parseFloat(e.target.value) })} />
+            <span className="num" style={{ minWidth: 32 }}>{fasttextThreshold.toFixed(2)}</span>
           </label>
           <span className="muted" style={{ fontSize: 12 }}>Rule → fastText ≥ threshold → LLM. Lower = more LLM.</span>
         </div>

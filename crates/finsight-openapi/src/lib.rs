@@ -253,6 +253,7 @@ pub const COMMANDS: &[&str] = &[
     "update_recipe",
     "update_report_widget",
     "update_transaction",
+    "upsert_agent_memory",
 ];
 
 #[derive(OpenApi)]
@@ -505,6 +506,7 @@ pub const COMMANDS: &[&str] = &[
         finsight_api::commands::recipes::update_recipe,
         finsight_api::commands::report_widgets::update_report_widget,
         finsight_api::commands::transactions::update_transaction,
+        finsight_api::commands::insights::upsert_agent_memory,
     ),
     components(schemas(
         finsight_api::commands::agent::AgentAccountRow,
@@ -837,6 +839,7 @@ pub const COMMANDS: &[&str] = &[
         finsight_api::commands::import::PrepareCsvImportRequest,
         finsight_api::commands::import::PreviewCsvColumnsRequest,
         finsight_api::commands::insights::ForgetAgentMemoryRequest,
+        finsight_api::commands::insights::UpsertAgentMemoryRequest,
         finsight_api::commands::investments::GetInvestmentSummaryRequest,
         finsight_api::commands::investments::ListAccountPositionsRequest,
         finsight_api::commands::metrics::ExplainFinancialMetricsRequest,

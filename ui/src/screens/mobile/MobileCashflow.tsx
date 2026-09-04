@@ -4,9 +4,9 @@ import { useFinancialMetrics } from "../../api/hooks/metrics";
 import type { CashflowForecast, CashflowEvent } from "../../api/openapiClient";
 import { money } from "../../utils/format";
 import { blurAmounts } from "../../utils/blurAmounts";
-import { MobileStat } from "../../components/mobile/MobileStat";
 import { MobileSection, MobileList, MobileListItem } from "../../components/mobile/MobileList";
 import { SegmentedControl } from "../../components/mobile/SegmentedControl";
+import Reveal from "../../components/Reveal";
 
 const HORIZONS = [30, 60, 90] as const;
 type Horizon = (typeof HORIZONS)[number];
@@ -57,18 +57,18 @@ function ProjectedBalanceChart({
   const areaPath = `${linePath} L${W},${H} L0,${H} Z`;
   const bufferY = y(buffer);
   const lowIdx = Math.max(0, days.findIndex((d) => d.date === forecast.lowestDate));
-
   return (
-    <div style={{ width: "100%", marginTop: 12 }}>
-      <svg
-        viewBox="0 0 900 240"
-        width="100%"
-        height={H}
-        preserveAspectRatio="none"
-        style={{ display: "block", overflow: "visible" }}
-        role="img"
-        aria-label={`Projected balance over ${forecast.horizonDays} days, lowest ${money(forecast.lowestBalanceCents, currency ? { currency } : undefined)} on ${shortDate(forecast.lowestDate)}`}
-      >
+    <Reveal>
+      <div style={{ width: "100%", marginTop: 12 }}>
+        <svg
+          viewBox="0 0 900 240"
+          width="100%"
+          height={H}
+          preserveAspectRatio="none"
+          style={{ display: "block", overflow: "visible" }}
+          role="img"
+          aria-label={`Projected balance over ${forecast.horizonDays} days, lowest ${money(forecast.lowestBalanceCents, currency ? { currency } : undefined)} on ${shortDate(forecast.lowestDate)}`}
+        >
         <defs>
           <linearGradient id="cf-fill-mobile" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0" stopColor="var(--accent)" stopOpacity={0.2} />
@@ -79,8 +79,8 @@ function ProjectedBalanceChart({
           <line x1={0} y1={y(0)} x2={W} y2={y(0)} stroke="var(--negative)" strokeWidth={1} opacity={0.5} />
         ) : null}
         <line x1={0} y1={bufferY} x2={W} y2={bufferY} stroke="var(--warning)" strokeWidth={1} strokeDasharray="5 5" opacity={0.75} />
-        <path d={areaPath} fill="url(#cf-fill-mobile)" />
-        <path d={linePath} fill="none" stroke="var(--accent)" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+        <path className="plot-fade" d={areaPath} fill="url(#cf-fill-mobile)" />
+        <path className="plot-draw" d={linePath} fill="none" stroke="var(--accent)" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" pathLength={1} />
         <circle cx={x(lowIdx)} cy={y(forecast.lowestBalanceCents)} r={5} fill="var(--negative)" stroke="var(--bg)" strokeWidth={2} />
       </svg>
       {/* 3 readable x-labels instead of every-day tiny ticks */}
@@ -111,6 +111,7 @@ function ProjectedBalanceChart({
         </span>
       </div>
     </div>
+    </Reveal>
   );
 }
 

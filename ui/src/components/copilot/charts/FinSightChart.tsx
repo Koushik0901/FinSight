@@ -1,5 +1,6 @@
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Cell, ResponsiveContainer } from "recharts";
 import { money } from "../../../utils/format";
+import { usePlotAnim } from "../../../utils/plotMotion";
 
 export type MoneyPoint = { label: string; amountCents: number };
 
@@ -23,6 +24,7 @@ export function FinSightBarComparison({
   current: MoneyPoint;
   prior: MoneyPoint;
 }) {
+  const anim = usePlotAnim();
   if (current.amountCents === 0 && prior.amountCents === 0) {
     return (
       <div className="cp-card">
@@ -59,7 +61,7 @@ export function FinSightBarComparison({
               tickLine={false}
               width={110}
             />
-            <Bar dataKey="value" radius={[0, 5, 5, 0]} maxBarSize={22}>
+            <Bar dataKey="value" radius={[0, 5, 5, 0]} maxBarSize={22} {...anim}>
               {data.map((entry) => (
                 <Cell key={entry.name} fill={entry.isCurrent ? "var(--accent)" : "var(--ink-faint)"} />
               ))}

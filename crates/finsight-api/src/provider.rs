@@ -169,12 +169,20 @@ pub fn load_routing_config(db: &Db) -> crate::commands::agent::ModelRoutingConfi
 pub fn provider_for_task(db: &Db, task: &str) -> Option<Arc<dyn CompletionProvider>> {
     let routing = load_routing_config(db);
     let cfg_opt: Option<serde_json::Value> = match task {
-        "categorization" => routing.categorization.map(|c| serde_json::to_value(c).unwrap()),
+        "categorization" => routing
+            .categorization
+            .map(|c| serde_json::to_value(c).unwrap()),
         "planner" => routing.planner.map(|c| serde_json::to_value(c).unwrap()),
         "title" => routing.title.map(|c| serde_json::to_value(c).unwrap()),
-        "complexityRouter" => routing.complexity_router.map(|c| serde_json::to_value(c).unwrap()),
-        "copilotRouter" => routing.copilot_router.map(|c| serde_json::to_value(c).unwrap()),
-        "copilotSynthesizer" => routing.copilot_synthesizer.map(|c| serde_json::to_value(c).unwrap()),
+        "complexityRouter" => routing
+            .complexity_router
+            .map(|c| serde_json::to_value(c).unwrap()),
+        "copilotRouter" => routing
+            .copilot_router
+            .map(|c| serde_json::to_value(c).unwrap()),
+        "copilotSynthesizer" => routing
+            .copilot_synthesizer
+            .map(|c| serde_json::to_value(c).unwrap()),
         _ => None,
     };
     if let Some(cfg) = cfg_opt {
@@ -218,7 +226,6 @@ pub fn provider_for_task_or_global(db: &Db, task: &str) -> Option<Arc<dyn Comple
         }
     }
 }
-
 
 #[cfg(test)]
 mod tests {

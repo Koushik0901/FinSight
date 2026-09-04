@@ -129,19 +129,28 @@ export function MobileListItem({
     "aria-label": `${title}${subtitle ? `, ${subtitle}` : ""}${value ? `, ${value}` : ""}`,
   };
 
+  // An interactive control cannot carry role="listitem" (axe aria-allowed-role
+  // violation: implicit button/link role wins), yet the parent MobileList is a
+  // role="list" whose owned children must be listitems. The ARIA-valid shape
+  // is a non-interactive listitem wrapper around the control. The wrapper is
+  // visually transparent — the button keeps .mobile-list-item and fills it.
   if (href) {
     return (
-      <a href={href} className={baseClass} role="listitem" {...a11yProps}>
-        {content}
-      </a>
+      <div role="listitem">
+        <a href={href} className={baseClass} {...a11yProps}>
+          {content}
+        </a>
+      </div>
     );
   }
 
   if (onPress) {
     return (
-      <button type="button" onClick={onPress} className={baseClass} role="listitem" {...a11yProps}>
-        {content}
-      </button>
+      <div role="listitem">
+        <button type="button" onClick={onPress} className={baseClass} {...a11yProps}>
+          {content}
+        </button>
+      </div>
     );
   }
 

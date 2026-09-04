@@ -436,7 +436,9 @@ describe("Goals — focus editor", () => {
     });
     render(<Goals />, { wrapper: createWrapperWithEntries(["/goals?focusGoal=g3"]) });
     expect(await screen.findByText("Edit goal · Car payoff")).toBeInTheDocument();
-    expect(screen.getByText(/Monthly contribution/i)).toBeInTheDocument();
+    // The amount field is labelled just "Contribution ($)" since cadence became
+    // a separate control (a weekly amount is not a monthly amount).
+    expect(screen.getByLabelText("Contribution ($)")).toBeInTheDocument();
   });
 
   it("offers priority always, but deadline firmness only when a date exists", async () => {
@@ -649,11 +651,10 @@ describe("Goals — requiredMonthly", () => {
       error: null,
     });
     render(<Goals />, { wrapper: createWrapper() });
-    // GoalCard badge
-    expect(await screen.findByText(/Need .*\/mo/)).toBeInTheDocument();
-    // Horizon tooltip badge also uses same text - at least one more occurrence in horizon
-    const badges = screen.getAllByText(/Need .*\/mo/);
-    expect(badges.length).toBeGreaterThanOrEqual(1);
+    // GoalCard badge, and the Horizon row badge below uses the same text —
+    // both must be present for an underfunded goal.
+    const badges = await screen.findAllByText(/Need .*\/mo/);
+    expect(badges.length).toBeGreaterThanOrEqual(2);
   });
 
   it("does not show Need badge when funded or on track", async () => {
@@ -671,7 +672,9 @@ describe("Goals — requiredMonthly", () => {
       error: null,
     });
     render(<Goals />, { wrapper: createWrapper() });
-    await screen.findByText("On Track Goal");
+    // The goal name appears on the card, the Horizon row, and the scenario
+    // picker — wait for any of them, then assert no Need badge anywhere.
+    expect((await screen.findAllByText("On Track Goal")).length).toBeGreaterThanOrEqual(1);
     expect(screen.queryByText(/Need .*\/mo/)).not.toBeInTheDocument();
   });
 });

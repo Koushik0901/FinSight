@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { actionBundleKeys, simplefinKeys, inboxKeys, mutationWrapper } from "./_factory";
-import { invalidateDomains, DOMAIN_KEYS } from "../invalidation";
+import { DOMAIN_KEYS } from "../invalidation";
 
 describe("query-key factories", () => {
   it("actionBundleKeys.list and pending produce stable, typed tuples", () => {

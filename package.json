@@ -20,7 +20,7 @@
       "mermaid": "11.16.1"
     }
   },
-  "packageManager": "pnpm@9.0.0",
+  "packageManager": "pnpm@11.25.0",
   "devDependencies": {
     "vitepress": "1.6.4",
     "vue": "3"

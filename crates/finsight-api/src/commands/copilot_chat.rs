@@ -964,29 +964,73 @@ pub async fn stream_copilot_message(
             let title = {
                 let use_llm = {
                     if let Ok(conn) = db_clone.get() {
-                        if let Ok(Some(v)) = finsight_core::settings::get::<serde_json::Value>(&conn, "llm_routing") {
+                        if let Ok(Some(v)) =
+                            finsight_core::settings::get::<serde_json::Value>(&conn, "llm_routing")
+                        {
                             !v.get("title").map_or(true, |x| x.is_null())
-                        } else { true }
-                    } else { true }
+                        } else {
+                            true
+                        }
+                    } else {
+                        true
+                    }
                 };
                 if use_llm {
                     let system = "Generate a short 4-6 word title for this conversation. Respond with JSON only: {\"title\": \"...\"}. No punctuation at the end. No quotes around the title. Be specific to the financial topic.";
-                    let prompt = format!("User asked: {}\nAssistant replied: {}", text_clone, prose_clone.chars().take(200).collect::<String>());
+                    let prompt = format!(
+                        "User asked: {}\nAssistant replied: {}",
+                        text_clone,
+                        prose_clone.chars().take(200).collect::<String>()
+                    );
                     if let Ok(v) = provider_clone.complete_json(system, &prompt).await {
                         if let Some(t) = v.get("title").and_then(|t| t.as_str()) {
                             let t = t.to_string();
-                            if !t.is_empty() { t } else { text_clone.split_whitespace().take(6).collect::<Vec<_>>().join(" ") }
-                        } else { text_clone.split_whitespace().take(6).collect::<Vec<_>>().join(" ") }
-                    } else { text_clone.split_whitespace().take(6).collect::<Vec<_>>().join(" ") }
+                            if !t.is_empty() {
+                                t
+                            } else {
+                                text_clone
+                                    .split_whitespace()
+                                    .take(6)
+                                    .collect::<Vec<_>>()
+                                    .join(" ")
+                            }
+                        } else {
+                            text_clone
+                                .split_whitespace()
+                                .take(6)
+                                .collect::<Vec<_>>()
+                                .join(" ")
+                        }
+                    } else {
+                        text_clone
+                            .split_whitespace()
+                            .take(6)
+                            .collect::<Vec<_>>()
+                            .join(" ")
+                    }
                 } else {
                     let words: Vec<&str> = text_clone.split_whitespace().take(6).collect();
                     let mut t = words.join(" ");
-                    if t.is_empty() { t = "New conversation".to_string(); }
-                    if t.chars().count() > 60 { t.chars().take(60).collect::<String>() } else { t }
+                    if t.is_empty() {
+                        t = "New conversation".to_string();
+                    }
+                    if t.chars().count() > 60 {
+                        t.chars().take(60).collect::<String>()
+                    } else {
+                        t
+                    }
                 }
             };
-            let title = if title.chars().count() > 60 { title.chars().take(60).collect::<String>() } else { title };
-            let title = if title.is_empty() { "New conversation".to_string() } else { title };
+            let title = if title.chars().count() > 60 {
+                title.chars().take(60).collect::<String>()
+            } else {
+                title
+            };
+            let title = if title.is_empty() {
+                "New conversation".to_string()
+            } else {
+                title
+            };
             let _ = run(&db_clone, move |conn| {
                 conversations::update_conversation_title(conn, &cid, &title)
                     .map_err(|e| finsight_core::CoreError::InvalidState(e.to_string()))
@@ -994,7 +1038,6 @@ pub async fn stream_copilot_message(
             .await;
         });
     }
-
 
     Ok(conv_id)
 }

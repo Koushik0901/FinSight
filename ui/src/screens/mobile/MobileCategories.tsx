@@ -3,7 +3,6 @@ import { useCategoriesWithSpending } from "../../api/hooks/transactions";
 import { money } from "../../utils/format";
 import { MobileSection, MobileList, MobileListItem } from "../../components/mobile/MobileList";
 import { SegmentedControl } from "../../components/mobile/SegmentedControl";
-import * as I from "../../components/Icons";
 
 type Sort = "spent" | "name" | "budget";
 

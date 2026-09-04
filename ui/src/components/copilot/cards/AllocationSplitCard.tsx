@@ -20,10 +20,11 @@ export function AllocationSplitCard({ block }: { block: Block }) {
           <div
             key={`${s.label}-${i}`}
             data-testid="allocation-seg-fill"
-            className="cp-alloc-seg"
+            className="cp-alloc-seg plot-grow-x"
             style={{
               width: `${(s.amountCents / block.totalCents) * 100}%`,
               background: colorForCategoryLabel(s.categoryKey) ?? FALLBACK_COLORS[i % FALLBACK_COLORS.length],
+              animationDelay: `${Math.min(i, 5) * 30}ms`,
             }}
             title={s.label}
           />

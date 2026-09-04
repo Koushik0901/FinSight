@@ -202,14 +202,23 @@ function ChartBlock(block: Extract<CopilotResponseBlock, { kind: "barChart" | "l
     <div className="cp-card">
       {block.title && <p className="cp-card-title" style={{ marginBottom: 12 }}>{block.title}</p>}
       <div className="copilot-gen-chart">
-        {block.data.map((point) => {
+        {block.data.map((point, i) => {
           // Bars labelled with a known category reuse its canonical color so
           // Copilot charts match Reports/Budget/Categories; others keep accent.
           const categoryColor = colorForCategoryLabel(point.label);
           return (
             <div key={point.label} className="copilot-gen-bar-row">
               <span>{point.label}</span>
-              <div><i style={{ inlineSize: `${Math.max(4, (point.value / max) * 100)}%`, ...(categoryColor ? { background: categoryColor } : {}) }} /></div>
+              <div>
+                <i
+                  className="plot-grow-x"
+                  style={{
+                    inlineSize: `${Math.max(4, (point.value / max) * 100)}%`,
+                    ...(categoryColor ? { background: categoryColor } : {}),
+                    animationDelay: `${Math.min(i, 5) * 40}ms`,
+                  }}
+                />
+              </div>
               <strong>{point.value.toLocaleString()}</strong>
             </div>
           );

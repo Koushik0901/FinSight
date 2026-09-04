@@ -96,16 +96,18 @@ export default function ReportBuilder() {
             {(data?.rows.length ?? 0) === 0 ? (
               <div className="muted" style={{ padding: "18px 0" }}>No transactions match this slice.</div>
             ) : (
-              data?.rows.map((row) => (
+              data?.rows.map((row, idx) => (
                 <div key={row.label} style={{ display: "grid", gridTemplateColumns: "140px 1fr auto", gap: 12, alignItems: "center" }}>
                   <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.label}</span>
                   <div style={{ height: 10, background: "var(--surface-2)", borderRadius: 999, overflow: "hidden" }}>
                     <div
+                      className="plot-grow-x pb-fill"
                       style={{
                         width: `${(row.totalCents / maxTotal) * 100}%`,
                         height: "100%",
                         background: "var(--accent)",
                         borderRadius: 999,
+                        animationDelay: `${Math.min(idx * 30, 200)}ms`,
                       }}
                     />
                   </div>

@@ -135,10 +135,13 @@ pub struct SetModelRoutingRequest {
 #[utoipa::path(post, path = "/api/rpc/set_model_routing", request_body(content = SetModelRoutingRequest), responses((status = 200, description = "Success")))]
 pub async fn set_model_routing(state: &ApiState, config: ModelRoutingConfig) -> AppResult<()> {
     let db = (*state.db).clone();
-    let cfg_json = serde_json::to_value(&config).map_err(|e| AppError::new("agent", e.to_string()))?;
-    run(&db, move |conn| settings::set(conn, "llm_routing", &cfg_json))
-        .await
-        .map_err(AppError::from)?;
+    let cfg_json =
+        serde_json::to_value(&config).map_err(|e| AppError::new("agent", e.to_string()))?;
+    run(&db, move |conn| {
+        settings::set(conn, "llm_routing", &cfg_json)
+    })
+    .await
+    .map_err(AppError::from)?;
     Ok(())
 }
 
@@ -148,7 +151,8 @@ pub async fn get_model_routing(state: &ApiState) -> AppResult<ModelRoutingConfig
     run(&db, |conn| {
         let v = settings::get(conn, "llm_routing")?;
         if let Some(val) = v {
-            serde_json::from_value::<ModelRoutingConfig>(val).map_err(|e| finsight_core::CoreError::InvalidState(e.to_string()))
+            serde_json::from_value::<ModelRoutingConfig>(val)
+                .map_err(|e| finsight_core::CoreError::InvalidState(e.to_string()))
         } else {
             Ok(ModelRoutingConfig::default())
         }
@@ -2640,26 +2644,57 @@ fn direct_finance_answer(
     Ok(answer)
 }
 
-async fn router_classify(db: &finsight_core::Db, provider: &Arc<dyn CompletionProvider>, question: &str) -> String {
+async fn router_classify(
+    db: &finsight_core::Db,
+    provider: &Arc<dyn CompletionProvider>,
+    question: &str,
+) -> String {
     // Immich-style: `llm_routing.complexityRouter` null → heuristic (0 tokens), else LLM
     let use_llm = {
         if let Ok(conn) = db.get() {
-            if let Ok(Some(v)) = finsight_core::settings::get::<serde_json::Value>(&conn, "llm_routing") {
+            if let Ok(Some(v)) =
+                finsight_core::settings::get::<serde_json::Value>(&conn, "llm_routing")
+            {
                 !v.get("complexityRouter").map_or(true, |x| x.is_null())
-            } else { true }
-        } else { true }
+            } else {
+                true
+            }
+        } else {
+            true
+        }
     };
     if !use_llm {
         let q = question.to_lowercase();
         let deep_keywords = [
-            "plan", "allocation", "allocate", "budget", "forecast", "scenario", "should i",
-            "debt", "payoff", "pay off", "snowball", "avalanche", "investment", "invest",
-            "goal", "retire", "retirement", "pay down", "refinance", "rebalance",
+            "plan",
+            "allocation",
+            "allocate",
+            "budget",
+            "forecast",
+            "scenario",
+            "should i",
+            "debt",
+            "payoff",
+            "pay off",
+            "snowball",
+            "avalanche",
+            "investment",
+            "invest",
+            "goal",
+            "retire",
+            "retirement",
+            "pay down",
+            "refinance",
+            "rebalance",
         ];
         if deep_keywords.iter().any(|k| q.contains(k)) {
             return "deep".to_string();
         }
-        if question.len() > 120 && (question.to_lowercase().contains('?') || question.to_lowercase().contains("how") || question.to_lowercase().contains("what")) {
+        if question.len() > 120
+            && (question.to_lowercase().contains('?')
+                || question.to_lowercase().contains("how")
+                || question.to_lowercase().contains("what"))
+        {
             return "deep".to_string();
         }
         return "simple".to_string();
@@ -2710,7 +2745,8 @@ pub async fn ask_agent(
     if effective_mode == "deep" {
         // Per-task routing: `llm_routing.copilotRouter`/`copilotSynthesizer` override global.
         // `None` → use global (fallback), `Some(null)` already handled as heuristic in router_classify.
-        let router_provider = crate::provider::provider_for_task_or_global(&db, "copilotRouter").unwrap_or_else(|| Arc::clone(&provider));
+        let router_provider = crate::provider::provider_for_task_or_global(&db, "copilotRouter")
+            .unwrap_or_else(|| Arc::clone(&provider));
         let synth_provider = crate::provider::provider_for_task(&db, "copilotSynthesizer");
         let tools = build_toolset();
         let router_clone = router_provider;

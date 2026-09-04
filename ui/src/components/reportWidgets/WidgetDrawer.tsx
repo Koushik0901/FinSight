@@ -3,7 +3,7 @@ import Drawer from "../Drawer";
 import { useCreateReportWidget, useUpdateReportWidget } from "../../api/hooks/reportWidgets";
 import type { ReportWidget } from "../../api/hooks/reportWidgets";
 import { useAccounts } from "../../api/hooks/accounts";
-import { useCategories, useCategoryGroups } from "../../api/hooks/transactions";
+import { useCategories } from "../../api/hooks/transactions";
 import { toast } from "sonner";
 
 function AccountsFilter({ accountIds, onChange }: { accountIds: string[]; onChange: (ids: string[]) => void }) {

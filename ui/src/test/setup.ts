@@ -38,3 +38,25 @@ class MockResizeObserver implements ResizeObserver {
   disconnect = vi.fn();
 }
 vi.stubGlobal("ResizeObserver", MockResizeObserver);
+
+// jsdom does not implement window.matchMedia. The app uses it in two places
+// that tests render: useIsMobile (App shell — phone vs desktop layout) and
+// Drawer's retained-mount exit animation (mobile 200ms vs desktop 180ms). A
+// matches:false default keeps tests on the desktop/longer-duration path, same
+// as jsdom's CSS-less behavior elsewhere. The listener surface is stubbed so
+// hook subscriptions (addEventListener("change")) don't throw.
+class MockMediaQueryList extends EventTarget {
+  readonly media: string;
+  readonly matches = false;
+  readonly onchange: MediaQueryList["onchange"] = null;
+  constructor(query: string) {
+    super();
+    this.media = query;
+  }
+  addListener = vi.fn();
+  removeListener = vi.fn();
+}
+vi.stubGlobal(
+  "matchMedia",
+  vi.fn((query: string) => new MockMediaQueryList(query))
+);

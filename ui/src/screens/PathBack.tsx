@@ -190,8 +190,8 @@ export default function PathBack() {
         {hasTargetVerdict && (
           <div className="stack stack-sm" style={{ marginTop: 16 }}>
             <div style={{ height: 10, borderRadius: 999, background: "var(--surface-2)", overflow: "hidden", display: "flex" }}>
-              <span style={{ width: `${projectedPct}%`, background: "var(--accent)", height: "100%" }} />
-              {structuralPct > 0 && <span style={{ width: `${structuralPct}%`, background: "var(--warning)", height: "100%" }} />}
+              <span className="plot-grow-x recovery-fill" style={{ width: `${projectedPct}%`, background: "var(--accent)", height: "100%" }} />
+              {structuralPct > 0 && <span className="plot-grow-x recovery-fill" style={{ width: `${structuralPct}%`, background: "var(--warning)", height: "100%", animationDelay: "90ms" }} />}
             </div>
             <p className="muted" style={{ fontSize: 13, margin: 0 }}>{plan.note}</p>
             {structuralGap != null && structuralGap > 0 && (

@@ -65,7 +65,11 @@ pub fn merchant_text_for_model(merchant_raw: &str, amount_cents: i64) -> String 
     let redacted = redact_for_model(merchant_raw);
     let base = finsight_core::merchant::normalize_merchant(&redacted);
     let base = if base.is_empty() {
-        redacted.to_lowercase().split_whitespace().collect::<Vec<_>>().join(" ")
+        redacted
+            .to_lowercase()
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
     } else {
         base
     };
@@ -116,8 +120,9 @@ pub async fn get_fasttext_model(data_dir: &Path) -> Result<Arc<FastTextHandle>> 
                     let handle = tokio::task::spawn_blocking(move || {
                         let mut ft = FastText::new();
                         let p = path_clone.to_string_lossy().to_string();
-                        ft.load_model(&p)
-                            .map_err(|e| anyhow::anyhow!("load fasttext model {}: {}", path_clone.display(), e))?;
+                        ft.load_model(&p).map_err(|e| {
+                            anyhow::anyhow!("load fasttext model {}: {}", path_clone.display(), e)
+                        })?;
                         Ok::<_, anyhow::Error>(FastTextHandle {
                             inner: Mutex::new(ft),
                         })

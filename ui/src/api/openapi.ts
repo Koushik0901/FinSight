@@ -4003,6 +4003,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/rpc/upsert_agent_memory": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["upsert_agent_memory"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -8369,6 +8385,11 @@ export interface components {
         UpdateTxnResult: {
             proposed_rule?: components["schemas"]["ProposedRuleDto"] | null;
             transaction: components["schemas"]["Transaction"];
+        };
+        UpsertAgentMemoryRequest: {
+            description: string;
+            key: string;
+            kind: string;
         };
         /** @enum {string} */
         Urgency: "critical" | "normal" | "low";
@@ -13681,6 +13702,28 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["UpdateTxnResult"];
                 };
+            };
+        };
+    };
+    upsert_agent_memory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpsertAgentMemoryRequest"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
