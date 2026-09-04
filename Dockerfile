@@ -2,9 +2,13 @@
 # FinSight's UI lives in a pnpm workspace (root pnpm-lock.yaml + pnpm-workspace.yaml
 # listing "ui"); there is no standalone ui/package-lock.json, so this stage uses
 # pnpm (via corepack) rather than `npm ci`.
-FROM node:20-bookworm-slim AS ui
+FROM node:22-bookworm-slim AS ui
+# python3/make/g++: sharp's install script falls back to a node-gyp source
+# build when no prebuilt binary matches the Node major (e.g. sharp 0.32 on
+# Node 22). Needed at image-build time only; the runtime stage stays slim.
+RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ && rm -rf /var/lib/apt/lists/*
 WORKDIR /repo
-RUN corepack enable && corepack prepare pnpm@9.0.0 --activate
+RUN corepack enable
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY ui/package.json ui/package.json
 RUN pnpm install --frozen-lockfile

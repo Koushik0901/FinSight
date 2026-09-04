@@ -4,3 +4,7 @@ onlyBuiltDependencies:
   - esbuild
 allowBuilds:
   esbuild: true
+  sharp: true
+overrides:
+  dompurify: 3.4.13
+  mermaid: 11.16.1
