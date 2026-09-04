@@ -126,6 +126,17 @@ async fn setup_when_empty_creates_admin_and_logs_in() {
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::OK);
+    let raw_cookie = res
+        .headers()
+        .get(axum::http::header::SET_COOKIE)
+        .expect("setup response must set a session cookie")
+        .to_str()
+        .unwrap()
+        .to_string();
+    assert!(
+        raw_cookie.contains("; Max-Age=2592000"),
+        "session cookie must be persistent (30d, matching SESSION_TTL), not session-scoped: {raw_cookie}"
+    );
     let cookie = cookie_from(&res);
     let body = json_body(res).await;
     let recovery_key = body["recoveryKey"].as_str().expect("recoveryKey present");

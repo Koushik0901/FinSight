@@ -337,9 +337,14 @@ export default function AccountDrawer({ open, onClose, account, onCreated, eleva
           <input {...register("name")} placeholder="e.g. Joint Checking" aria-invalid={!!errors.name} />
           {errors.name && <span className="err">{errors.name.message}</span>}
         </label>
-        <label> Nickname <span className="muted">(optional)</span>
-          <input {...register("nickname")} placeholder="e.g. Main Checking" />
-        </label>
+        {/* Nickname is a display override for provider-synced accounts (the
+          sync API assigns the official name). Manual creation names the
+          account directly, so the field only appears when editing. */}
+        {isEdit && (
+          <label> Nickname <span className="muted">(optional)</span>
+            <input {...register("nickname")} placeholder="e.g. Main Checking" />
+          </label>
+        )}
         {!isEdit && (
           <fieldset>
             <legend>Type</legend>

@@ -1,13 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import LoginScreen from "./LoginScreen";
-import { login } from "../../api/auth";
+import { lastAuthedUser, login } from "../../api/auth";
 
 // LoginScreen now renders RecoverScreen in place, which pulls `recoverAccount`
 // from this same module — it must exist on the mock or the import throws.
 vi.mock("../../api/auth", () => ({
   login: vi.fn(),
   recoverAccount: vi.fn(),
+  lastAuthedUser: vi.fn(() => null),
 }));
 
 describe("LoginScreen", () => {
@@ -61,5 +62,14 @@ describe("LoginScreen", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /back to sign in/i }));
     expect(screen.getByRole("button", { name: /^sign in$/i })).toBeInTheDocument();
+  });
+
+  it("prefills the last username with a 'Someone else?' escape hatch", () => {
+    vi.mocked(lastAuthedUser).mockReturnValue("alice");
+    render(<LoginScreen onComplete={vi.fn()} />);
+
+    expect(screen.getByLabelText(/username/i)).toHaveValue("alice");
+    fireEvent.click(screen.getByRole("button", { name: /someone else/i }));
+    expect(screen.getByLabelText(/username/i)).toHaveValue("");
   });
 });

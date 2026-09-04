@@ -108,11 +108,18 @@ fn cookie_secure_flag() -> &'static str {
     }
 }
 
+/// Persistent-login lifetime, in seconds. Must match the server-side sliding
+/// window (`sessions::SESSION_TTL`, 30 days): without `Max-Age` the cookie is
+/// session-scoped and the browser drops it on quit, so users would log in
+/// every day despite the server still honoring the token. Active use slides
+/// both windows, so this only bounds total time since last activity.
+const SESSION_COOKIE_MAX_AGE_SECS: i64 = 30 * 24 * 3600;
+
 fn set_cookie_header(token: &str) -> (header::HeaderName, String) {
     (
         header::SET_COOKIE,
         format!(
-            "{SESSION_COOKIE}={token}; HttpOnly; SameSite=Lax; Path=/{}",
+            "{SESSION_COOKIE}={token}; HttpOnly; SameSite=Lax; Path=/{}; Max-Age={SESSION_COOKIE_MAX_AGE_SECS}",
             cookie_secure_flag()
         ),
     )

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import Button from "../../components/Button";
 import Input from "../../components/Input";
 import { useMarkOnboardingComplete } from "../../api/hooks/onboarding";
@@ -21,7 +21,9 @@ export default function StepWelcome({ onNext, onSkipToToday }: Props) {
   // THEIR own e-transfers ("To/From: <you>") as internal moves from the very
   // first import, instead of miscounting them as income/spending until the user
   // later marks themselves via "This is me". Best-effort: never blocks setup.
-  const handleGetStarted = async () => {
+  // Submits on Enter (native form) as well as the Get started button.
+  const handleGetStarted = async (e: FormEvent) => {
+    e.preventDefault();
     const trimmed = name.trim();
     if (trimmed) {
       try {
@@ -59,32 +61,38 @@ export default function StepWelcome({ onNext, onSkipToToday }: Props) {
           <span className="chip">Encrypted</span>
           <span className="chip">No ads</span>
         </div>
-        <Input
-          className="onb-name-field"
-          label={
-            <span>
-              Your name <span className="muted">(optional)</span>
-            </span>
-          }
-          hint="Helps recognize transfers between your own accounts."
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="e.g. John Doe"
-          aria-label="Your name"
-          autoComplete="name"
-        />
-        <div className="onb-actions">
-          <Button variant="primary" onClick={() => void handleGetStarted()}>
-            Get started →
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => void handleSkip()}
-            loading={markComplete.isPending}
-          >
-            {markComplete.isPending ? "Skipping…" : "Skip setup"}
-          </Button>
-        </div>
+        <form
+          className="onb-name-form"
+          onSubmit={(e) => void handleGetStarted(e)}
+        >
+          <Input
+            className="onb-name-field"
+            label={
+              <span>
+                Your name <span className="muted">(optional)</span>
+              </span>
+            }
+            hint="Helps recognize transfers between your own accounts."
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. John Doe"
+            aria-label="Your name"
+            autoComplete="name"
+          />
+          <div className="onb-actions">
+            <Button variant="primary" type="submit">
+              Get started →
+            </Button>
+            <Button
+              variant="outline"
+              type="button"
+              onClick={() => void handleSkip()}
+              loading={markComplete.isPending}
+            >
+              {markComplete.isPending ? "Skipping…" : "Skip setup"}
+            </Button>
+          </div>
+        </form>
         {skipError && (
           <p role="alert" className="err onb-action-error">
             {skipError}

@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import RecoverScreen from "./RecoverScreen";
-import { login } from "../../api/auth";
+import { lastAuthedUser, login } from "../../api/auth";
 import { userErrorMessage } from "../../utils/runtime";
 import { AuthShell, Field, Ico } from "./authScene";
 
@@ -11,7 +11,13 @@ import { AuthShell, Field, Ico } from "./authScene";
  * {@link AuthShell}.
  */
 export default function LoginScreen({ onComplete }: { onComplete: () => void }) {
-  const [username, setUsername] = useState("");
+  // Actual-style identity switching: the last signed-in username is only a
+  // display convenience (the password still gates everything), so returning
+  // users and shared-device switchers pick an identity instead of retyping.
+  const [username, setUsername] = useState(() => lastAuthedUser() ?? "");
+  // Whether the field came from the last-session marker (vs typed fresh).
+  // Drives the "someone else" affordance and initial focus placement.
+  const [prefilled] = useState(() => lastAuthedUser() !== null);
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -58,7 +64,7 @@ export default function LoginScreen({ onComplete }: { onComplete: () => void }) 
           value={username}
           onChange={setUsername}
           autoComplete="username"
-          autoFocus
+          autoFocus={username === ""}
         />
         <Field
           icon={Ico.lock()}
@@ -68,6 +74,7 @@ export default function LoginScreen({ onComplete }: { onComplete: () => void }) 
           value={password}
           onChange={setPassword}
           autoComplete="current-password"
+          autoFocus={prefilled && username !== ""}
           trailing={
             <button type="button" className="toggle-eye" onClick={() => setShowPw((s) => !s)} aria-label="Toggle visibility">
               {showPw ? Ico.eyeoff() : Ico.eye()}
@@ -79,6 +86,16 @@ export default function LoginScreen({ onComplete }: { onComplete: () => void }) 
           <button type="button" onClick={() => setRecovering(true)} disabled={submitting} style={{ color: "var(--ink-mute)" }}>
             Forgot your password?
           </button>
+          {prefilled && username !== "" && (
+            <button
+              type="button"
+              onClick={() => setUsername("")}
+              disabled={submitting}
+              style={{ color: "var(--ink-mute)" }}
+            >
+              Someone else?
+            </button>
+          )}
         </div>
 
         {error && (
