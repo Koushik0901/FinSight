@@ -184,9 +184,28 @@ export function isAuthFailure(err: unknown): boolean {
   return code === "auth.required";
 }
 
-/** True once the httpBackend shim has installed the production HTTP/SSE transport. */
+/**
+ * True in any real browser. The Tauri thin shell is deleted, so the browser
+ * build is always the server-mode PWA talking to finsight-server over
+ * same-origin HTTP/SSE — there is no desktop transport to distinguish anymore.
+ * (This used to key off `window.__FINSIGHT_HTTP__`, set by the deleted
+ * httpBackend shim; nothing sets that flag now, so the old check silently
+ * disabled the AuthGate, the server Settings sections, and every other
+ * server-mode branch in production.)
+ *
+ * Under vitest/jsdom the flag still rules, so component tests that set or
+ * clear `__FINSIGHT_HTTP__` keep their explicit server/desktop split.
+ */
 export function isServerMode(): boolean {
-  return Boolean((window as unknown as AnyRec).__FINSIGHT_HTTP__);
+  if (typeof window === "undefined") return false;
+  const env = import.meta.env as { MODE?: string; VITEST?: unknown };
+  if (env.MODE === "test" || env.VITEST) {
+    return Boolean((window as unknown as AnyRec).__FINSIGHT_HTTP__);
+  }
+  if (typeof navigator !== "undefined" && navigator.userAgent.includes("jsdom")) {
+    return Boolean((window as unknown as AnyRec).__FINSIGHT_HTTP__);
+  }
+  return true;
 }
 
 // ------------------------------------------------------- admin: users ---

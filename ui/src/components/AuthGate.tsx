@@ -30,10 +30,9 @@ type GateState =
  * Server-mode-only boot gate. Wraps the normal app root (BrowserRouter/App)
  * in main.tsx.
  *
- * Desktop/Tauri builds: `isServerMode()` is false (the httpBackend shim that
- * sets `window.__FINSIGHT_HTTP__` is never installed there), so this renders
- * `children` synchronously with no effects, no fetches, and no listeners —
- * completely inert. Zero behavior change for the desktop app.
+ * Test/desktop harness (`__FINSIGHT_HTTP__` unset under vitest/jsdom):
+ * `isServerMode()` is false, so this renders `children` synchronously with
+ * no effects, no fetches, and no listeners — completely inert.
  *
  * Server mode: resolves `/api/auth/status` once at boot and swaps in the
  * Setup or Login screen as needed. A `finsight:auth-required` event —
@@ -97,7 +96,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
       cancelled = true;
     };
     // `attempt` is retry-only churn (Retry button); `serverMode` is stable
-    // for the life of the app (set once at boot by installHttpBackend).
+    // for the life of the app (pure function of the browser environment).
   }, [serverMode, attempt]);
 
   useEffect(() => {

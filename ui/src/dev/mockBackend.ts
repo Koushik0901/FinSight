@@ -1460,7 +1460,14 @@ export function installMockBackend(kindRaw: string | null) {
         });
       }
     }
-    // SSE / events — the mock has no streaming, return an empty 200 so callers don't throw.
+    // Auth status — the AuthGate runs before any RPC; answer as a signed-in
+    // admin so design mode never hits the setup/login wall serverless.
+    if (url.includes("/api/auth/status")) {
+      return new Response(
+        JSON.stringify({ needsSetup: false, authenticated: true, username: "Mock", isAdmin: true }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }
     if (url.includes("/api/events")) {
       return new Response("", { status: 200, headers: { "content-type": "text/event-stream" } });
     }
