@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
-import ImportMappingDialog from "./ImportMappingDialog";
+import ImportMappingDialog, { flipAmountCell } from "./ImportMappingDialog";
 
 vi.mock("react-focus-lock", () => ({
   default: ({ children }: { children: ReactNode }) => <>{children}</>,
@@ -366,5 +366,34 @@ describe("ImportMappingDialog", () => {
     expect(
       screen.getByText(/best imported into an\s+Investment account/i),
     ).toBeInTheDocument();
+  });
+
+  it("Flip amounts negates Amount cells live in the preview", async () => {
+    renderDialog();
+    await waitFor(() => expect(screen.getByText("Safeway")).toBeInTheDocument());
+    expect(screen.getByText("-8.42")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("checkbox", { name: /flip amounts/i }));
+    await waitFor(() => expect(screen.getByText("8.42")).toBeInTheDocument());
+    expect(screen.queryByText("-8.42")).not.toBeInTheDocument();
+    // Non-amount cells are untouched (the date also labels a format option,
+    // so match-all).
+    expect(screen.getAllByText("2026-05-19").length).toBeGreaterThan(0);
+    expect(screen.getByText("Safeway")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("checkbox", { name: /flip amounts/i }));
+    await waitFor(() => expect(screen.getByText("-8.42")).toBeInTheDocument());
+  });
+});
+
+describe("flipAmountCell", () => {
+  it("flips signs while preserving decimals, separators, and symbols", () => {
+    expect(flipAmountCell("-8.42")).toBe("8.42");
+    expect(flipAmountCell("8.42")).toBe("-8.42");
+    expect(flipAmountCell("1,234.50")).toBe("-1,234.50");
+    expect(flipAmountCell("-$12")).toBe("$12");
+    expect(flipAmountCell("$12")).toBe("-$12");
+    expect(flipAmountCell("Safeway")).toBe("Safeway");
+    expect(flipAmountCell("2026-05-19")).toBe("2026-05-19");
+    expect(flipAmountCell("")).toBe("");
   });
 });

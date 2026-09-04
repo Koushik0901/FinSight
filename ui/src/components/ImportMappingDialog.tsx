@@ -56,6 +56,44 @@ const DATE_FORMATS = [
 
 type AmountConventionValue = "negative_is_outflow" | "positive_is_outflow" | "split_debit_credit";
 
+/**
+ * Negate the numeric token inside a raw CSV cell so the preview below the
+ * "Flip amounts" toggle shows what the importer will actually do.
+ * Only strings that look like a bare amount flip (optional sign, currency
+ * symbol, grouping/decimal separators, percent); anything else — dates,
+ * merchants, codes — passes through untouched. Decimals and thousands
+ * separators are preserved, and a leading minus (whether glued to the digits
+ * as in "-8.42" or floating in front of a symbol as in "-$12") flips
+ * correctly. Preview-only — the real convention is applied server-side.
+ */
+export function flipAmountCell(cell: unknown): string {
+  const s = String(cell ?? "");
+  const m = s.match(/^(.*?)((?:-)?[\d,]*\.?\d+)(.*)$/s);
+  if (!m) return s;
+  const [, rawPrefix, rawNum, suffix] = m as [string, string, string, string];
+  // The parts around the number must be pure decoration — a digit or dash
+  // out there means this is a date/code ("2026-05-19"), not an amount.
+  if (!/^[\s$€£¥₹%()]*-?[\s$€£¥₹%()]*$/.test(rawPrefix)) return s;
+  if (!/^[\s$€£¥₹%()]*$/.test(suffix)) return s;
+  if (/\d/.test(suffix)) return s;
+  const digits = rawNum.replace(/,/g, "");
+  const abs = Math.abs(Number(digits));
+  if (!Number.isFinite(abs)) return s;
+  const dot = digits.indexOf(".");
+  const decimals = dot === -1 ? 0 : digits.length - dot - 1;
+  const negative = rawNum.startsWith("-");
+  const prefixMinus = rawPrefix.includes("-");
+  // A minus in either spot marks the value negative (double marks are not a
+  // thing in real exports); flipping negates the effective value.
+  const effectiveNegative = negative !== prefixMinus;
+  const body = abs.toLocaleString("en-US", {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  });
+  const cleanPrefix = rawPrefix.replace(/-/g, "");
+  return `${effectiveNegative ? "" : "-"}${cleanPrefix}${body}${suffix}`;
+}
+
 interface Props {
   path: string;
   onClose: () => void;
@@ -596,12 +634,16 @@ export default function ImportMappingDialog({ path, onClose, onImported, default
                     <TableRow key={ri}>
                       {row.map((cell, ci) => {
                         const role = columns[ci] ?? "Skip";
+                        const display =
+                          role === "Amount" && !splitMode && flipAmounts
+                            ? flipAmountCell(cell)
+                            : cell;
                         return (
                           <TableCell
                             key={ci}
                             className={role !== "Skip" ? `mapped-role-${role.toLowerCase()}` : undefined}
                           >
-                            {cell}
+                            {display}
                           </TableCell>
                         );
                       })}

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../../api/openapiClient";
 import { unwrap } from "../../api/openapiClient";
@@ -86,7 +86,8 @@ export default function StepAgent({ onDone }: Props) {
     }
   }
 
-  function checkOllamaConnection() {
+  function checkOllamaConnection(e: FormEvent) {
+    e.preventDefault();
     const next = baseUrl.trim().replace(/\/+$/, "");
     if (!next) {
       setActionError("Enter the Ollama URL that your FinSight server can reach.");
@@ -101,7 +102,8 @@ export default function StepAgent({ onDone }: Props) {
     }
   }
 
-  async function handleCloudTestAndSave() {
+  async function handleCloudTestAndSave(e: FormEvent) {
+    e.preventDefault();
     setActionError(null);
     setTestResult(null);
     const isAnthropic = selectedPreset.preset === "anthropic";
@@ -203,39 +205,41 @@ export default function StepAgent({ onDone }: Props) {
               </Button>
             ))}
           </div>
-          <div className="stack stack-md">
-            <Input
-              label="Model"
-              value={cloudModel}
-              onChange={(e) => setCloudModel(e.target.value)}
-              placeholder="e.g. gpt-4o-mini"
-            />
-            <Input
-              label="API Key"
-              type="password"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              placeholder="sk-…"
-            />
-          </div>
-          {testResult && (
-            <p style={{ color: testResult.ok ? "var(--success, green)" : "var(--error, red)" }}>
-              {testResult.ok ? `✓ Connected — ${testResult.latency_ms}ms` : `✗ ${testResult.error}`}
-            </p>
-          )}
-          {actionError && <p role="alert" className="err">{actionError}</p>}
-          <div className="actions row-sm wrap">
-            <Button
-              variant="primary"
-              onClick={handleCloudTestAndSave}
-              disabled={!cloudModel || testProvider.isPending}
-              loading={testProvider.isPending}
-            >
-              Test &amp; Save →
-            </Button>
-            <Button variant="default" onClick={() => setPath(null)}>← Back</Button>
-            <Button variant="ghost" onClick={skipForLater}>Configure later →</Button>
-          </div>
+          <form onSubmit={(e) => void handleCloudTestAndSave(e)}>
+            <div className="stack stack-md">
+              <Input
+                label="Model"
+                value={cloudModel}
+                onChange={(e) => setCloudModel(e.target.value)}
+                placeholder="e.g. gpt-4o-mini"
+              />
+              <Input
+                label="API Key"
+                type="password"
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                placeholder="sk-…"
+              />
+            </div>
+            {testResult && (
+              <p style={{ color: testResult.ok ? "var(--success, green)" : "var(--error, red)" }}>
+                {testResult.ok ? `✓ Connected — ${testResult.latency_ms}ms` : `✗ ${testResult.error}`}
+              </p>
+            )}
+            {actionError && <p role="alert" className="err">{actionError}</p>}
+            <div className="actions row-sm wrap">
+              <Button
+                variant="primary"
+                type="submit"
+                disabled={!cloudModel || testProvider.isPending}
+                loading={testProvider.isPending}
+              >
+                Test &amp; Save →
+              </Button>
+              <Button variant="default" type="button" onClick={() => setPath(null)}>← Back</Button>
+              <Button variant="ghost" type="button" onClick={skipForLater}>Configure later →</Button>
+            </div>
+          </form>
         </div>
         <div className="onb-right">
           <Card className="stack stack-md">
@@ -277,20 +281,22 @@ export default function StepAgent({ onDone }: Props) {
               ? "Test the address from FinSight before choosing a model."
               : "FinSight could not reach Ollama at this address. Install it on your server host or use another server-reachable URL."}
           </p>
-          <Input
-            label="Ollama URL (as reached by the FinSight server)"
-            value={baseUrl}
-            onChange={(e) => setBaseUrl(e.target.value)}
-            placeholder="http://ollama:11434"
-            hint="With the provided Docker Compose service, use http://ollama:11434."
-          />
-          {actionError && <p role="alert" className="err">{actionError}</p>}
-          <div className="actions row-sm wrap">
-            <Button variant="primary" onClick={checkOllamaConnection}>Check connection</Button>
-            <a className="btn" href="https://ollama.com" target="_blank" rel="noreferrer">Ollama setup guide ↗</a>
-            <Button variant="default" onClick={() => setPath(null)}>← Back</Button>
-            <Button variant="ghost" onClick={skipForLater}>Configure later →</Button>
-          </div>
+          <form onSubmit={(e) => checkOllamaConnection(e)}>
+            <Input
+              label="Ollama URL (as reached by the FinSight server)"
+              value={baseUrl}
+              onChange={(e) => setBaseUrl(e.target.value)}
+              placeholder="http://ollama:11434"
+              hint="With the provided Docker Compose service, use http://ollama:11434."
+            />
+            {actionError && <p role="alert" className="err">{actionError}</p>}
+            <div className="actions row-sm wrap">
+              <Button variant="primary" type="submit">Check connection</Button>
+              <a className="btn" href="https://ollama.com" target="_blank" rel="noreferrer">Ollama setup guide ↗</a>
+              <Button variant="default" type="button" onClick={() => setPath(null)}>← Back</Button>
+              <Button variant="ghost" type="button" onClick={skipForLater}>Configure later →</Button>
+            </div>
+          </form>
         </div>
         <div className="onb-right">
           <Card className="stack stack-sm">
