@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { EVENT_NAMES } from "./eventNames";
 
 // Mirror of finsight_api::sink::event_names::ALL — if Rust adds a new event,
-// this test reminds us to regenerate via `cargo run -p finsight-bindings --bin export_bindings`.
+// re-mirror eventNames.ts (source of truth is the Rust const list; parity.rs enforces equality).
 const EXPECTED_RUST_ALL = [
   "copilot-stream-frame",
   "copilot-async-answer",

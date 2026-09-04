@@ -2,16 +2,17 @@ pub mod act;
 pub mod read;
 pub mod spending;
 
-/// Names of the finance-question tools the planner references by name —
-/// `required_tools` plans and the per-question evidence builders in
-/// `crate::planning` all point at these.
+/// Names of every tool in [`standard_toolset`].
 ///
-/// This module is the single spelling of each name: the tool impls in
-/// `read.rs` return these consts, and `planning` references them through the
-/// consts too, so renaming a tool is one edit here. The
-/// `planner_referenced_tool_names_are_registered` test fails if a name ever
-/// stops matching a registered tool.
+/// This module is the single spelling of each wire name: the tool impls in
+/// `read.rs` / `spending.rs` / `act.rs` return these consts, `planning`
+/// references them through the consts too, and `ALL_TOOL_NAMES` mirrors to
+/// TypeScript (`ui/src/api/toolNames.ts`, held exact by the parity test in
+/// `crates/finsight-server/tests/parity.rs`). Renaming a tool is one edit
+/// here plus re-mirroring the TS file. The `*_registered` tests fail if a
+/// name ever stops matching a registered tool, or vice versa.
 pub mod names {
+    // ── Planner-referenced finance tools ─────────────────────────────────
     pub const GET_FINANCIAL_SNAPSHOT: &str = "get_financial_snapshot";
     pub const ANALYZE_CASH_INFLOW: &str = "analyze_cash_inflow";
     pub const CALCULATE_GOAL_ETA: &str = "calculate_goal_eta";
@@ -26,6 +27,40 @@ pub mod names {
     pub const RUN_CASHFLOW_TIMELINE: &str = "run_cashflow_timeline";
     pub const RUN_PURCHASE_AFFORDABILITY: &str = "run_purchase_affordability";
     pub const GET_DATA_QUALITY_REPORT: &str = "get_data_quality_report";
+    // ── Read tools (read.rs) ─────────────────────────────────────────────
+    pub const GET_ACCOUNT_BALANCES: &str = "get_account_balances";
+    pub const GET_ACCOUNT_BALANCE_HISTORY: &str = "get_account_balance_history";
+    pub const GET_NET_WORTH: &str = "get_net_worth";
+    pub const EXPLAIN_METRIC: &str = "explain_metric";
+    pub const EXPLAIN_BASIS: &str = "explain_basis";
+    pub const RECONCILE_BASES: &str = "reconcile_bases";
+    pub const GET_SAFE_TO_SPEND: &str = "get_safe_to_spend";
+    pub const LIST_SAVED_SCENARIOS: &str = "list_saved_scenarios";
+    pub const GET_MONTH_TOTALS: &str = "get_month_totals";
+    pub const GET_TOP_SPENDING_CATEGORIES: &str = "get_top_spending_categories";
+    pub const GET_SPENDING_BREAKDOWN: &str = "get_spending_breakdown";
+    pub const GET_MEMBER_SPENDING: &str = "get_member_spending";
+    pub const GET_BUDGETS: &str = "get_budgets";
+    pub const GET_GOALS: &str = "get_goals";
+    pub const GET_RECURRING_BILLS: &str = "get_recurring_bills";
+    pub const GET_LIABILITIES: &str = "get_liabilities";
+    pub const SEARCH_TRANSACTIONS: &str = "search_transactions";
+    pub const FIND_ANOMALIES: &str = "find_anomalies";
+    pub const LIST_UNCATEGORIZED_TRANSACTIONS: &str = "list_uncategorized_transactions";
+    pub const RUN_CASHFLOW_PROJECTION: &str = "run_cashflow_projection";
+    pub const GET_COUNTERPARTY_POSITION: &str = "get_counterparty_position";
+    // ── Spending tools (spending.rs) ─────────────────────────────────────
+    pub const EXPLAIN_SPENDING_CHANGE: &str = "explain_spending_change";
+    pub const CLASSIFY_SPENDING_PERIOD: &str = "classify_spending_period";
+    pub const ANNOTATE_SPENDING_DRIVER: &str = "annotate_spending_driver";
+    pub const PLAN_SPENDING_REDUCTION: &str = "plan_spending_reduction";
+    // ── Draft-action tools (act.rs) ──────────────────────────────────────
+    pub const DRAFT_SET_BUDGET: &str = "draft_set_budget";
+    pub const DRAFT_UPDATE_GOAL_MONTHLY: &str = "draft_update_goal_monthly";
+    pub const DRAFT_CREATE_PLANNED_TRANSACTION: &str = "draft_create_planned_transaction";
+    pub const DRAFT_SAVE_SCENARIO: &str = "draft_save_scenario";
+    pub const DRAFT_DEBT_PAYOFF_PLAN: &str = "draft_debt_payoff_plan";
+    pub const DRAFT_RECATEGORIZATION: &str = "draft_recategorization";
 
     /// Every name above. Drives the registry-membership guard test.
     pub const PLANNER_TOOLS: &[&str] = &[
@@ -43,6 +78,56 @@ pub mod names {
         RUN_CASHFLOW_TIMELINE,
         RUN_PURCHASE_AFFORDABILITY,
         GET_DATA_QUALITY_REPORT,
+    ];
+
+    /// Every tool in [`super::standard_toolset`], in registration order.
+    /// Mirrored to TypeScript — see module docs.
+    pub const ALL_TOOL_NAMES: &[&str] = &[
+        GET_FINANCIAL_SNAPSHOT,
+        ANALYZE_CASH_INFLOW,
+        CALCULATE_GOAL_ETA,
+        RANK_DEBT_PAYOFF,
+        COMPARE_PAYOFF_STRATEGIES,
+        GET_COUNTERPARTY_POSITION,
+        PLAN_SINKING_FUNDS,
+        COMPARE_DEBT_VS_GOAL,
+        GET_ACCOUNT_BALANCES,
+        GET_ACCOUNT_BALANCE_HISTORY,
+        GET_NET_WORTH,
+        EXPLAIN_METRIC,
+        EXPLAIN_BASIS,
+        RECONCILE_BASES,
+        GET_SAFE_TO_SPEND,
+        LIST_SAVED_SCENARIOS,
+        GET_MONTH_TOTALS,
+        GET_TOP_SPENDING_CATEGORIES,
+        GET_SPENDING_BREAKDOWN,
+        GET_MEMBER_SPENDING,
+        GET_BUDGETS,
+        GET_GOALS,
+        GET_RECURRING_BILLS,
+        GET_LIABILITIES,
+        SEARCH_TRANSACTIONS,
+        FIND_ANOMALIES,
+        LIST_UNCATEGORIZED_TRANSACTIONS,
+        RUN_CASHFLOW_PROJECTION,
+        RUN_DEBT_PAYOFF_SCENARIOS,
+        RUN_GOAL_ALLOCATION_SCENARIOS,
+        RUN_GOAL_CONFLICT_SCENARIO,
+        RUN_EMERGENCY_FUND_SCENARIOS,
+        RUN_CASHFLOW_TIMELINE,
+        RUN_PURCHASE_AFFORDABILITY,
+        GET_DATA_QUALITY_REPORT,
+        EXPLAIN_SPENDING_CHANGE,
+        CLASSIFY_SPENDING_PERIOD,
+        ANNOTATE_SPENDING_DRIVER,
+        PLAN_SPENDING_REDUCTION,
+        DRAFT_SET_BUDGET,
+        DRAFT_UPDATE_GOAL_MONTHLY,
+        DRAFT_CREATE_PLANNED_TRANSACTION,
+        DRAFT_SAVE_SCENARIO,
+        DRAFT_DEBT_PAYOFF_PLAN,
+        DRAFT_RECATEGORIZATION,
     ];
 }
 
@@ -451,29 +536,50 @@ mod execution_smoke_tests {
             assert!(seen.insert(*name), "duplicate in PLANNER_TOOLS: {name}");
         }
     }
+    /// The registry and `names::ALL_TOOL_NAMES` must describe exactly the same
+    /// set: a tool added to `standard_toolset()` without a const (or a const
+    /// left behind after a removal) compiles fine and silently drifts the
+    /// TypeScript mirror.
+    #[test]
+    fn registered_tool_names_match_all_tool_names() {
+        let tools = standard_toolset();
+        let defs = tools.definitions();
+        let registered: std::collections::BTreeSet<&str> =
+            defs.iter().map(|d| d.name.as_str()).collect();
+        let listed: std::collections::BTreeSet<&str> =
+            names::ALL_TOOL_NAMES.iter().copied().collect();
+        let missing: Vec<&&str> = registered.difference(&listed).collect();
+        let stale: Vec<&&str> = listed.difference(&registered).collect();
+        assert!(
+            missing.is_empty() && stale.is_empty(),
+            "registry drifted from names::ALL_TOOL_NAMES: missing={missing:?} stale={stale:?}"
+        );
+    }
 
     /// Tools whose required argument names a real entity (a goal, a merchant).
     /// On an empty ledger there is nothing valid to name, so exercising them
     /// belongs in the server's MCP tests, which run against seeded data.
     const NEEDS_REAL_ENTITY: &[&str] = &[
-        "calculate_goal_eta",
-        "compare_debt_vs_goal",
-        "run_goal_conflict_scenario",
-        "annotate_spending_driver",
+        names::CALCULATE_GOAL_ETA,
+        names::COMPARE_DEBT_VS_GOAL,
+        names::RUN_GOAL_CONFLICT_SCENARIO,
+        names::ANNOTATE_SPENDING_DRIVER,
     ];
 
     /// Minimal valid arguments for tools with a `required` field that is just a
     /// scalar — no entity lookup involved, so they can and should be executed.
     fn required_args(tool: &str) -> Value {
         match tool {
-            "analyze_cash_inflow" => json!({"amount_cents": 250_000}),
-            "run_purchase_affordability" => json!({"purchase_amount_cents": 300_000}),
-            "run_goal_allocation_scenarios" => json!({"monthly_available_cents": 120_000}),
-            "classify_spending_period" | "explain_spending_change" => {
+            names::ANALYZE_CASH_INFLOW => json!({"amount_cents": 250_000}),
+            names::RUN_PURCHASE_AFFORDABILITY => json!({"purchase_amount_cents": 300_000}),
+            names::RUN_GOAL_ALLOCATION_SCENARIOS => json!({"monthly_available_cents": 120_000}),
+            names::CLASSIFY_SPENDING_PERIOD | names::EXPLAIN_SPENDING_CHANGE => {
                 json!({"period": chrono::Utc::now().format("%Y-%m").to_string()})
             }
-            "explain_basis" => json!({"basis": "displayMedian"}),
-            "reconcile_bases" => json!({"basis_a": "displayMedian", "basis_b": "recentMean90"}),
+            names::EXPLAIN_BASIS => json!({"basis": "displayMedian"}),
+            names::RECONCILE_BASES => {
+                json!({"basis_a": "displayMedian", "basis_b": "recentMean90"})
+            }
             _ => json!({}),
         }
     }

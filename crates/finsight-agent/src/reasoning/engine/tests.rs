@@ -412,7 +412,7 @@ async fn action_tool_records_change() {
             AssistantTurn::ToolCalls {
                 calls: vec![ToolCall {
                     id: "call_1".into(),
-                    name: "draft_update_goal_monthly".into(),
+                    name: crate::reasoning::tools::names::DRAFT_UPDATE_GOAL_MONTHLY.to_string(),
                     arguments: json!({"goal_id": "g1", "monthly_delta_cents": 15000}),
                 }],
                 plan: None,
@@ -455,7 +455,7 @@ async fn budget_action_tool_drafts_without_mutating_budget() {
             AssistantTurn::ToolCalls {
                 calls: vec![ToolCall {
                     id: "call_budget".into(),
-                    name: "draft_set_budget".into(),
+                    name: crate::reasoning::tools::names::DRAFT_SET_BUDGET.to_string(),
                     arguments: json!({"category_id":"cat1","month":"2026-06","amount_cents":65000,"rationale":"Groceries are trending higher."}),
                 }],
                 plan: None,

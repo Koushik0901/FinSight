@@ -8,7 +8,7 @@ pub fn set_budget() -> Arc<dyn Tool> {
     struct T;
     impl Tool for T {
         fn name(&self) -> &str {
-            "draft_set_budget"
+            super::names::DRAFT_SET_BUDGET
         }
         fn description(&self) -> &str {
             "Draft a monthly budget amount change for user approval; does not write data"
@@ -69,7 +69,7 @@ pub fn update_goal_monthly() -> Arc<dyn Tool> {
     struct T;
     impl Tool for T {
         fn name(&self) -> &str {
-            "draft_update_goal_monthly"
+            super::names::DRAFT_UPDATE_GOAL_MONTHLY
         }
         fn description(&self) -> &str {
             "Draft a goal monthly contribution change for user approval; does not write data"
@@ -122,7 +122,7 @@ pub fn create_planned_transaction() -> Arc<dyn Tool> {
     struct T;
     impl Tool for T {
         fn name(&self) -> &str {
-            "draft_create_planned_transaction"
+            super::names::DRAFT_CREATE_PLANNED_TRANSACTION
         }
         fn description(&self) -> &str {
             "Draft a future payment, transfer, or investment for user approval; does not write data"
@@ -185,7 +185,7 @@ pub fn save_scenario() -> Arc<dyn Tool> {
     struct T;
     impl Tool for T {
         fn name(&self) -> &str {
-            "draft_save_scenario"
+            super::names::DRAFT_SAVE_SCENARIO
         }
         fn description(&self) -> &str {
             "Draft saving a scenario for user approval"
@@ -223,7 +223,7 @@ pub fn draft_recategorization() -> Arc<dyn Tool> {
     struct T;
     impl Tool for T {
         fn name(&self) -> &str {
-            "draft_recategorization"
+            super::names::DRAFT_RECATEGORIZATION
         }
         fn description(&self) -> &str {
             "Draft a bulk recategorization of currently-uncategorized transactions for user approval. Provide assignments from list_uncategorized_transactions: each maps a transaction_id to a category_id (from available_categories) with a confidence 0..1. This does NOT write data — it previews the proposed changes; the user must approve before anything is applied. Invalid assignments (unknown category, or a transaction that is no longer uncategorized) are dropped and reported."
@@ -379,7 +379,7 @@ pub fn create_debt_payoff_plan() -> Arc<dyn Tool> {
     struct T;
     impl Tool for T {
         fn name(&self) -> &str {
-            "draft_debt_payoff_plan"
+            super::names::DRAFT_DEBT_PAYOFF_PLAN
         }
         fn description(&self) -> &str {
             "Draft a debt payoff plan item for approval and tracking; does not change any account balance"

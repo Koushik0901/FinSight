@@ -81,7 +81,6 @@ pub const COMMANDS: &[&str] = &[
     "export_search_transactions_csv",
     "export_transactions_csv",
     "forget_agent_memory",
-    "upsert_agent_memory",
     "get_account_balance_timeline",
     "get_action_bundle",
     "get_action_items",

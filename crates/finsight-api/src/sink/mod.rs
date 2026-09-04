@@ -10,10 +10,9 @@ pub trait FrameSink: Send + Sync {
 /// one frontend-synthesized auth event that completes the shared vocabulary.
 ///
 /// This module is the single source of truth for these strings: emitters
-/// reference the consts, `cargo run -p finsight-bindings --bin export_bindings`
-/// generates `ui/src/api/eventNames.ts` from [`event_names::ALL`], and
-/// `crates/finsight-server/tests/parity.rs` fails if the generated file ever
-/// drifts. To rename an event, change it here and regenerate — never edit a
+/// reference the consts, `ui/src/api/eventNames.ts` mirrors [`event_names::ALL`],
+/// and `crates/finsight-server/tests/parity.rs` fails if the mirror ever
+/// drifts. To rename an event, change it here and re-mirror — never edit a
 /// string literal at an emit site or in TypeScript.
 pub mod event_names;
 

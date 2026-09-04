@@ -10,7 +10,7 @@ pub fn explain_spending_change() -> Arc<dyn Tool> {
     struct T;
     impl Tool for T {
         fn name(&self) -> &str {
-            "explain_spending_change"
+            super::names::EXPLAIN_SPENDING_CHANGE
         }
         fn description(&self) -> &str {
             "Explain WHAT CHANGED in a month's spending versus the user's normal — the ranked drivers of the difference, each tagged with a mechanism (new / price_up / frequency_up / stopped) and a persistence (recurring / one_off / emerging). Use for 'why was <month> so high', 'what's new this month vs my usual', 'what doubled', 'how much of the increase will recur' (read persistence_subtotals), and 'compare <month> to <other month>'. `period` is a YYYY-MM month. By default it compares against the trailing-12-month baseline; pass `reference` (YYYY-MM) to compare two specific months. Every number is precomputed — quote the *_display strings and the persistence_subtotals; do not add or divide amounts yourself. A driver with a non-empty user_verdict is one the user has accepted (expected/investment) or marked one_off — never present it as a recurring lever, whatever its persistence."
@@ -67,7 +67,7 @@ pub fn classify_spending_period() -> std::sync::Arc<dyn Tool> {
     struct T;
     impl Tool for T {
         fn name(&self) -> &str {
-            "classify_spending_period"
+            super::names::CLASSIFY_SPENDING_PERIOD
         }
         fn description(&self) -> &str {
             "Judge whether a month is normal, an episodic one-off spike, or a sustained new regime, versus the user's own trailing history. Use for 'was last month a blip or my new normal?'. `period` is YYYY-MM. Returns the class plus evidence (the month's total, the normal median, the upper band, and how many recent months were also elevated) — all precomputed; quote the *_display values, don't recompute."
@@ -94,7 +94,7 @@ pub fn annotate_spending_driver() -> std::sync::Arc<dyn Tool> {
     struct T;
     impl Tool for T {
         fn name(&self) -> &str {
-            "annotate_spending_driver"
+            super::names::ANNOTATE_SPENDING_DRIVER
         }
         fn description(&self) -> &str {
             "Remember the user's verdict on a spending driver so it stops showing as a recurring lever everywhere. Pass the `merchant_key` exactly as returned by explain_spending_change. `verdict`: one_off (a one-time thing), expected (a known/accepted cost), investment (spending the user considers an investment), or reset (forget a prior verdict). This WRITES immediately and is remembered across sessions. Only call it when the user has actually told you their verdict."
@@ -146,7 +146,7 @@ pub fn plan_spending_reduction() -> std::sync::Arc<dyn Tool> {
     struct T;
     impl Tool for T {
         fn name(&self) -> &str {
-            "plan_spending_reduction"
+            super::names::PLAN_SPENDING_REDUCTION
         }
         fn description(&self) -> &str {
             "Build an HONEST path back toward a spending target. Given `period` (YYYY-MM, the elevated month; omit to use the most recent month) and optional `target_monthly_cents`, it separates one-off spend (self_correcting_cents — falls off on its own, no action) from the recurring 'levers' you can trim (recoverable_recurring_cents + the `levers` list), projects where trimming lands you (projected_after_levers_cents), and sets structural_gap_cents when the target is BELOW what trimming can reach — meaning the rest is a structural floor, not more cuts. Read the `note`. Use for 'how do I get back to $X' / 'how do I cut my spending'. Every number is precomputed — quote the *_display values and never claim a target is reachable when structural_gap_cents is set."

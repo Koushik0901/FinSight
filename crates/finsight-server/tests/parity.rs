@@ -158,3 +158,33 @@ fn generated_event_names_match_the_rust_contract() {
          missing={missing:?} stale={stale:?}"
     );
 }
+
+/// Tool-name contract guard: the `ui/src/api/toolNames.ts` mirror must contain
+/// exactly the names in `finsight_agent::reasoning::tools::names::ALL_TOOL_NAMES`.
+/// Same drift class as the event-names guard above: a backend rename that
+/// compiles everywhere but silently breaks the Copilot toolkit registration.
+#[test]
+fn generated_tool_names_match_the_rust_contract() {
+    let src = include_str!("../../../ui/src/api/toolNames.ts");
+    let ts_names: BTreeSet<String> = src
+        .lines()
+        .filter(|l| l.contains('"'))
+        .map(|l| l.split('"').nth(1).unwrap().to_string())
+        .collect();
+    assert!(
+        ts_names.len() > 40,
+        "toolNames.ts parse looks broken: {ts_names:?}"
+    );
+    let rust: BTreeSet<String> = finsight_agent::reasoning::tools::names::ALL_TOOL_NAMES
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    let missing: Vec<_> = rust.difference(&ts_names).collect();
+    let stale: Vec<_> = ts_names.difference(&rust).collect();
+    assert!(
+        missing.is_empty() && stale.is_empty(),
+        "toolNames.ts drifted from reasoning::tools::names::ALL_TOOL_NAMES — \
+         update ui/src/api/toolNames.ts to match: \
+         missing={missing:?} stale={stale:?}"
+    );
+}

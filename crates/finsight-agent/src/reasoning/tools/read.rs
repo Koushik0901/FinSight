@@ -8,7 +8,7 @@ pub fn get_account_balances() -> Arc<dyn Tool> {
     struct T;
     impl Tool for T {
         fn name(&self) -> &str {
-            "get_account_balances"
+            super::names::GET_ACCOUNT_BALANCES
         }
         fn description(&self) -> &str {
             "Get the current balance for every account plus the total. Accounts \
@@ -66,7 +66,7 @@ pub fn get_account_balance_history() -> Arc<dyn Tool> {
     struct T;
     impl Tool for T {
         fn name(&self) -> &str {
-            "get_account_balance_history"
+            super::names::GET_ACCOUNT_BALANCE_HISTORY
         }
         fn description(&self) -> &str {
             "The highest and lowest balance an account has ever reached, and the \
@@ -200,7 +200,7 @@ pub fn get_net_worth() -> Arc<dyn Tool> {
     struct T;
     impl Tool for T {
         fn name(&self) -> &str {
-            "get_net_worth"
+            super::names::GET_NET_WORTH
         }
         fn description(&self) -> &str {
             "Get current net worth. Report `net_worth_cents` as the net worth — it ALREADY has debt subtracted, so never subtract `liability_cents` from it again. Accounts without a confirmed balance are reported separately as unknown and excluded from the total — mention them as unknown, never as $0."
@@ -267,7 +267,7 @@ pub fn list_saved_scenarios() -> Arc<dyn Tool> {
     struct T;
     impl Tool for T {
         fn name(&self) -> &str {
-            "list_saved_scenarios"
+            super::names::LIST_SAVED_SCENARIOS
         }
         fn description(&self) -> &str {
             "List the user's saved what-if scenarios, each RECOMPUTED against their current \
@@ -353,7 +353,7 @@ pub fn get_safe_to_spend() -> Arc<dyn Tool> {
     struct T;
     impl Tool for T {
         fn name(&self) -> &str {
-            "get_safe_to_spend"
+            super::names::GET_SAFE_TO_SPEND
         }
         fn description(&self) -> &str {
             "Project the liquid balance forward day by day over the near term and answer how \
@@ -424,7 +424,7 @@ pub fn explain_basis() -> Arc<dyn Tool> {
     struct T;
     impl Tool for T {
         fn name(&self) -> &str {
-            "explain_basis"
+            super::names::EXPLAIN_BASIS
         }
         fn description(&self) -> &str {
             "Explain what a given expense basis means — the labeled definition the pantry owns for DisplayMedian (smooth), RecentMean90 (recent), or SafetyConservative (conservative = max of yearly and recent). Use when the user asks why two numbers differ or what a basis covers."
@@ -463,7 +463,7 @@ pub fn reconcile_bases() -> Arc<dyn Tool> {
     struct T;
     impl Tool for T {
         fn name(&self) -> &str {
-            "reconcile_bases"
+            super::names::RECONCILE_BASES
         }
         fn description(&self) -> &str {
             "Explain why two expense bases differ for the same scope — returns the delta in cents and a one-line reason. Use for \"why is Budget $X but Cashflow $Y?\" — call with basisA and basisB (displayMedian, recentMean90, safetyConservative) and an optional member scope."
@@ -539,7 +539,7 @@ pub fn explain_metric() -> Arc<dyn Tool> {
     struct T;
     impl Tool for T {
         fn name(&self) -> &str {
-            "explain_metric"
+            super::names::EXPLAIN_METRIC
         }
         fn description(&self) -> &str {
             "Explain how a headline financial metric is produced: its plain-English \
@@ -625,7 +625,7 @@ pub fn get_month_totals() -> Arc<dyn Tool> {
     struct T;
     impl Tool for T {
         fn name(&self) -> &str {
-            "get_month_totals"
+            super::names::GET_MONTH_TOTALS
         }
         fn description(&self) -> &str {
             "Get this month's income, expenses, and savings rate. Use for monthly income and cash-flow questions; for forward month-by-month projections use run_cashflow_timeline instead."
@@ -659,7 +659,7 @@ pub fn get_top_spending_categories() -> Arc<dyn Tool> {
     struct T;
     impl Tool for T {
         fn name(&self) -> &str {
-            "get_top_spending_categories"
+            super::names::GET_TOP_SPENDING_CATEGORIES
         }
         fn description(&self) -> &str {
             "Get top spending categories with amounts"
@@ -692,7 +692,7 @@ pub fn get_spending_breakdown() -> Arc<dyn Tool> {
     struct T;
     impl Tool for T {
         fn name(&self) -> &str {
-            "get_spending_breakdown"
+            super::names::GET_SPENDING_BREAKDOWN
         }
         fn description(&self) -> &str {
             "Where the money goes over a window of months: top spending categories, top merchants, and per-month spend totals. Use for 'where am I spending the most' and overspending questions. The window defaults to the last 6 months, but the history often goes back years — the result includes data_range (earliest/latest transaction dates). ALWAYS widen `months` (up to 60) to cover the period asked about before concluding that data is missing; never say 'data only goes back N months' from a short window."
@@ -803,7 +803,7 @@ pub fn get_member_spending() -> Arc<dyn Tool> {
     struct T;
     impl Tool for T {
         fn name(&self) -> &str {
-            "get_member_spending"
+            super::names::GET_MEMBER_SPENDING
         }
         fn description(&self) -> &str {
             "Income and spending for ONE household member (e.g. a partner or family member) over a window of months. Joint accounts are split equally between their owners; household-shared (unassigned) accounts are excluded. Call with member omitted or member=\"list\" to see who is in the household FIRST. Use for 'what did <name> spend/earn last month', 'her savings rate', 'my spending vs theirs'. Never guess a person's numbers — if the member is unknown, say so."
@@ -912,7 +912,7 @@ pub fn get_budgets() -> Arc<dyn Tool> {
     struct T;
     impl Tool for T {
         fn name(&self) -> &str {
-            "get_budgets"
+            super::names::GET_BUDGETS
         }
         fn description(&self) -> &str {
             "Get current month budgets with budgeted vs actual"
@@ -946,7 +946,7 @@ pub fn get_goals() -> Arc<dyn Tool> {
     struct T;
     impl Tool for T {
         fn name(&self) -> &str {
-            "get_goals"
+            super::names::GET_GOALS
         }
         fn description(&self) -> &str {
             "Get goals with current balance, target, monthly contribution"
@@ -974,7 +974,7 @@ pub fn get_recurring_bills() -> Arc<dyn Tool> {
     struct T;
     impl Tool for T {
         fn name(&self) -> &str {
-            "get_recurring_bills"
+            super::names::GET_RECURRING_BILLS
         }
         fn description(&self) -> &str {
             "Get detected recurring commitments — subscriptions and bills — classified deterministically with amount stability, cadence regularity, and vendor evidence. Each item has a kind, confidence, and reasons. Repeat purchases (groceries/dining/ride-hailing) and internal transfers/card payments are excluded. Use for 'what subscriptions am I paying for' and upcoming-bill questions."
@@ -1033,7 +1033,7 @@ pub fn get_liabilities() -> Arc<dyn Tool> {
     struct T;
     impl Tool for T {
         fn name(&self) -> &str {
-            "get_liabilities"
+            super::names::GET_LIABILITIES
         }
         fn description(&self) -> &str {
             "Get credit cards and loans with balance, APR, minimum payment"
@@ -1080,7 +1080,7 @@ pub fn search_transactions() -> Arc<dyn Tool> {
     struct T;
     impl Tool for T {
         fn name(&self) -> &str {
-            "search_transactions"
+            super::names::SEARCH_TRANSACTIONS
         }
         fn description(&self) -> &str {
             "Find and total transactions by merchant, date range, account, category, amount threshold, or direction. Returns each row's date, merchant, amount, account, and category, plus the count and summed total. Use min_amount_cents for 'over $N' questions (it filters on the absolute amount). Use direction='expense' or 'income' to restrict sign."
@@ -1145,7 +1145,7 @@ pub fn find_anomalies() -> Arc<dyn Tool> {
     struct T;
     impl Tool for T {
         fn name(&self) -> &str {
-            "find_anomalies"
+            super::names::FIND_ANOMALIES
         }
         fn description(&self) -> &str {
             "List transactions flagged as unusual/anomalous (statistically out of pattern), with the reason. Use for 'any unusual charges', 'weird transactions', or fraud-check style questions."
@@ -1187,7 +1187,7 @@ pub fn list_uncategorized_transactions() -> Arc<dyn Tool> {
     struct T;
     impl Tool for T {
         fn name(&self) -> &str {
-            "list_uncategorized_transactions"
+            super::names::LIST_UNCATEGORIZED_TRANSACTIONS
         }
         fn description(&self) -> &str {
             "List transactions that still have no category, plus the available categories to choose from. Each transaction includes id, merchant, merchant_key (canonical), amount_cents, date, account, and notes when present. Use this before draft_recategorization: pick a category id for each transaction from available_categories. Returns a bounded page; total_uncategorized is the full count."
@@ -1271,7 +1271,7 @@ pub fn run_cashflow_projection() -> Arc<dyn Tool> {
     struct T;
     impl Tool for T {
         fn name(&self) -> &str {
-            "run_cashflow_projection"
+            super::names::RUN_CASHFLOW_PROJECTION
         }
         fn description(&self) -> &str {
             "Project runway and end-of-month net under hypothetical changes"
@@ -1471,7 +1471,7 @@ pub fn get_counterparty_position() -> Arc<dyn Tool> {
     struct T;
     impl Tool for T {
         fn name(&self) -> &str {
-            "get_counterparty_position"
+            super::names::GET_COUNTERPARTY_POSITION
         }
         fn description(&self) -> &str {
             "Net position with the people money has moved between — who owes whom, and how much. \

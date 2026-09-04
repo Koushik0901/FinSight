@@ -7,6 +7,7 @@ import {
   type ToolCallMessagePartProps,
 } from "@assistant-ui/react";
 import type { CopilotResponseBlock } from "../../api/openapiClient";
+import { BACKEND_TOOL_NAMES } from "../../api/toolNames";
 import { parseFinanceArtifactEnvelope } from "./agUi/artifacts";
 import { colorForCategoryLabel } from "../../utils/categoryColor";
 import { humanizeToolName } from "./toolNames";
@@ -27,39 +28,10 @@ import { ClarificationCard } from "./cards/ClarificationCard";
 import { CategoryReviewQueueCard } from "./cards/CategoryReviewQueueCard";
 import { ComparisonBarsCard } from "./cards/ComparisonBarsCard";
 
-const ALL_TOOL_NAMES = [
-  "get_financial_snapshot",
-  "analyze_cash_inflow",
-  "calculate_goal_eta",
-  "rank_debt_payoff",
-  "compare_payoff_strategies",
-  "get_counterparty_position",
-  "plan_sinking_funds",
-  "compare_debt_vs_goal",
-  "get_account_balances",
-  "get_month_totals",
-  "get_top_spending_categories",
-  "get_budgets",
-  "get_goals",
-  "get_recurring_bills",
-  "get_liabilities",
-  "search_transactions",
-  "run_cashflow_projection",
-  "run_debt_payoff_scenarios",
-  "run_goal_allocation_scenarios",
-  "run_goal_conflict_scenario",
-  "run_emergency_fund_scenarios",
-  "run_cashflow_timeline",
-  "run_purchase_affordability",
-  "get_data_quality_report",
-  "draft_set_budget",
-  "draft_update_goal_monthly",
-  "draft_create_planned_transaction",
-  "draft_save_scenario",
-  "draft_debt_payoff_plan",
-  "request_action_approval",
-  "render_finance_artifact",
-] as const;
+/// Frontend-local tool-like entries (AG-UI approval flow + artifact renderer):
+/// not backend tools, so they live here rather than in the generated mirror.
+const LOCAL_TOOL_NAMES = ["request_action_approval", "render_finance_artifact"] as const;
+const ALL_TOOL_NAMES: readonly string[] = [...BACKEND_TOOL_NAMES, ...LOCAL_TOOL_NAMES];
 
 function formatValue(value: unknown) {
   if (typeof value === "string") return value;
