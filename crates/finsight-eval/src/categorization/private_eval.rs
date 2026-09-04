@@ -368,6 +368,102 @@ pub fn evaluate_centroid_precision(
     }
 }
 
+/// # Slice 5 calibration (issue #93) — threshold sweep for the centroid pass
+///
+/// Builds the `threshold_sweep` over the *merchant-disjoint holdout* for the
+/// centroid predictor and selects the calibrated auto-apply threshold via
+/// `threshold::calibrated_threshold_for_gate` (≥98% / ≥30 predictions).
+///
+/// Returns the full sweep (so callers can render a table) and the selected
+/// point (if any). `None` for the point means "no confidence band qualifies —
+/// semantic matches must stay review-only" — which is the honest answer for
+/// today's real-merchant data where only the n=7 tail hits 100%.
+///
+/// This is the user-data path that derives a threshold from measured
+/// precision/coverage, not a guessed constant (`centroid::MIN_PROPOSAL_SCORE`
+/// is only a noise floor). It is also the proof that auto-apply is gated on
+/// the *holdout* curve: the sweep is built from `holdout` only, never the
+/// in-sample full corpus.
+pub fn centroid_calibration(
+    examples: &[LabeledExample],
+    vectors_by_id: &std::collections::BTreeMap<String, Vec<f32>>,
+    holdout_fraction: f64,
+    seed: u64,
+) -> (Vec<super::threshold::ThresholdPoint>, Option<super::threshold::ThresholdPoint>) {
+    let (reference, holdout) = merchant_disjoint_split(examples, holdout_fraction, seed);
+    if holdout.is_empty() {
+        return (Vec::new(), None);
+    }
+    let reference_vectors: Vec<Vec<f32>> = reference
+        .iter()
+        .map(|ex| vectors_by_id.get(&ex.id).cloned().unwrap_or_default())
+        .collect();
+    let prototypes = super::centroid_predictor::build_prototypes(&reference, &reference_vectors);
+    let thresholds = super::report::DEFAULT_THRESHOLDS;
+    let sweep = super::threshold::threshold_sweep(
+        &holdout,
+        |ex| match vectors_by_id.get(&ex.id) {
+            Some(v) => super::centroid_predictor::predict_centroid(v, &prototypes, 0.0),
+            None => super::predictors::Prediction::abstain(),
+        },
+        thresholds,
+    );
+    let calibrated = super::threshold::calibrated_threshold_for_gate(&sweep);
+    (sweep, calibrated)
+}
+
+/// Human-readable calibration report for the admin surface.
+///
+/// Rendered as plain text alongside `PrivateEvalResult`'s Display so an
+/// operator can see *why* auto-apply is (or is not) enabled. Always mentions
+/// the holdout scope and the N guard, so a reader cannot mistake an
+/// in-sample curve for the gate.
+pub fn format_centroid_calibration(
+    examples: &[LabeledExample],
+    vectors_by_id: &std::collections::BTreeMap<String, Vec<f32>>,
+) -> String {
+    let (sweep, calibrated) = centroid_calibration(
+        examples,
+        vectors_by_id,
+        DEFAULT_HOLDOUT_FRACTION,
+        DEFAULT_SPLIT_SEED,
+    );
+    if sweep.is_empty() {
+        return "Calibration: no held-out data — cannot derive a threshold.\n".to_string();
+    }
+    let mut out = String::new();
+    out.push_str("Calibration (centroid, merchant-disjoint holdout sweep):\n");
+    out.push_str(" threshold | predicted | correct | precision | coverage\n");
+    for pt in &sweep {
+        let prec = pt.precision.map(|p| format!("{:.1}%", p * 100.0)).unwrap_or("—".to_string());
+        out.push_str(&format!(
+            "  {:.2}    | {:>9} | {:>7} | {:>9} | {:.1}%\n",
+            pt.threshold, pt.n_predicted, pt.n_correct, prec, pt.coverage * 100.0
+        ));
+    }
+    match calibrated {
+        Some(pt) => {
+            out.push_str(&format!(
+                "Selected auto-apply threshold = {:.2} (precision {:.1}% {}/{}, coverage {:.1}% {}/{}, holdout sweep, ≥98% & ≥30 predictions).\n",
+                pt.threshold,
+                pt.precision.unwrap_or(0.0) * 100.0,
+                pt.n_correct,
+                pt.n_predicted,
+                pt.coverage * 100.0,
+                pt.n_predicted,
+                pt.n_total
+            ));
+            out.push_str("This band WOULD qualify for auto-apply (proposals with confidence ≥ threshold could be applied).\n");
+        }
+        None => {
+            out.push_str("No threshold meets the ≥98% / ≥30-predictions gate on the merchant-disjoint holdout.\n");
+            out.push_str("Result: NO confidence band qualifies for auto-apply — centroid proposals remain review-only (applied=0), as required by epic #74.\n");
+            out.push_str("This is the measured answer, not a guessed constant. When this instance accumulates more `source='user'` corrections, re-run this eval — a band may qualify later.\n");
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -851,5 +947,28 @@ mod tests {
             none.precision, None,
             "precision over zero predictions is undefined, never 0% or 100%"
         );
+    }
+
+    #[test]
+    fn centroid_calibration_uses_holdout_only_and_is_gated() {
+        // Two merchants per half after split — tiny but exercises the gate.
+        // Embeddings: make centroid predictions correct at high confidence.
+        let examples = vec![
+            LabeledExample { id: "a1".into(), merchant_id: "m-a".into(), merchant_text: "Hydro One Bill".into(), category: "utilities".into(), notes: None },
+            LabeledExample { id: "a2".into(), merchant_id: "m-a".into(), merchant_text: "Hydro One Payment".into(), category: "utilities".into(), notes: None },
+            LabeledExample { id: "b1".into(), merchant_id: "m-b".into(), merchant_text: "Tim Hortons Coffee".into(), category: "dining".into(), notes: None },
+            LabeledExample { id: "b2".into(), merchant_id: "m-b".into(), merchant_text: "Tim Hortons Breakfast".into(), category: "dining".into(), notes: None },
+        ];
+        // Vectors: reference and holdout share prototype direction per category.
+        let mut vectors = std::collections::BTreeMap::new();
+        for id in ["a1", "a2"] { vectors.insert(id.to_string(), vec![1.0, 0.0]); }
+        for id in ["b1", "b2"] { vectors.insert(id.to_string(), vec![0.0, 1.0]); }
+        let (sweep, calibrated) = centroid_calibration(&examples, &vectors, 0.5, 42);
+        assert!(!sweep.is_empty(), "holdout sweep must not be empty");
+        // With tiny N, gate (≥30) should make calibrated None — the point is the
+        // gate is applied, not just precision.
+        assert!(calibrated.is_none(), "gate requires ≥30 predictions, tiny fixture must be None");
+        // But the sweep itself still shows precision — derived from holdout, not full corpus.
+        assert!(sweep.iter().any(|p| p.precision.is_some()));
     }
 }

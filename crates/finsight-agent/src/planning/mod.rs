@@ -2,7 +2,7 @@ use crate::finance::{
     self, CashInflowAdvice, CashflowTimeline, DataQualityReport, DebtGoalComparison,
     DebtPayoffRanking, DebtPayoffScenarios, EmergencyFundScenarios, FinanceQuestionKind,
     FinancialSnapshot, GoalAllocationScenarios, GoalConflictScenario, GoalEtaResult,
-    PurchaseAffordabilityScenario,
+    PurchaseAffordabilityScenario, SinkingFundSchedule,
 };
 use crate::reasoning::tools::names;
 use chrono::{NaiveDate, Utc};
@@ -26,6 +26,7 @@ pub enum FinanceTaskType {
     DataQualityReport,
     FinancialSnapshot,
     InvestmentReadiness,
+    SinkingFund,
     GeneralFinancePlanning,
     Unknown,
 }
@@ -115,6 +116,7 @@ enum EvidencePayload {
     CashflowTimeline(CashflowTimeline),
     PurchaseAffordability(PurchaseAffordabilityScenario),
     DataQuality(DataQualityReport),
+    SinkingFund(SinkingFundSchedule),
 }
 
 struct EvidenceRecord {
@@ -235,6 +237,10 @@ pub fn plan_finance_question(question: &str) -> FinancePlan {
             plan.risk_flags
                 .push("investment_principles_only".to_string());
         }
+        FinanceTaskType::SinkingFund => {
+            plan.required_tools
+                .push(names::PLAN_SINKING_FUNDS.to_string());
+        }
         FinanceTaskType::GeneralFinancePlanning => {
             plan.optional_tools.extend([
                 "get_budgets".to_string(),
@@ -342,6 +348,21 @@ fn map_task_type(kind: FinanceQuestionKind, question: &str) -> FinanceTaskType {
         ],
     ) {
         return FinanceTaskType::DebtPayoffScenario;
+    }
+    if contains_any(
+        &lower,
+        &[
+            "sinking fund",
+            "sinking-fund",
+            "annual expense",
+            "annual expenses",
+            "property tax",
+            "car maintenance",
+            "travel fund",
+            "insurance fund",
+        ],
+    ) {
+        return FinanceTaskType::SinkingFund;
     }
     match kind {
         FinanceQuestionKind::CashInflow => FinanceTaskType::CashInflowAllocation,
@@ -477,6 +498,13 @@ fn execute_plan(
             out.push(EvidenceRecord {
                 evidence: data_quality_evidence(&report)?,
                 payload: EvidencePayload::DataQuality(report),
+            });
+        }
+        FinanceTaskType::SinkingFund => {
+            let schedule = finance::plan_sinking_funds(conn)?;
+            out.push(EvidenceRecord {
+                evidence: sinking_fund_evidence(&schedule)?,
+                payload: EvidencePayload::SinkingFund(schedule),
             });
         }
         FinanceTaskType::FinancialSnapshot
@@ -1016,6 +1044,51 @@ fn build_answer(
                 "Fill in APRs, minimum payments, and uncategorized expenses first.".to_string(),
             );
         }
+        FinanceTaskType::SinkingFund => {
+            let Some(schedule) = evidence.iter().find_map(|item| match &item.payload {
+                EvidencePayload::SinkingFund(value) => Some(value),
+                _ => None,
+            }) else {
+                answer.recommendation =
+                    "I need sinking fund data before planning.".to_string();
+                return Ok(answer);
+            };
+            if schedule.funds.is_empty() {
+                answer.recommendation =
+                    "You have no sinking funds set up yet; create one for an annual expense like car, travel, or insurance."
+                        .to_string();
+                answer.summary = "No sinking funds found.".to_string();
+            } else {
+                answer.recommendation = format!(
+                    "Save {} per month across {} sinking fund(s) to stay on track; current commitments are {} with a shortfall of {}.",
+                    format_cents(schedule.total_required_monthly_cents),
+                    schedule.funds.len(),
+                    format_cents(schedule.total_committed_monthly_cents),
+                    format_cents(schedule.total_shortfall_monthly_cents)
+                );
+                answer.summary = schedule
+                    .funds
+                    .iter()
+                    .map(|f| {
+                        let need = f
+                            .required_monthly_cents
+                            .map(format_cents)
+                            .unwrap_or_else(|| "unknown".to_string());
+                        let mo = f
+                            .months_remaining
+                            .map(|m| format!("{} mo", m))
+                            .unwrap_or_else(|| "no date".to_string());
+                        format!("{}: {}/mo ({} left, {})", f.name, need, format_cents(f.remaining_cents), mo)
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" ");
+            }
+            answer.reasoning = "Monthly need is remaining cents divided by months until due, rounded up so you arrive on time.".to_string();
+            answer.missing_data.extend(schedule.missing_data.iter().cloned());
+            answer.next_actions.push(
+                "Review monthly needs and adjust contributions or due dates to close any shortfall.".to_string(),
+            );
+        }
         FinanceTaskType::FinancialSnapshot | FinanceTaskType::GeneralFinancePlanning => {
             if let Some(snapshot) = snapshot {
                 answer.recommendation =
@@ -1178,6 +1251,10 @@ fn default_change_conditions(plan: &FinancePlan) -> Vec<String> {
             "The data-quality recommendation changes after missing APRs, minimum payments, uncategorized expenses, and stale balances are fixed."
                 .to_string(),
         ],
+        FinanceTaskType::SinkingFund => vec![
+            "The sinking-fund recommendation changes if target amounts, due dates, current balances, or monthly commitments change."
+                .to_string(),
+        ],
         FinanceTaskType::FinancialSnapshot | FinanceTaskType::GeneralFinancePlanning => vec![
             "The recommendation changes when the underlying balances, transactions, goals, debts, or planned bills change."
                 .to_string(),
@@ -1185,7 +1262,6 @@ fn default_change_conditions(plan: &FinancePlan) -> Vec<String> {
         FinanceTaskType::Unknown => Vec::new(),
     }
 }
-
 fn blocked_for_missing_inputs(plan: &FinancePlan) -> StructuredFinanceAnswer {
     StructuredFinanceAnswer {
         recommendation: "I need one more detail before I can give a reliable recommendation."
@@ -1702,6 +1778,37 @@ fn data_quality_evidence(report: &DataQualityReport) -> anyhow::Result<ToolEvide
     })
 }
 
+fn sinking_fund_evidence(schedule: &SinkingFundSchedule) -> anyhow::Result<ToolEvidence> {
+    Ok(ToolEvidence {
+        tool_name: names::PLAN_SINKING_FUNDS.to_string(),
+        summary: format!(
+            "Sinking fund schedule covers {} fund(s); {} per month required.",
+            schedule.funds.len(),
+            format_cents(schedule.total_required_monthly_cents)
+        ),
+        data_sources: default_data_sources(),
+        missing_data: schedule
+            .missing_data
+            .iter()
+            .cloned()
+            .map(MissingDataItem::from)
+            .collect(),
+        numbers_used: schedule
+            .funds
+            .iter()
+            .map(|f| NumberUsed {
+                label: format!("{} required monthly", f.name),
+                value: f
+                    .required_monthly_cents
+                    .map(format_cents)
+                    .unwrap_or_else(|| "unknown".to_string()),
+                source: names::PLAN_SINKING_FUNDS.to_string(),
+            })
+            .collect(),
+        raw_json: serde_json::to_value(schedule)?,
+    })
+}
+
 fn debt_vs_goal_evidence(comparison: &DebtGoalComparison) -> anyhow::Result<ToolEvidence> {
     Ok(ToolEvidence {
         tool_name: names::COMPARE_DEBT_VS_GOAL.to_string(),
@@ -2016,6 +2123,27 @@ mod tests {
         assert!(plan
             .risk_flags
             .contains(&"investment_principles_only".to_string()));
+    }
+
+    #[test]
+    fn planner_selects_sinking_fund_tool() {
+        for q in [
+            "How much for my sinking fund for car insurance?",
+            "Should I set up a sinking fund for annual property tax?",
+            "Travel fund sinking-fund how much per month?",
+        ] {
+            let plan = plan_finance_question(q);
+            assert_eq!(
+                plan.task_type,
+                FinanceTaskType::SinkingFund,
+                "question {q:?} should route to SinkingFund"
+            );
+            assert!(
+                plan.required_tools
+                    .contains(&names::PLAN_SINKING_FUNDS.to_string()),
+                "SinkingFund should require plan_sinking_funds"
+            );
+        }
     }
 
     #[test]

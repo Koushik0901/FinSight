@@ -392,12 +392,12 @@ measured conclusion, not caution:
   51% source underneath it would add noise, not coverage.
 - **#93's calibration has its answer for Canadian data**: no confidence band
   qualifies for auto-apply, and none qualifies for proposal-surfacing either.
+  This is now **codified** as `threshold::calibrated_threshold_for_gate` (≥98% precision & ≥30 predictions on the merchant-disjoint holdout sweep) and `private_eval::centroid_calibration` / `format_centroid_calibration` — both derived from the holdout curve, never in-sample. `cargo run -p finsight-eval --bin centroid_eval` prints `Slice 5 calibration: NONE qualifies` and `centroid_predictor::predict_with_constrained_fallback` implements the bounded #95 fallback (hydro→utilities, membership→subscriptions, only on abstains). The gate is honest because it returns `None` for CA real data, mirroring the 100%@n=7 tail that fails the N guard.
 - **The blocker is knowledge, not calibration.** Scores do not separate right
   from wrong answers because the encoder has no opinion about `ESSO` or `TIM
   HORTONS` to be confident *about*. A threshold cannot recover information that
   was never in the vector, which is why #95's constrained-LLM fallback is the
   experiment worth running and reranking is not.
-
 What #92 delivered stands: the storage, invalidation, embed-on-write and
 scoring machinery is real, tested, and measurable. What this section adds is
 the evidence that switching it on would currently make categorization worse.

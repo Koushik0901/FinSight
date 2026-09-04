@@ -73,7 +73,56 @@ pub fn threshold_sweep(
         .collect()
 }
 
-#[cfg(test)]
+/// # Slice 5 calibration (issue #93)
+///
+/// Pick the **highest-coverage** threshold that still meets the precision gate
+/// on the *merchant-disjoint holdout* curve — the only curve #93 allows an
+/// auto-apply decision to be made from.
+///
+/// Returns `None` when NO holdout point clears `min_precision` with at least
+/// `min_n_predicted` predictions. That is the honest answer for today's
+/// Canadian real-merchant data (see `eval/CENTROID_BASELINE.md`'s sweep: only
+/// 100% at n=7 qualifies on precision alone, which fails the `min_n` guard).
+/// A `None` means "no confidence band qualifies for auto-apply — proposals
+/// stay review-only", not "pick a lower precision".
+///
+/// `min_n_predicted` is the same statistical floor `private_eval` uses for its
+/// "too small to trust" caveat (`MIN_HELDOUT_MERCHANTS_FOR_CONFIDENT_CLAIM`
+/// ≈ 30 merchants, approximated here as 30 predictions — one prediction per
+/// held-out merchant at the low-n edge where the guard matters). Using a bare
+/// precision without an N guard would let a 7-row 100% (the observed tail at
+/// 0.75) look like a gate pass.
+pub fn calibrated_auto_apply_threshold(
+    holdout_sweep: &[ThresholdPoint],
+    min_precision: f64,
+    min_n_predicted: u64,
+) -> Option<ThresholdPoint> {
+    // Lowest threshold that still passes is highest coverage, so scan in
+    // threshold order and keep the *first* passing point when sweeping low→high.
+    // Our DEFAULT_THRESHOLDS are ascending, but callers may supply any order;
+    // sort by threshold to make the choice deterministic regardless.
+    let mut sorted = holdout_sweep.to_vec();
+    sorted.sort_by(|a, b| a.threshold.partial_cmp(&b.threshold).unwrap_or(std::cmp::Ordering::Equal));
+    let mut candidate: Option<ThresholdPoint> = None;
+    for pt in sorted {
+        if let Some(p) = pt.precision {
+            if p >= min_precision && pt.n_predicted >= min_n_predicted {
+                // First (lowest threshold) that qualifies is highest coverage
+                candidate = Some(pt);
+                break;
+            }
+        }
+    }
+    candidate
+}
+
+/// Convenience for the epic #74 gate: ≥98% precision, ≥30 predictions on the
+/// merchant-disjoint holdout. Returns `None` when no band qualifies.
+pub fn calibrated_threshold_for_gate(holdout_sweep: &[ThresholdPoint]) -> Option<ThresholdPoint> {
+    calibrated_auto_apply_threshold(holdout_sweep, 0.98, 30)
+}
+
+ #[cfg(test)]
 mod tests {
     use super::*;
 
@@ -141,5 +190,60 @@ mod tests {
             "only the correct high-confidence call survives at 0.5"
         );
         assert_eq!(points[1].coverage, 0.5);
+    }
+
+    #[test]
+    fn calibrated_threshold_picks_highest_coverage_band_meeting_gate() {
+        // Synthetic sweep: precision rises with threshold but coverage falls.
+        let sweep = vec![
+            ThresholdPoint { threshold: 0.35, n_total: 100, n_predicted: 80, n_correct: 72, precision: Some(0.90), coverage: 0.80 },
+            ThresholdPoint { threshold: 0.60, n_total: 100, n_predicted: 40, n_correct: 39, precision: Some(0.975), coverage: 0.40 },
+            ThresholdPoint { threshold: 0.70, n_total: 100, n_predicted: 35, n_correct: 35, precision: Some(1.0), coverage: 0.35 },
+        ];
+        // At gate 0.98/30: 0.60 fails (0.975), 0.70 passes — should pick 0.70.
+        let pt = calibrated_auto_apply_threshold(&sweep, 0.98, 30).unwrap();
+        assert!((pt.threshold - 0.70).abs() < 1e-9);
+        assert_eq!(pt.n_predicted, 35);
+    }
+
+    #[test]
+    fn calibrated_threshold_returns_none_when_only_small_n_tail_passes() {
+        // Mirrors real CENTROID_BASELINE tail: 100% at n=7, nothing at feasible n.
+        let sweep = vec![
+            ThresholdPoint { threshold: 0.35, n_total: 574, n_predicted: 522, n_correct: 269, precision: Some(0.515), coverage: 0.909 },
+            ThresholdPoint { threshold: 0.70, n_total: 574, n_predicted: 25, n_correct: 22, precision: Some(0.88), coverage: 0.044 },
+            ThresholdPoint { threshold: 0.75, n_total: 574, n_predicted: 7, n_correct: 7, precision: Some(1.0), coverage: 0.012 },
+        ];
+        // Gate 0.98/30: only 0.75 passes precision but fails min_n, so None.
+        assert!(calibrated_auto_apply_threshold(&sweep, 0.98, 30).is_none());
+        // Even without min_n, 0.75 would be the answer — proves guard matters.
+        assert!(calibrated_auto_apply_threshold(&sweep, 0.98, 0).is_some());
+    }
+
+    #[test]
+    fn calibrated_threshold_is_deterministic_regardless_of_input_order() {
+        let mut sweep = vec![
+            ThresholdPoint { threshold: 0.70, n_total: 100, n_predicted: 35, n_correct: 35, precision: Some(1.0), coverage: 0.35 },
+            ThresholdPoint { threshold: 0.35, n_total: 100, n_predicted: 90, n_correct: 88, precision: Some(0.978), coverage: 0.90 },
+        ];
+        // 0.35 already fails threshold slightly? adjust to pass both
+        sweep[1].precision = Some(0.99);
+        let a = calibrated_auto_apply_threshold(&sweep, 0.98, 30).unwrap();
+        sweep.reverse();
+        let b = calibrated_auto_apply_threshold(&sweep, 0.98, 30).unwrap();
+        assert_eq!(a.threshold, b.threshold);
+        assert!((a.threshold - 0.35).abs() < 1e-9, "lowest passing threshold should win regardless of order");
+    }
+
+    #[test]
+    fn calibrated_threshold_uses_holdout_only_convention() {
+        // This test documents the contract: caller must pass holdout_sweep,
+        // not full_corpus. We can't enforce at type level, but we note it.
+        // A point with high in-sample precision that doesn't exist holdout
+        // must not be supplied — this passes holdout and proves it still works.
+        let holdout = vec![
+            ThresholdPoint { threshold: 0.5, n_total: 50, n_predicted: 40, n_correct: 39, precision: Some(0.975), coverage: 0.80 },
+        ];
+        assert!(calibrated_auto_apply_threshold(&holdout, 0.98, 30).is_none());
     }
 }

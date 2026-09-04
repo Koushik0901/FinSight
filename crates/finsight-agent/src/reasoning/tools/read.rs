@@ -1190,7 +1190,7 @@ pub fn list_uncategorized_transactions() -> Arc<dyn Tool> {
             "list_uncategorized_transactions"
         }
         fn description(&self) -> &str {
-            "List transactions that still have no category, plus the available categories to choose from. Use this before draft_recategorization: pick a category id for each transaction from available_categories. Returns a bounded page; total_uncategorized is the full count."
+            "List transactions that still have no category, plus the available categories to choose from. Each transaction includes id, merchant, merchant_key (canonical), amount_cents, date, account, and notes when present. Use this before draft_recategorization: pick a category id for each transaction from available_categories. Returns a bounded page; total_uncategorized is the full count."
         }
         fn parameters(&self) -> Value {
             json!({"type": "object", "properties": {"limit": {"type": "integer", "default": 50}}})
@@ -1211,23 +1211,34 @@ pub fn list_uncategorized_transactions() -> Arc<dyn Tool> {
                 |r| r.get(0),
             )?;
             let mut txn_stmt = ctx.conn.prepare(&format!(
-                "SELECT t.id, t.merchant_raw, t.amount_cents, substr(t.posted_at,1,10), COALESCE(a.name,'Unknown account') \
+                "SELECT t.id, t.merchant_raw, t.amount_cents, substr(t.posted_at,1,10), COALESCE(a.name,'Unknown account'), t.notes \
                  FROM transactions t LEFT JOIN accounts a ON a.id = t.account_id \
                  WHERE t.category_id IS NULL AND t.amount_cents < 0 AND t.is_transfer = 0 AND {pred} \
                  ORDER BY t.posted_at DESC LIMIT ?1",
             ))?;
             let uncategorized: Vec<Value> = txn_stmt
                 .query_map(rusqlite::params![limit], |r| {
-                    Ok(json!({
-                        "id": r.get::<_, String>(0)?,
-                        "merchant": r.get::<_, String>(1)?,
-                        "amount_cents": r.get::<_, i64>(2)?,
-                        "date": r.get::<_, String>(3)?,
-                        "account": r.get::<_, String>(4)?
-                    }))
+                    let id: String = r.get(0)?;
+                    let merchant: String = r.get(1)?;
+                    let amount_cents: i64 = r.get(2)?;
+                    let date: String = r.get(3)?;
+                    let account: String = r.get(4)?;
+                    let notes: Option<String> = r.get(5)?;
+                    let merchant_key = finsight_core::merchant::canonical_merchant_key(&merchant);
+                    let mut obj = json!({
+                        "id": id,
+                        "merchant": merchant,
+                        "merchant_key": merchant_key,
+                        "amount_cents": amount_cents,
+                        "date": date,
+                        "account": account
+                    });
+                    if let Some(n) = notes.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+                        obj["notes"] = json!(n);
+                    }
+                    Ok(obj)
                 })?
                 .collect::<std::result::Result<Vec<_>, _>>()?;
-
             let mut cat_stmt = ctx.conn.prepare(
                 "SELECT id, label, guidance FROM categories WHERE archived_at IS NULL ORDER BY label",
             )?;
@@ -1862,6 +1873,27 @@ mod tests {
         let out = call(&mut conn, list_uncategorized_transactions(), json!({}));
         assert!(out["uncategorized"].as_array().unwrap().is_empty());
         assert_eq!(out["total_uncategorized"].as_i64(), Some(0));
+    }
+
+    #[test]
+    fn uncategorized_listing_includes_merchant_key_and_notes() {
+        let (_dir, db) = fresh();
+        let mut conn = db.get().unwrap();
+        conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,created_at) VALUES('chk','Me','Bank','Checking','Everyday','USD','#fff',datetime('now'))", []).unwrap();
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,notes,status,created_at)              VALUES('t1','chk','2026-05-01',-4200,'Corner Shop','coffee with Alex','cleared',datetime('now'))",
+            [],
+        )
+        .unwrap();
+
+        let out = call(&mut conn, list_uncategorized_transactions(), json!({}));
+        let row = &out["uncategorized"][0];
+        assert_eq!(row["id"], "t1");
+        assert_eq!(row["merchant"], "Corner Shop");
+        // merchant_key is canonicalized (lowercase, stripped).
+        assert_eq!(row["merchant_key"], "corner shop");
+        assert_eq!(row["notes"], "coffee with Alex");
+        assert_eq!(row["amount_cents"], -4200);
     }
 
     fn seed_txns(conn: &mut Connection) {

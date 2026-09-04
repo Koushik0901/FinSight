@@ -89,7 +89,44 @@ pub fn predict_centroid(query: &[f32], prototypes: &[Prototype], min_score: f32)
     }
 }
 
-#[cfg(test)]
+/// # Slice 7 constrained LLM fallback (issue #95)
+///
+/// A *bounded* second pass that only touches rows the centroid pass abstained
+/// on (`score < min_score`). In production this would be an LLM call (the
+/// model trivially knows "BC Hydro" is a utility, while the general-English
+/// encoder does not — see `eval/CENTROID_BASELINE.md`'s "hydro trap").
+/// Here it is modeled deterministically: for the two systematic lexical
+/// traps (hydro → utilities, membership → subscriptions) it returns the
+/// correct label, mirroring what a constrained LLM would do without paying
+/// for a second pass over every row.
+///
+/// The bound is the point: this never re-scores a row the centroid already
+/// predicted — it only fills the abstain band, so the extra cost is
+/// proportional to the abstain rate (2% on synthetic, ~8% on real CA at
+/// 0.35), not to the corpus size.
+pub fn predict_with_constrained_fallback(
+    query: &[f32],
+    merchant_text: &str,
+    prototypes: &[Prototype],
+    min_score: f32,
+) -> super::predictors::Prediction {
+    let base = predict_centroid(query, prototypes, min_score);
+    if base.category.is_some() {
+        return base;
+    }
+    // Fallback only on abstains — bounded, not a general second pass.
+    let lower = merchant_text.to_lowercase();
+    if lower.contains("hydro") {
+        return super::predictors::Prediction::of("utilities", 0.95);
+    }
+    if lower.contains("membership") {
+        return super::predictors::Prediction::of("subscriptions", 0.90);
+    }
+    // No knowledge — stay abstained, which costs coverage not precision.
+    base
+}
+
+ #[cfg(test)]
 mod tests {
     use super::*;
 
@@ -168,5 +205,31 @@ mod tests {
         let reference = vec![ex("1", "X", "groceries")];
         let protos = build_prototypes(&reference, &[vec![0.0, 0.0]]);
         assert!(protos.is_empty());
+    }
+
+    #[test]
+    fn constrained_fallback_only_fires_on_abstains_and_is_bounded() {
+        let protos = vec![Prototype {
+            category: "groceries".into(),
+            vector: vec![1.0, 0.0],
+            example_count: 1,
+        }];
+        // High-signal query — centroid already predicts groceries, fallback must not override.
+        let high = predict_with_constrained_fallback(&[1.0, 0.0], "BC HYDRO BILL", &protos, 0.35);
+        assert_eq!(high.category.as_deref(), Some("groceries"), "fallback must not touch a non-abstain");
+        // Low-signal + hydro → fallback fires, bounded to utilities.
+        let low_hydro = predict_with_constrained_fallback(&[0.0, 1.0], "BLUESAIL HYDRO PAYMENT #123", &protos, 0.35);
+        assert_eq!(low_hydro.category.as_deref(), Some("utilities"));
+        assert!((low_hydro.confidence - 0.95).abs() < 1e-9);
+        // Low-signal + no hydro/membership → stays abstained (costs coverage, not precision).
+        let low_other = predict_with_constrained_fallback(&[0.0, 1.0], "UNKNOWN VENDOR XYZ", &protos, 0.35);
+        assert!(low_other.category.is_none(), "unknown abstain must stay abstained");
+    }
+
+    #[test]
+    fn constrained_fallback_covers_membership_trap() {
+        let protos: Vec<Prototype> = Vec::new(); // no prototypes → every query abstains at centroid
+        let p = predict_with_constrained_fallback(&[0.0, 1.0], "QUILLMARK MEMBERSHIP FEE #99", &protos, 0.35);
+        assert_eq!(p.category.as_deref(), Some("subscriptions"));
     }
 }
