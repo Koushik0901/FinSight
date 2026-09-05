@@ -78,6 +78,7 @@ export function Field({
     .join(" ");
   return (
     <div className={cls}>
+      <label className="lab" htmlFor={id}>{label}{required && <b> *</b>}</label>
       <div className="in-wrap">
         <div className="lead-ico">{icon}</div>
         <input
@@ -93,7 +94,6 @@ export function Field({
           onFocus={() => setFocus(true)}
           onBlur={() => setFocus(false)}
         />
-        <label className="lab" htmlFor={id}>{label}{required && <b> *</b>}</label>
         <div className="trail">
           {valid && !error && <span className="valid-check">{Ico.check()}</span>}
           {trailing}
@@ -158,6 +158,12 @@ const SHOWCASE_POINTS = [
   },
 ] as const;
 
+const DECISION_STEPS = [
+  { label: "See", detail: "Find the signal" },
+  { label: "Understand", detail: "Know what changed" },
+  { label: "Plan", detail: "Choose the next move" },
+] as const;
+
 function Showcase() {
   return (
     <aside className="showcase" aria-label="Why FinSight is different">
@@ -175,6 +181,22 @@ function Showcase() {
           </div>
         ))}
       </dl>
+      <div className="decision-loop" aria-label="FinSight decision loop">
+        <div className="decision-loop-head">
+          <span className="decision-loop-kicker">The FinSight loop</span>
+          <span className="decision-loop-caption">A calmer way to decide</span>
+        </div>
+        <div className="decision-loop-track">
+          <span className="decision-loop-line" aria-hidden="true" />
+          {DECISION_STEPS.map((step, index) => (
+            <div className="decision-step" data-step={index} key={step.label}>
+              <span className="decision-step-index" aria-hidden="true">0{index + 1}</span>
+              <strong>{step.label}</strong>
+              <span>{step.detail}</span>
+            </div>
+          ))}
+        </div>
+      </div>
     </aside>
   );
 }
