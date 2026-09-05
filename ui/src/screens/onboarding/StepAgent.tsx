@@ -126,7 +126,7 @@ export default function StepAgent({ onDone }: Props) {
     }
   }
 
-  async function skipForLater() {
+  async function finishWithoutProvider() {
     setActionError(null);
     try {
       await setProvider.mutateAsync({ kind: "unconfigured" });
@@ -137,13 +137,37 @@ export default function StepAgent({ onDone }: Props) {
     }
   }
 
-  // Initial two-path choice
+  // Local categorization is the default. Ollama/cloud are optional fallbacks
+  // for ambiguous merchants, not prerequisites for using FinSight.
   if (!path) {
     return (
       <div className="step-agent onb-split">
         <div className="onb-left">
-          <div className="num-step">004 · AI setup</div>          <h1>Choose how to power AI categorization.</h1>
-          <p className="lead">Use self-hosted Ollama for private server-side inference or connect a cloud provider.</p>
+          <div className="num-step">004 · Categorization</div>
+          <h1>Local first. Review when it matters.</h1>
+          <p className="lead">FinSight already includes a trained merchant model. It categorizes routine transactions on your server, without an API key or an AI provider.</p>
+          <Card className="onb-local-model-card stack stack-md">
+            <div className="onb-local-model-head">
+              <div className="onb-local-model-mark" aria-hidden="true">FT</div>
+              <div>
+                <div className="onb-provider-title" style={{ fontWeight: 700 }}>FastText merchant model</div>
+                <div className="muted" style={{ fontSize: 13 }}>Built in · local · zero provider setup</div>
+              </div>
+              <span className="chip is-good">Default</span>
+            </div>
+            <p className="muted onb-local-model-copy">Rules catch known patterns first. FastText handles familiar merchants next. Only uncertain transactions need your review or an optional model fallback.</p>
+            <div className="onb-routing-pipeline" aria-label="Categorization pipeline">
+              <span className="onb-routing-node">Rules</span>
+              <span className="onb-routing-arrow" aria-hidden="true">→</span>
+              <span className="onb-routing-node is-active">FastText</span>
+              <span className="onb-routing-arrow" aria-hidden="true">→</span>
+              <span className="onb-routing-node is-muted">Optional AI</span>
+            </div>
+          </Card>
+          <div className="onb-local-actions">
+            <Button variant="primary" onClick={finishWithoutProvider}>Continue with local categorization →</Button>
+            <span className="muted" style={{ fontSize: 12.5 }}>You can add a fallback later in Settings.</span>
+          </div>
           <div className="onb-provider-choice-grid">
             <Button
               className="onb-provider-choice"
@@ -151,8 +175,8 @@ export default function StepAgent({ onDone }: Props) {
               onClick={() => setPath("local")}
             >
               <div className="stack stack-xs" style={{ textAlign: "left" }}>
-                <div className="onb-provider-title" style={{ fontWeight: 700 }}><House width={16} height={16} /> Self-hosted Ollama</div>
-                <div className="muted" style={{ fontSize: 13 }}>Runs wherever your FinSight server can reach it.</div>
+                <div className="onb-provider-title" style={{ fontWeight: 700 }}><House width={16} height={16} /> Add Ollama fallback</div>
+                <div className="muted" style={{ fontSize: 13 }}>Keep uncertain cases on your own network.</div>
               </div>
             </Button>
             <Button
@@ -161,25 +185,24 @@ export default function StepAgent({ onDone }: Props) {
               onClick={() => setPath("cloud")}
             >
               <div className="stack stack-xs" style={{ textAlign: "left" }}>
-                <div className="onb-provider-title" style={{ fontWeight: 700 }}><Cpu width={16} height={16} /> Cloud provider</div>
-                <div className="muted" style={{ fontSize: 13 }}>OpenAI, Anthropic, OpenRouter, etc.</div>
+                <div className="onb-provider-title" style={{ fontWeight: 700 }}><Cpu width={16} height={16} /> Add cloud fallback</div>
+                <div className="muted" style={{ fontSize: 13 }}>Use a provider only for the long tail.</div>
               </div>
             </Button>
           </div>
           {actionError && <p role="alert" className="err">{actionError}</p>}
-          <Button variant="ghost" onClick={skipForLater}>Configure later →</Button>
         </div>
 
         <div className="onb-right">
-          <Card className="stack stack-md">
-            <div className="eyebrow"><span className="dot" />What happens next</div>
-            <h3 className="h3">FinSight will:</h3>
-            <div className="stack stack-xs muted" style={{ fontSize: 13.5 }}>
-              <div>• Categorize transactions automatically</div>
-              <div>• Mark low-confidence items for quick review</div>
-              <div>• Learn from your corrections over time</div>
+          <Card className="onb-routing-card stack stack-md">
+            <div className="eyebrow"><span className="dot" />How categorization works</div>
+            <h3 className="h3">Quiet automation, visible decisions.</h3>
+            <div className="onb-routing-steps">
+              <div className="onb-routing-step"><span>01</span><div><strong>Match locally</strong><small>Rules and FastText run on your server.</small></div></div>
+              <div className="onb-routing-step"><span>02</span><div><strong>Surface uncertainty</strong><small>Low-confidence items stay easy to review.</small></div></div>
+              <div className="onb-routing-step"><span>03</span><div><strong>Learn from corrections</strong><small>Your choices improve future suggestions.</small></div></div>
             </div>
-            <span className="chip">You can change providers later in Settings</span>
+            <span className="chip">Private by default</span>
           </Card>
         </div>
       </div>
@@ -191,8 +214,9 @@ export default function StepAgent({ onDone }: Props) {
     return (
       <div className="step-agent onb-split">
         <div className="onb-left">
-          <div className="num-step">004 · Cloud provider</div>          <h1>Connect a cloud model.</h1>
-          <p className="lead">Choose a provider, enter the model id, then test and save.</p>
+          <div className="num-step">004 · Optional cloud fallback</div>
+          <h1>Add a cloud fallback.</h1>
+          <p className="lead">FinSight will keep using its local merchant model first, then send only the uncertain cases to this provider.</p>
           <div className="row-sm wrap" style={{ marginBottom: 16 }}>
             {CLOUD_PRESETS.map((p) => (
               <Button
@@ -238,7 +262,7 @@ export default function StepAgent({ onDone }: Props) {
                 Test &amp; Save →
               </Button>
               <Button variant="default" type="button" onClick={() => setPath(null)}>← Back</Button>
-              <Button variant="ghost" type="button" onClick={skipForLater}>Configure later →</Button>
+              <Button variant="ghost" type="button" onClick={finishWithoutProvider}>Keep local only →</Button>
             </div>
           </form>
         </div>
@@ -259,7 +283,8 @@ export default function StepAgent({ onDone }: Props) {
     return (
       <div className="step-agent onb-split">
         <div className="onb-left">
-          <div className="num-step">004 · Self-hosted AI</div>          <h1>Checking for Ollama…</h1>
+          <div className="num-step">004 · Optional Ollama fallback</div>
+          <h1>Checking for Ollama…</h1>
           <p className="lead">Asking your FinSight server to connect to {probedBaseUrl}.</p>
         </div>
         <div className="onb-right">
@@ -276,11 +301,12 @@ export default function StepAgent({ onDone }: Props) {
     return (
       <div className="step-agent onb-split">
         <div className="onb-left">
-          <div className="num-step">004 · Self-hosted AI</div>          <h1>{urlNeedsCheck ? "Check this Ollama server." : "Connect Ollama."}</h1>
+          <div className="num-step">004 · Optional Ollama fallback</div>
+          <h1>{urlNeedsCheck ? "Check this Ollama server." : "Add an Ollama fallback."}</h1>
           <p className="lead">
             {urlNeedsCheck
               ? "Test the address from FinSight before choosing a model."
-              : "FinSight could not reach Ollama at this address. Install it on your server host or use another server-reachable URL."}
+              : "FinSight could not reach Ollama at this address. Install it on your server host or use another server-reachable URL. Local FastText categorization will continue to work without it."}
           </p>
           <form onSubmit={(e) => checkOllamaConnection(e)}>
             <Input
@@ -295,7 +321,7 @@ export default function StepAgent({ onDone }: Props) {
               <Button variant="primary" type="submit">Check connection</Button>
               <a className="btn" href="https://ollama.com" target="_blank" rel="noreferrer">Ollama setup guide ↗</a>
               <Button variant="default" type="button" onClick={() => setPath(null)}>← Back</Button>
-              <Button variant="ghost" type="button" onClick={skipForLater}>Configure later →</Button>
+              <Button variant="ghost" type="button" onClick={finishWithoutProvider}>Keep local only →</Button>
             </div>
           </form>
         </div>
@@ -314,8 +340,9 @@ export default function StepAgent({ onDone }: Props) {
   return (
     <div className="step-agent onb-split">
       <div className="onb-left">
-        <div className="num-step">004 · Self-hosted AI</div>        <h1>Ollama is ready.</h1>
-        <p className="lead">Connected through your FinSight server at {probedBaseUrl}. Pick a completion model and finish setup.</p>
+        <div className="num-step">004 · Optional Ollama fallback</div>
+        <h1>Ollama is ready as a fallback.</h1>
+        <p className="lead">Connected through your FinSight server at {probedBaseUrl}. Pick a model for the uncertain cases FastText cannot classify locally.</p>
         <Select
           label="Completion model"
           value={completionModel}
@@ -336,7 +363,7 @@ export default function StepAgent({ onDone }: Props) {
             Use Ollama →
           </Button>
           <Button variant="default" onClick={() => setPath(null)}>← Back</Button>
-          <Button variant="ghost" onClick={skipForLater}>Configure later →</Button>
+          <Button variant="ghost" onClick={finishWithoutProvider}>Keep local only →</Button>
         </div>
       </div>
       <div className="onb-right">

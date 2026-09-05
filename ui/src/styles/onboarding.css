@@ -625,6 +625,104 @@
   margin-bottom: 24px;
 }
 
+.onb-local-model-card {
+  border-color: var(--accent-line);
+  background:
+    radial-gradient(circle at 100% 0%, color-mix(in srgb, var(--accent) 11%, transparent), transparent 48%),
+    var(--elevated);
+}
+
+.onb-local-model-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.onb-local-model-head .chip {
+  margin-left: auto;
+  color: var(--positive);
+  border-color: color-mix(in srgb, var(--positive) 35%, var(--line));
+}
+
+.onb-local-model-mark {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border: 1px solid var(--accent-line);
+  border-radius: 12px;
+  color: var(--accent);
+  background: var(--accent-2);
+  font: 700 12px var(--mono);
+  letter-spacing: .08em;
+}
+
+.onb-local-model-copy { margin: 0; line-height: 1.5; }
+
+.onb-routing-pipeline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font: 11px var(--mono);
+  letter-spacing: .04em;
+}
+
+.onb-routing-node {
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-pill);
+  padding: 6px 9px;
+  color: var(--ink-2);
+  background: var(--surface-2);
+}
+
+.onb-routing-node.is-active {
+  border-color: var(--accent-line);
+  color: var(--accent);
+  background: var(--accent-2);
+}
+
+.onb-routing-node.is-muted { color: var(--ink-faint); }
+.onb-routing-arrow { color: var(--ink-faint); }
+
+.onb-local-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 18px 0 22px;
+}
+
+.onb-routing-card { min-height: 100%; }
+
+.onb-routing-steps {
+  display: grid;
+  gap: 14px;
+}
+
+.onb-routing-step {
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  gap: 10px;
+  align-items: start;
+}
+
+.onb-routing-step > span {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  color: var(--accent);
+  font: 10px var(--mono);
+}
+
+.onb-routing-step strong,
+.onb-routing-step small { display: block; }
+.onb-routing-step strong { color: var(--ink); font-size: 13px; }
+.onb-routing-step small { margin-top: 3px; color: var(--ink-mute); font-size: 12px; line-height: 1.4; }
+
 .onb-provider-choice {
   min-width: 0;
   min-height: 112px;

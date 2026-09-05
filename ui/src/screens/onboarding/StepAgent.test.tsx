@@ -30,18 +30,20 @@ vi.mock("../../api/openapiClient", () => ({
 }));
 
 describe("StepAgent", () => {
-  it("shows two-path choice: Local + Cloud", async () => {
+  it("makes the built-in local model the default and keeps provider setup optional", async () => {
     render(<StepAgent onDone={() => {}} />, { wrapper: createWrapper() });
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /self-hosted ollama/i })).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: /cloud/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /continue with local categorization/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /add ollama fallback/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /add cloud fallback/i })).toBeInTheDocument();
     });
-    expect(screen.getByText(/private server-side inference/i)).toBeInTheDocument();
+    expect(screen.getByText(/fasttext merchant model/i)).toBeInTheDocument();
+    expect(screen.getByText(/rules catch known patterns.*fasttext.*optional model fallback/i)).toBeInTheDocument();
   });
 
   it("lets a self-hosted deployment enter the server-reachable Ollama URL", async () => {
     render(<StepAgent onDone={() => {}} />, { wrapper: createWrapper() });
-    fireEvent.click(screen.getByRole("button", { name: /self-hosted ollama/i }));
+    fireEvent.click(screen.getByRole("button", { name: /add ollama fallback/i }));
 
     const url = await screen.findByRole("textbox", { name: /ollama url/i });
     expect(url).toHaveValue("http://ollama:11434");
@@ -52,7 +54,7 @@ describe("StepAgent", () => {
   it("degrades a partial Ollama probe response to the connection form", async () => {
     probeOllama.mockResolvedValueOnce({ status: "ok", data: [] } as never);
     render(<StepAgent onDone={() => {}} />, { wrapper: createWrapper() });
-    fireEvent.click(screen.getByRole("button", { name: /self-hosted ollama/i }));
+    fireEvent.click(screen.getByRole("button", { name: /add ollama fallback/i }));
 
     expect(await screen.findByRole("textbox", { name: /ollama url/i })).toBeInTheDocument();
     expect(screen.queryByText(/this screen failed to load/i)).not.toBeInTheDocument();
@@ -60,14 +62,14 @@ describe("StepAgent", () => {
 
   it("shows cloud provider tiles after clicking Cloud path", async () => {
     render(<StepAgent onDone={() => {}} />, { wrapper: createWrapper() });
-    await waitFor(() => screen.getByRole("button", { name: /cloud/i }));
-    fireEvent.click(screen.getByRole("button", { name: /cloud/i }));
+    await waitFor(() => screen.getByRole("button", { name: /add cloud fallback/i }));
+    fireEvent.click(screen.getByRole("button", { name: /add cloud fallback/i }));
     await waitFor(() => expect(screen.getByText(/openai/i)).toBeInTheDocument());
   });
 
-  it("shows Configure later button at all times", async () => {
+  it("shows the local-first completion action", async () => {
     render(<StepAgent onDone={() => {}} />, { wrapper: createWrapper() });
-    await waitFor(() => expect(screen.getByRole("button", { name: /configure later/i })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole("button", { name: /continue with local categorization/i })).toBeInTheDocument());
   });
 
   it("saves the API key before setting the provider", async () => {
@@ -83,7 +85,7 @@ describe("StepAgent", () => {
     } as unknown as ReturnType<typeof useSetCompletionProvider>);
 
     render(<StepAgent onDone={() => {}} />, { wrapper: createWrapper() });
-    fireEvent.click(screen.getByRole("button", { name: /cloud/i }));
+    fireEvent.click(screen.getByRole("button", { name: /add cloud fallback/i }));
     await waitFor(() => screen.getByText(/openrouter/i));
     fireEvent.click(screen.getByText(/openrouter/i));
 

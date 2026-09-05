@@ -42,6 +42,7 @@ tokenizers = { version = "0.23", default-features = false, features = ["fancy-re
 fasttext = { version = "0.6", optional = true }
 
 [features]
+default = ["fasttext-local"]
 fasttext-local = ["dep:fasttext"]
 
 [dev-dependencies]

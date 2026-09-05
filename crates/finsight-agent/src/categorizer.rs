@@ -90,6 +90,25 @@ pub async fn run_job(
     provider: Arc<dyn CompletionProvider>,
     on_event: EventCallback,
 ) -> Result<()> {
+    run_job_with_provider(db, job, Some(provider), on_event).await
+}
+
+/// Run the deterministic categorization pipeline without requiring an LLM.
+///
+/// Rules and the local FastText model are useful on their own. An optional
+/// provider is only needed for the final fallback pass and post-run anomaly
+/// detection, so a fresh self-hosted install can categorize locally before the
+/// user configures any external inference service.
+pub async fn run_local_job(db: &Db, job: AgentJob, on_event: EventCallback) -> Result<()> {
+    run_job_with_provider(db, job, None, on_event).await
+}
+
+async fn run_job_with_provider(
+    db: &Db,
+    job: AgentJob,
+    provider: Option<Arc<dyn CompletionProvider>>,
+    on_event: EventCallback,
+) -> Result<()> {
     let (import_id, rerun_mode) = match &job {
         AgentJob::CategorizeAll => (None, false),
         AgentJob::RecategorizeLowConfidence => (None, true),
@@ -388,8 +407,8 @@ pub async fn run_job(
     // surfaced as "needs review" via threshold). This is the 90-95% token cut.
     // When set, we use that provider (per-task Ollama/Cloud/Anthropic) else the
     // global `provider` passed from `AgentHandle`.
-    let should_llm = {
-        if let Ok(conn) = db.get() {
+    let should_llm = provider.is_some()
+        && if let Ok(conn) = db.get() {
             if let Ok(Some(v)) =
                 finsight_core::settings::get::<serde_json::Value>(&conn, "llm_routing")
             {
@@ -400,16 +419,18 @@ pub async fn run_job(
             }
         } else {
             true
-        }
-    };
+        };
     if !should_llm {
         tracing::info!("[categorizer] categorization LLM skipped by routing (deterministic)");
     } else {
+        let fallback = provider
+            .as_ref()
+            .expect("LLM routing cannot run without a completion provider");
         let llm_provider: Arc<dyn CompletionProvider> = {
             if let Ok(conn) = db.get() {
-                provider_for_categorization(&conn, Arc::clone(&provider))
+                provider_for_categorization(&conn, Arc::clone(fallback))
             } else {
-                Arc::clone(&provider)
+                Arc::clone(fallback)
             }
         };
         let system_prompt = build_system_prompt(&categories, &recent_examples);
@@ -619,18 +640,20 @@ pub async fn run_job(
     // Post-run: anomaly detection (best-effort — failures don't abort the scan,
     // but they must not vanish silently). Anomaly writes already honor the
     // ResetBarrier lease (Bound B exception — see anomaly::detect_anomalies).
-    if let Err(e) = crate::anomaly::detect_anomalies(db, Arc::clone(&provider)).await {
-        tracing::error!("[categorizer] post-scan anomaly detection failed: {e}");
-        // Surface as a durable Inbox-style warning so the failure is visible
-        // beyond the server log. Best-effort: a failure to record the warning
-        // must not mask the scan result.
-        if let Ok(conn) = db.get() {
-            let mut warnings: Vec<String> =
-                finsight_core::settings::get(&conn, "data.agent_warnings")
-                    .unwrap_or(None)
-                    .unwrap_or_default();
-            warnings.push(format!("anomaly detection: {e}"));
-            let _ = finsight_core::settings::set(&conn, "data.agent_warnings", &warnings);
+    if let Some(provider) = provider {
+        if let Err(e) = crate::anomaly::detect_anomalies(db, provider).await {
+            tracing::error!("[categorizer] post-scan anomaly detection failed: {e}");
+            // Surface as a durable Inbox-style warning so the failure is visible
+            // beyond the server log. Best-effort: a failure to record the warning
+            // must not mask the scan result.
+            if let Ok(conn) = db.get() {
+                let mut warnings: Vec<String> =
+                    finsight_core::settings::get(&conn, "data.agent_warnings")
+                        .unwrap_or(None)
+                        .unwrap_or_default();
+                warnings.push(format!("anomaly detection: {e}"));
+                let _ = finsight_core::settings::set(&conn, "data.agent_warnings", &warnings);
+            }
         }
     }
 
@@ -992,16 +1015,9 @@ mod tests {
         }
         let events: Arc<Mutex<Vec<AgentEvent>>> = Arc::new(Mutex::new(Vec::new()));
         let events_clone = Arc::clone(&events);
-        let provider = Arc::new(MockCompletionProvider {
-            provider_id: "mock".into(),
-            model_id: "test".into(),
-            response: json!([]),
-            tool_turns: Mutex::new(vec![]),
-        });
-        run_job(
+        run_local_job(
             &db,
             AgentJob::CategorizeAll,
-            provider,
             Arc::new(move |e| {
                 events_clone.lock().unwrap().push(e);
             }),

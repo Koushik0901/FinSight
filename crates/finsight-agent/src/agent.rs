@@ -133,21 +133,18 @@ async fn run_loop(
             }
             job @ (AgentJob::CategorizeAll | AgentJob::RecategorizeLowConfidence) => {
                 let p = provider.read().unwrap().clone();
-                match p {
-                    None => {
-                        on_event(AgentEvent::Error {
-                            message: "No completion provider configured".to_string(),
-                        });
-                    }
+                let result = match p {
                     Some(p) => {
-                        let result =
-                            crate::categorizer::run_job(&db, job, p, Arc::clone(&on_event)).await;
-                        if let Err(e) = result {
-                            on_event(AgentEvent::Error {
-                                message: e.to_string(),
-                            });
-                        }
+                        crate::categorizer::run_job(&db, job, p, Arc::clone(&on_event)).await
                     }
+                    None => {
+                        crate::categorizer::run_local_job(&db, job, Arc::clone(&on_event)).await
+                    }
+                };
+                if let Err(e) = result {
+                    on_event(AgentEvent::Error {
+                        message: e.to_string(),
+                    });
                 }
             }
         }
@@ -163,7 +160,7 @@ mod tests {
     use std::sync::Mutex;
 
     #[tokio::test]
-    async fn handle_sends_job_and_receives_error_when_no_provider() {
+    async fn handle_runs_local_categorization_without_provider() {
         let (_dir, db) = finsight_core::testing::migrated_db();
         let events: Arc<Mutex<Vec<AgentEvent>>> = Arc::new(Mutex::new(Vec::new()));
         let events_clone = Arc::clone(&events);
@@ -178,22 +175,14 @@ mod tests {
         );
 
         handle.tx.send(AgentJob::CategorizeAll).await.unwrap();
-        let mut seen_error = false;
-        for _ in 0..20 {
-            if events
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        assert!(
+            !events
                 .lock()
                 .unwrap()
                 .iter()
-                .any(|e| matches!(e, AgentEvent::Error { .. }))
-            {
-                seen_error = true;
-                break;
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
-        }
-        assert!(
-            seen_error,
-            "expected an error event when no provider is configured"
+                .any(|e| matches!(e, AgentEvent::Error { .. })),
+            "local categorization should not require a completion provider"
         );
     }
 
