@@ -14,6 +14,7 @@ import { api, type BudgetEnvelope, type SpendingBreakdown, type FundingTemplate,
 import { unwrap } from "../api/openapiClient";
 import PlanNextMonthModal from "./PlanNextMonthModal";
 import EmptyState from "../components/EmptyState";
+import SignalTrace from "../components/SignalTrace";
 import PageHeader from "../components/PageHeader";
 import Reveal from "../components/Reveal";
 import { money } from "../utils/format";
@@ -182,7 +183,7 @@ function EnvelopeCard({ env, editing, onEdit, donor, memberShareCents, memberNam
   return (
     <Reveal>
       <div
-        className="card"
+        className={`card budget-envelope-card budget-envelope-${toneClass}`}
         style={{
           padding: 22,
           borderColor: status.tone === "negative" ? "var(--negative)" : status.tone === "warning" ? "var(--warning)" : "var(--line)",
@@ -192,7 +193,9 @@ function EnvelopeCard({ env, editing, onEdit, donor, memberShareCents, memberNam
       <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
         <div>
           <div className="row row-sm" style={{ alignItems: "center", marginBottom: 8 }}>
-            <span className="cswatch" style={{ background: env.categoryColor || "var(--accent)" }} />
+            <span className="budget-envelope-marker" style={{ borderColor: env.categoryColor || "var(--accent)" }} aria-hidden="true">
+              <span className="cswatch" style={{ background: env.categoryColor || "var(--accent)" }} />
+            </span>
             <strong>{env.categoryLabel}</strong>
             <span className="muted" style={{ fontSize: 12 }}>{env.txnCount} txn{env.txnCount === 1 ? "" : "s"}</span>
           </div>
@@ -955,6 +958,7 @@ export default function Budget() {
           title="Build your first monthly plan."
         />
         <EmptyState
+          visual={<SignalTrace variant="goals" label="Give every dollar a job" />}
           title="Start with categories you actually spend in"
           description="Create a simple plan or import transaction history first. FinSight will not estimate pace or project the month until there is enough activity to support it."
           details={
@@ -1369,11 +1373,17 @@ export default function Budget() {
           </div>
           <div className="budget-grid">
             {unbudgeted.map((env) => (
-              <div key={env.categoryId} data-envelope-id={env.categoryId} className="card tight" style={{ padding: 18, display: "flex", flexDirection: "column", gap: 10 }}>
-                <div className="row row-sm" style={{ alignItems: "center" }}>
-                  <span className="cswatch" style={{ background: env.categoryColor || "var(--accent)" }} />
-                  <strong>{env.categoryLabel}</strong>
+              <div key={env.categoryId} data-envelope-id={env.categoryId} className="card budget-starter-card">
+                <div className="budget-starter-heading">
+                  <span className="budget-envelope-marker" style={{ borderColor: env.categoryColor || "var(--accent)" }} aria-hidden="true">
+                    <span className="cswatch" style={{ background: env.categoryColor || "var(--accent)" }} />
+                  </span>
+                  <div className="stack stack-xs">
+                    <span className="eyebrow">Budget category</span>
+                    <strong>{env.categoryLabel}</strong>
+                  </div>
                 </div>
+                <p className="budget-starter-copy">Give this envelope a limit and FinSight can start showing pace.</p>
                 {editingId === env.categoryId ? (
                   <BudgetInput envelope={env} onClose={() => setEditingId(null)} />
                 ) : (

@@ -17,6 +17,7 @@ import { getReportReadiness } from "../utils/dataReadiness";
 import ReportCanvas from "../components/reportWidgets/ReportCanvas";
 import { usePlotAnim } from "../utils/plotMotion";
 import { ComposedChart, Bar, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, CartesianGrid, ReferenceLine } from "recharts";
+import SignalTrace from "../components/SignalTrace";
 type Scope = "month" | "quarter" | "year" | "all";
 
 function getBudgetCents(m: ReportData["monthly"][number]): number {
@@ -240,6 +241,7 @@ export default function Reports() {
         />
         <UnconvertedCurrencies holdings={metrics?.unconvertedHoldings} primary={metrics?.currency} />
         <EmptyState
+          visual={<SignalTrace variant="reports" label="Evidence first · conclusions second" />}
           title={`No financial history in ${scopeLabel.toLowerCase()}`}
           description="Import transactions to unlock savings rate, spending trends, category comparisons, and runway."
           details={

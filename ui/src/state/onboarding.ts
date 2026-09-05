@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import type { CsvImportMapping } from "../api/openapiClient";
 
-export type OnboardingStep = "welcome" | "accounts" | "history" | "categories" | "agent";
+export type OnboardingStep = "accounts" | "history" | "categories" | "agent";
 
 interface OnboardingStore {
   step: OnboardingStep;
@@ -13,11 +13,11 @@ interface OnboardingStore {
   reset: () => void;
 }
 
-const ORDER: OnboardingStep[] = ["welcome", "accounts", "history", "categories", "agent"];
+const ORDER: OnboardingStep[] = ["accounts", "history", "categories", "agent"];
 
 export const useOnboardingStore = create<OnboardingStore>((set) => ({
-  step: "welcome",
-  reachedSteps: new Set(["welcome"]),
+  step: "accounts",
+  reachedSteps: new Set(["accounts"]),
   mappingDraft: null,
   setStep: (step) => set((s) => ({
     step,
@@ -27,7 +27,7 @@ export const useOnboardingStore = create<OnboardingStore>((set) => ({
     reachedSteps: new Set([...s.reachedSteps, step]),
   })),
   setMappingDraft: (mappingDraft) => set({ mappingDraft }),
-  reset: () => set({ step: "welcome", reachedSteps: new Set(["welcome"]), mappingDraft: null }),
+  reset: () => set({ step: "accounts", reachedSteps: new Set(["accounts"]), mappingDraft: null }),
 }));
 
 export const STEP_ORDER = ORDER;

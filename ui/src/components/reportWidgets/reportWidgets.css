@@ -30,13 +30,13 @@
    primitives (app.css); these rules morph an already-mounted fill when the
    query refetches (period/member/widget edits) and smooth hover emphasis. */
 .wg-fill {
-  transition: width var(--dur-slow) var(--ease-out-expo);
-  will-change: width;
+  /* The shared plot-grow-x animation handles first paint. Refetches should
+     update without forcing a layout animation on every bar. */
+  will-change: transform;
 }
 
 .wg-fill-v {
-  transition: height var(--dur-slow) var(--ease-out-expo);
-  will-change: height;
+  will-change: transform;
 }
 
 .wg-legend-row {

@@ -19,7 +19,6 @@ import { useTweaks } from "./state/tweaks";
 import { useOnboardingState } from "./api/hooks/onboarding";
 import { useDefaultCurrency } from "./api/hooks/settings";
 import { warmOfflineEssentials } from "./api/prefetch";
-import { useOnboardingRedirect } from "./hooks/useOnboardingRedirect";
 import { useIsMobile } from "./hooks/useIsMobile";
 import ImportProgress from "./components/ImportProgress";
 import UnfinishedImportBanner from "./components/UnfinishedImportBanner";
@@ -238,7 +237,6 @@ export function App() {
   const location = useLocation();
   const queryClient = useQueryClient();
   const { data: onboarding } = useOnboardingState();
-  useOnboardingRedirect(onboarding);
   // Hydrate the per-user server currency into the synchronous formatter store
   // on every authenticated app mount (and again after account changes).
   useDefaultCurrency();

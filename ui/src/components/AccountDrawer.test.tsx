@@ -32,6 +32,7 @@ describe("AccountDrawer — create mode", () => {
 
   it("uses a generic owner example", () => {
     render(<AccountDrawer open={true} onClose={() => {}} />, { wrapper: createWrapper() });
+    fireEvent.click(screen.getByRole("button", { name: /more account details/i }));
     expect(screen.getByPlaceholderText("Add a person (e.g. Jane Doe)")).toBeInTheDocument();
   });
 

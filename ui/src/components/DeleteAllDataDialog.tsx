@@ -40,7 +40,7 @@ export default function DeleteAllDataDialog({ open, onClose }: Props) {
         description: "Your financial data has been removed. Provider settings were kept.",
       });
       onClose();
-      navigate("/onboarding");
+      navigate("/onboarding?focus=accounts");
     } catch (err) {
       toast.error(userErrorMessage(err, "Could not delete data. Check your FinSight server connection and try again."));
     }

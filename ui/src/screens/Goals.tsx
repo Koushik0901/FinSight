@@ -15,6 +15,7 @@ import EmptyState from "../components/EmptyState";
 import { ExplainDrawer } from "../components/ExplainInspector";
 import PageHeader from "../components/PageHeader";
 import Reveal from "../components/Reveal";
+import SignalTrace from "../components/SignalTrace";
 
 type GoalFilter = "all" | "save-by-date" | "build-balance" | "debt-payoff" | "spending-cap" | "sinking-fund" | "needed-for-spending";
 
@@ -688,7 +689,7 @@ export default function Goals() {
       <PageHeader
         eyebrow={<>Goals · {goals.length} active</>}
         title={goals.length === 0 ? "Build toward what matters." : "Things you're moving toward."}
-        actions={<button className="btn primary" type="button" onClick={() => setCreating((open) => !open)}>+ New goal</button>}
+        actions={goals.length > 0 ? <button className="btn primary" type="button" onClick={() => setCreating((open) => !open)}>+ New goal</button> : undefined}
       />
 
       {goals.length > 0 && <p className="muted" style={{ maxWidth: 720, marginTop: 0 }}>Track a target, contribution, and expected finish date. FinSight will keep progress visible as your plan changes.</p>}
@@ -710,13 +711,14 @@ export default function Goals() {
         {visible.length === 0 ? (
           <EmptyState
             compact
+            visual={<SignalTrace variant="goals" label="A goal becomes visible the moment you name it" />}
             title={goals.length === 0 ? "No goals yet" : "No goals in this filter"}
             description={
               goals.length === 0
                 ? "Start with an emergency fund, debt payoff, planned purchase, or another target you want to fund over time."
                 : "Nothing matches this filter yet. Try another, or create a new goal."
             }
-            actions={goals.length > 0 ? <button className="btn primary" type="button" onClick={() => setCreating(true)}>+ New goal</button> : undefined}
+            actions={<button className="btn primary" type="button" onClick={() => setCreating(true)}>+ New goal</button>}
           />
         ) : (
           visible.map((goal) => (

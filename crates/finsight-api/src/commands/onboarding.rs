@@ -160,6 +160,7 @@ pub struct StarterCategory {
     pub label: String,
     pub group_id: String,
     pub color: String,
+    pub icon: String,
 }
 
 #[derive(serde::Deserialize, utoipa::ToSchema)]
@@ -168,6 +169,19 @@ pub struct StarterCategory {
 pub struct CommitStarterCategoriesRequest {
     pub categories: Vec<StarterCategory>,
 }
+
+const STARTER_CATEGORY_IDS: [&str; 10] = [
+    "housing",
+    "utilities",
+    "subscriptions",
+    "groceries",
+    "dining",
+    "transport",
+    "shopping",
+    "travel",
+    "gifts",
+    "health",
+];
 
 #[utoipa::path(post, path = "/api/rpc/commit_starter_categories",
     request_body(content = CommitStarterCategoriesRequest), responses((status = 200, description = "Success")))]
@@ -189,16 +203,35 @@ pub async fn commit_starter_categories(
                 rusqlite::params![gid, label],
             )?;
         }
-        for c in &categories {
+        for (sort_order, c) in categories.iter().enumerate() {
             // Known starter ids get their conscious-spending bucket up front so
             // the Budget "Spending mix" works out of the box; custom categories
             // stay untagged until the user decides.
             let spending_type = finsight_core::categorize::default_spending_type(&c.id);
             tx.execute(
-                "INSERT OR IGNORE INTO categories(id, group_id, label, color, spending_type, sort_order) \
-                 VALUES(?1, ?2, ?3, ?4, ?5, 0)",
-                rusqlite::params![c.id, c.group_id, c.label, c.color, spending_type],
+                "INSERT INTO categories(id, group_id, label, color, icon, spending_type, sort_order, archived_at) \
+                 VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL) \
+                 ON CONFLICT(id) DO UPDATE SET \
+                   group_id = excluded.group_id, \
+                   label = excluded.label, \
+                   color = excluded.color, \
+                   icon = excluded.icon, \
+                   spending_type = excluded.spending_type, \
+                   sort_order = excluded.sort_order, \
+                   archived_at = NULL",
+                rusqlite::params![c.id, c.group_id, c.label, c.color, c.icon, spending_type, sort_order],
             )?;
+        }
+        // Re-running the optional category task should make deletions real for
+        // the canonical starter rows while leaving user-created categories
+        // untouched. Archiving preserves historical transaction references.
+        for starter_id in STARTER_CATEGORY_IDS {
+            if !categories.iter().any(|category| category.id == starter_id) {
+                tx.execute(
+                    "UPDATE categories SET archived_at = COALESCE(archived_at, strftime('%Y-%m-%dT%H:%M:%SZ', 'now')) WHERE id = ?1",
+                    rusqlite::params![starter_id],
+                )?;
+            }
         }
         tx.commit()?;
         // Onboarding imports transactions (step 2) before categories are

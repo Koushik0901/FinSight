@@ -1,14 +1,14 @@
-import { useNavigate } from "react-router-dom";
-import { STEP_ORDER, useOnboardingStore } from "../state/onboarding";
-import { useOnboardingState } from "../api/hooks/onboarding";
-import StepWelcome from "./onboarding/StepWelcome";
+import { lazy, Suspense } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { useMarkOnboardingComplete } from "../api/hooks/onboarding";
 import StepAccounts from "./onboarding/StepAccounts";
-import StepHistory from "./onboarding/StepHistory";
-import StepCategories from "./onboarding/StepCategories";
-import StepAgent from "./onboarding/StepAgent";
+import type { OnboardingStep } from "../state/onboarding";
 
-const STEP_TITLES: Record<string, string> = {
-  welcome: "Welcome",
+const StepHistory = lazy(() => import("./onboarding/StepHistory"));
+const StepCategories = lazy(() => import("./onboarding/StepCategories"));
+const StepAgent = lazy(() => import("./onboarding/StepAgent"));
+
+const STEP_TITLES: Record<OnboardingStep, string> = {
   accounts: "Accounts",
   history: "History",
   categories: "Categories",
@@ -17,9 +17,23 @@ const STEP_TITLES: Record<string, string> = {
 
 export default function Onboarding() {
   const navigate = useNavigate();
-  const { step, setStep, reachedSteps } = useOnboardingStore();
-  const { data: _state } = useOnboardingState();
-  const stepIndex = STEP_ORDER.indexOf(step);
+  const [searchParams] = useSearchParams();
+  const markComplete = useMarkOnboardingComplete();
+  const requestedStep = searchParams.get("focus") as OnboardingStep | null;
+  const step: OnboardingStep = requestedStep && requestedStep in STEP_TITLES ? requestedStep : "accounts";
+  const isFocusedTask = step !== "accounts" || searchParams.has("focus");
+
+  const exitToToday = () => navigate("/", { replace: true });
+  const finishSetup = async () => {
+    try {
+      await markComplete.mutateAsync();
+    } finally {
+      exitToToday();
+    }
+  };
+  const openTask = (next: Exclude<OnboardingStep, "accounts">) => {
+    navigate(`/onboarding?focus=${next}`);
+  };
 
   return (
     <div className="onboarding-shell onb-shell onb-fullscreen" data-testid="onboarding-shell">
@@ -28,36 +42,35 @@ export default function Onboarding() {
           <div className="mark" aria-hidden="true" />
           <div className="wm">FinSight</div>
         </div>
-        <nav className="onb-steps" aria-label="Onboarding progress">
-          {STEP_ORDER.map((s) => {
-            const reached = reachedSteps.has(s);
-            const isCurrent = s === step;
-            return (
-              <button
-                key={s}
-                className={`onb-step-pip ${isCurrent ? "cur" : ""} ${reached ? "done" : ""}`}
-                disabled={!reached}
-                onClick={() => reached && setStep(s)}
-                aria-current={isCurrent ? "step" : undefined}
-                aria-label={`Go to ${STEP_TITLES[s]} step`}
-                title={STEP_TITLES[s]}
-                type="button"
-              />
-            );
-          })}
-        </nav>
-        <div className="onb-step-label">
-          Step <span className="num">{stepIndex + 1}</span> of {STEP_ORDER.length} · {STEP_TITLES[step]}
+        <div className="onb-context-label">
+          {isFocusedTask ? `Optional setup · ${STEP_TITLES[step]}` : "First step · Accounts"}
+        </div>
+        <div className="onb-header-actions">
+          {step !== "accounts" && (
+            <button className="btn ghost sm" type="button" onClick={() => navigate("/onboarding")}>
+              Back to setup
+            </button>
+          )}
+          <button className="btn ghost sm onb-exit" type="button" onClick={exitToToday}>
+            Exit setup
+          </button>
         </div>
       </header>
 
-      <section className="onboarding-step onb-stage" aria-label="Onboarding steps">
-        {step === "welcome"    && <StepWelcome onNext={() => setStep("accounts")} onSkipToToday={() => navigate("/", { replace: true })} />}
-        {step === "accounts"   && <StepAccounts onNext={() => setStep("history")} />}
-        {step === "history"    && <StepHistory onBack={() => setStep("accounts")} onNext={() => setStep("categories")} />}
-        {step === "categories" && <StepCategories onNext={() => setStep("agent")} />}
-        {step === "agent"      && <StepAgent onDone={() => navigate("/", { replace: true })} />}
-      </section>
+      <main id="main" tabIndex={-1} className="onboarding-step onb-stage" aria-label="Onboarding steps">
+        <Suspense fallback={<div className="onb-loading">Loading setup…</div>}>
+          {step === "accounts" && (
+            <StepAccounts onNext={finishSetup} onOptional={openTask} />
+          )}
+          {step === "history" && (
+            <StepHistory onBack={() => navigate("/onboarding?focus=accounts")} onNext={exitToToday} />
+          )}
+          {step === "categories" && (
+            <StepCategories onNext={() => navigate("/categories")} />
+          )}
+          {step === "agent" && <StepAgent onDone={exitToToday} />}
+        </Suspense>
+      </main>
     </div>
   );
 }

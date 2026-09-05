@@ -57,7 +57,7 @@ describe("DeleteAllDataDialog", () => {
 
     await waitFor(() => expect(deleteMutate).toHaveBeenCalledTimes(1));
     expect(resetMutate).toHaveBeenCalledTimes(1);
-    await waitFor(() => expect(navigate).toHaveBeenCalledWith("/onboarding"));
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith("/onboarding?focus=accounts"));
     expect(onClose).toHaveBeenCalled();
   });
 });

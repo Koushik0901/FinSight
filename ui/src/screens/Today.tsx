@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { toast } from "sonner";
 import { useAccounts } from "../api/hooks/accounts";
@@ -213,14 +213,48 @@ export default function Today() {
   if (accounts.length === 0) {
     return (
       <div className="empty-state">
-        <section className="empty-panel" aria-labelledby="today-empty-title">
-          <div className="eyebrow">First step</div>
-          <h1 id="today-empty-title">No accounts yet. Add your first account to unlock Today.</h1>
-          <p>Import a statement, connect a bank through SimpleFIN, or add an account by hand to start using your own financial data.</p>
-          <div className="empty-actions">
-            <button className="btn primary" type="button" onClick={() => navigate("/onboarding")}>Start setup</button>
-            <button className="btn" type="button" onClick={() => navigate("/accounts")}>Add manually</button>
-            <button className="btn ghost" type="button" onClick={() => navigate("/settings")}>Connect a bank</button>
+        <section className="empty-panel today-first-run" aria-labelledby="today-empty-title">
+          <div className="eyebrow"><span className="dot" /> First run · Start here</div>
+          <div className="today-first-run-layout">
+            <div className="today-first-run-copy">
+              <h1 id="today-empty-title">Bring your money into focus.</h1>
+              <p>Add one account and Today will replace the placeholders with your real balances, runway, and recurring costs.</p>
+              <div className="today-first-run-actions">
+                <button className="btn primary" type="button" onClick={() => navigate("/onboarding?focus=accounts")}>Add your first account →</button>
+                <button className="btn ghost" type="button" onClick={() => navigate("/settings")}>Connect a bank</button>
+              </div>
+            </div>
+
+            <div className="today-first-run-visual" aria-label="Preview of the Today dashboard">
+              <div className="today-first-run-visual-head">
+                <span className="eyebrow">Today, in focus</span>
+                <span className="today-first-run-status"><span className="dot" /> Waiting for your first signal</span>
+              </div>
+              <div className="today-first-run-chart" aria-hidden="true">
+                <div className="today-first-run-chart-grid" />
+                <div className="today-first-run-bars">
+                  <span style={{ "--bar-height": "34%" } as CSSProperties} />
+                  <span style={{ "--bar-height": "48%" } as CSSProperties} />
+                  <span style={{ "--bar-height": "42%" } as CSSProperties} />
+                  <span style={{ "--bar-height": "66%" } as CSSProperties} />
+                  <span style={{ "--bar-height": "58%" } as CSSProperties} />
+                  <span style={{ "--bar-height": "78%" } as CSSProperties} />
+                  <span style={{ "--bar-height": "70%" } as CSSProperties} />
+                </div>
+                <span className="today-first-run-scan" />
+                <span className="today-first-run-chart-point" />
+              </div>
+              <div className="today-first-run-signals">
+                <div><span>Accounts</span><strong>01</strong></div>
+                <div><span>Cash flow</span><strong>—</strong></div>
+                <div><span>Recurring</span><strong>—</strong></div>
+              </div>
+            </div>
+          </div>
+          <div className="today-first-run-next">
+            <span className="today-first-run-next-index">01</span>
+            <div><strong>Add an account</strong><span>Manual, imported, or connected — start with whichever feels easiest.</span></div>
+            <span className="today-first-run-next-arrow" aria-hidden="true">→</span>
           </div>
         </section>
       </div>

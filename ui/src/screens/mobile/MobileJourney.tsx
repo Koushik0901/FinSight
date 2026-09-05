@@ -218,7 +218,6 @@ function MilestoneCard({
                 borderRadius: "var(--radius-pill)",
                 background: completed ? "var(--positive)" : current ? "var(--accent)" : "var(--ink-faint)",
                 opacity: locked && pct === 0 ? 0 : 1,
-                transition: "width 320ms ease",
               }}
             />
           </div>
@@ -318,7 +317,6 @@ export default function MobileJourney() {
               height: "100%",
               borderRadius: "var(--radius-pill)",
               background: "var(--accent)",
-              transition: "width 360ms ease",
             }}
           />
         </div>
@@ -500,10 +498,10 @@ export default function MobileJourney() {
                 padding: "12px 14px",
                 borderRadius: "var(--radius)",
                 background: "var(--elevated)",
-                borderLeft: `3px solid var(--accent)`,
+                border: "1px solid var(--accent-line)",
+                color: "var(--ink-2)",
                 fontSize: 13,
                 lineHeight: 1.6,
-                color: "var(--ink-mute)",
                 fontStyle: "italic",
               }}
             >

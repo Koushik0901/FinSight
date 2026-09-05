@@ -161,7 +161,7 @@ export default function Recurring() {
           title="No recurring items yet"
           description="Import a few months of statements and FinSight detects your subscriptions, bills, and recurring income automatically."
           actions={<div className="row row-sm wrap">
-            <button className="btn primary" type="button" onClick={() => navigate("/onboarding")}>Import transactions</button>
+            <button className="btn primary" type="button" onClick={() => navigate("/onboarding?focus=history")}>Import transactions</button>
             <button className="btn outline" type="button" onClick={() => setCreatingPlanned(true)}>Add planned transaction</button>
           </div>}
         />

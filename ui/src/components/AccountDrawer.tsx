@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useDrawerSeed } from "../api/hooks/useDrawerSeed";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -92,9 +92,19 @@ export default function AccountDrawer({ open, onClose, account, onCreated, eleva
   const setAccountOwners = useSetAccountOwners();
   const setAccountOwnerShares = useSetAccountOwnerShares();
   const [selectedOwnerIds, setSelectedOwnerIds] = useState<string[]>([]);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   // memberId → percentage string (e.g. "70"). Empty ⇒ equal split for that owner.
   const [ownerShares, setOwnerShares] = useState<Record<string, string>>({});
   const [newPersonName, setNewPersonName] = useState("");
+
+  // Owner data can arrive after the drawer has been seeded. Reveal the
+  // advanced section once for an existing shared account, without reopening
+  // it after the user deliberately collapses it.
+  useEffect(() => {
+    if (open && account && allOwners.some((owner) => owner.accountId === account.id)) {
+      setAdvancedOpen(true);
+    }
+  }, [open, account?.id, allOwners]);
 
   // Persist ownership. A joint account (2+ owners) saves explicit shares — a
   // blank % for an owner means an equal split for that owner; shares need not
@@ -153,6 +163,7 @@ export default function AccountDrawer({ open, onClose, account, onCreated, eleva
       });
       const owners = allOwners.filter((o) => o.accountId === account.id);
       setSelectedOwnerIds(owners.map((o) => o.memberId));
+      setAdvancedOpen(isDebtType(account.type) || owners.length > 0);
       setOwnerShares(
         Object.fromEntries(
           owners
@@ -175,6 +186,7 @@ export default function AccountDrawer({ open, onClose, account, onCreated, eleva
       });
       setSelectedOwnerIds([]);
       setOwnerShares({});
+      setAdvancedOpen(false);
     }
     setNewPersonName("");
     setArchiveConfirm(false);
@@ -390,44 +402,83 @@ export default function AccountDrawer({ open, onClose, account, onCreated, eleva
             </div>
           </label>
         )}
+        <button
+          type="button"
+          className="drawer-section-toggle"
+          aria-expanded={advancedOpen}
+          onClick={() => setAdvancedOpen((open) => !open)}
+        >
+          <span>
+            <strong>More account details</strong>
+            <small>
+              {isDebtType(watch("type")) ? "Debt terms and household ownership" : "Household ownership and optional details"}
+            </small>
+          </span>
+          <span className="drawer-section-toggle-icon" aria-hidden="true">{advancedOpen ? "−" : "+"}</span>
+        </button>
+        {advancedOpen && <>
         {isDebtType(watch("type")) && (
-          <fieldset>
-            <legend>Debt details <span className="muted" style={{ fontWeight: 400, fontSize: 12 }}>(optional)</span></legend>
-            <label> APR (%)
-              <input type="number" step="0.01" {...register("apr_pct")} />
-              <span className="hint" style={{ fontSize: 12, color: "var(--ink-faint)" }}>
-                The rate you&rsquo;re paying right now, promotional or not.
-              </span>
-            </label>
-            <label> Promotional rate ends
-              <input type="date" {...register("promo_apr_expires_on")} />
-            </label>
-            <label> Rate after the promo (%)
-              <input type="number" step="0.01" {...register("post_promo_apr_pct")} />
-              <span className="hint" style={{ fontSize: 12, color: "var(--ink-faint)" }}>
-                Without this, payoff ranking can&rsquo;t tell what the balance
-                will actually cost once the promo ends.
-              </span>
-            </label>
-            <label> Minimum payment ($/mo)
-              <input type="number" step="0.01" {...register("min_payment_dollars")} />
-            </label>
-            {watch("type") === "Credit" && (
-              <label> Credit limit ($)
-                <input type="number" step="0.01" {...register("limit_dollars")} />
-              </label>
-            )}
-            <label> Original balance ($)
-              <input type="number" step="0.01" {...register("original_balance_dollars")} />
-            </label>
-            <label> Started
-              <input type="month" {...register("started_at")} />
-            </label>
-            <label> Payoff target date
-              <input type="date" {...register("payoff_date")} />
-            </label>
-            <div className="hint" style={{ marginTop: 6, fontSize: 12, color: "var(--ink-faint)" }}>
-              Powers the debt payoff projector on Goals and Copilot debt questions.
+          <fieldset className="account-debt-fields">
+            <legend>
+              <span>Debt details</span>
+              <span className="account-debt-legend-note">Optional</span>
+            </legend>
+            <p className="account-debt-intro">
+              Add what you know. These details make payoff projections and Copilot answers more useful.
+            </p>
+
+            <div className="account-debt-group">
+              <p className="account-debt-group-title">Current terms</p>
+              <div className="account-debt-grid">
+                <label className="account-debt-field">
+                  <span>Current APR (%)</span>
+                  <input type="number" step="0.01" {...register("apr_pct")} />
+                  <span className="account-debt-note">The rate you&rsquo;re paying today.</span>
+                </label>
+                <label className="account-debt-field">
+                  <span>Minimum payment ($/mo)</span>
+                  <input type="number" step="0.01" {...register("min_payment_dollars")} />
+                </label>
+              </div>
+            </div>
+
+            <div className="account-debt-group">
+              <p className="account-debt-group-title">Promotional terms</p>
+              <div className="account-debt-grid">
+                <label className="account-debt-field">
+                  <span>Promotional rate ends</span>
+                  <input type="date" {...register("promo_apr_expires_on")} />
+                </label>
+                <label className="account-debt-field">
+                  <span>Rate after the promo (%)</span>
+                  <input type="number" step="0.01" {...register("post_promo_apr_pct")} />
+                  <span className="account-debt-note">Needed if the promotional rate expires.</span>
+                </label>
+              </div>
+            </div>
+
+            <div className="account-debt-group">
+              <p className="account-debt-group-title">Balance &amp; timeline</p>
+              <div className="account-debt-grid">
+                {watch("type") === "Credit" && (
+                  <label className="account-debt-field">
+                    <span>Credit limit ($)</span>
+                    <input type="number" step="0.01" {...register("limit_dollars")} />
+                  </label>
+                )}
+                <label className="account-debt-field">
+                  <span>Original balance ($)</span>
+                  <input type="number" step="0.01" {...register("original_balance_dollars")} />
+                </label>
+                <label className="account-debt-field">
+                  <span>Started</span>
+                  <input type="month" {...register("started_at")} />
+                </label>
+                <label className="account-debt-field">
+                  <span>Payoff target date</span>
+                  <input type="date" {...register("payoff_date")} />
+                </label>
+              </div>
             </div>
           </fieldset>
         )}
@@ -539,6 +590,7 @@ export default function AccountDrawer({ open, onClose, account, onCreated, eleva
             counted as income or spending.
           </div>
         </fieldset>
+        </>}
         <div className="form-actions">
           <button type="button" onClick={onClose}>Cancel</button>
           <button type="submit" disabled={isSubmitting} className="primary">

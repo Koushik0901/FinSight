@@ -15,6 +15,7 @@ import Button from "../../components/Button";
 import Card from "../../components/Card";
 import Input from "../../components/Input";
 import Select from "../../components/Select";
+import { Cpu, House } from "../../components/Icons";
 
 interface Props { onDone: () => void; }
 
@@ -33,8 +34,8 @@ export default function StepAgent({ onDone }: Props) {
   const [path, setPath] = useState<Path>(null);
 
   // Ollama path state
-  const [baseUrl, setBaseUrl] = useState("http://localhost:11434");
-  const [probedBaseUrl, setProbedBaseUrl] = useState("http://localhost:11434");
+  const [baseUrl, setBaseUrl] = useState("http://ollama:11434");
+  const [probedBaseUrl, setProbedBaseUrl] = useState("http://ollama:11434");
   const [completionModel, setCompletionModel] = useState("");
   const { data: probe, refetch, isFetching } = useQuery<OllamaProbeResult>({
     queryKey: ["ollama-probe", probedBaseUrl],
@@ -141,26 +142,26 @@ export default function StepAgent({ onDone }: Props) {
     return (
       <div className="step-agent onb-split">
         <div className="onb-left">
-          <div className="num-step">005 · AI setup</div>          <h1>Choose how to power AI categorization.</h1>
+          <div className="num-step">004 · AI setup</div>          <h1>Choose how to power AI categorization.</h1>
           <p className="lead">Use self-hosted Ollama for private server-side inference or connect a cloud provider.</p>
-          <div className="row-md wrap" style={{ marginBottom: 24 }}>
+          <div className="onb-provider-choice-grid">
             <Button
+              className="onb-provider-choice"
               variant="outline"
               onClick={() => setPath("local")}
-              style={{ flex: 1, minWidth: 160, padding: "20px 16px", justifyContent: "flex-start" }}
             >
               <div className="stack stack-xs" style={{ textAlign: "left" }}>
-                <div style={{ fontWeight: 700 }}>🏠 Self-hosted Ollama</div>
+                <div className="onb-provider-title" style={{ fontWeight: 700 }}><House width={16} height={16} /> Self-hosted Ollama</div>
                 <div className="muted" style={{ fontSize: 13 }}>Runs wherever your FinSight server can reach it.</div>
               </div>
             </Button>
             <Button
+              className="onb-provider-choice"
               variant="outline"
               onClick={() => setPath("cloud")}
-              style={{ flex: 1, minWidth: 160, padding: "20px 16px", justifyContent: "flex-start" }}
             >
               <div className="stack stack-xs" style={{ textAlign: "left" }}>
-                <div style={{ fontWeight: 700 }}>☁ Cloud provider</div>
+                <div className="onb-provider-title" style={{ fontWeight: 700 }}><Cpu width={16} height={16} /> Cloud provider</div>
                 <div className="muted" style={{ fontSize: 13 }}>OpenAI, Anthropic, OpenRouter, etc.</div>
               </div>
             </Button>
@@ -190,7 +191,7 @@ export default function StepAgent({ onDone }: Props) {
     return (
       <div className="step-agent onb-split">
         <div className="onb-left">
-          <div className="num-step">005 · Cloud provider</div>          <h1>Connect a cloud model.</h1>
+          <div className="num-step">004 · Cloud provider</div>          <h1>Connect a cloud model.</h1>
           <p className="lead">Choose a provider, enter the model id, then test and save.</p>
           <div className="row-sm wrap" style={{ marginBottom: 16 }}>
             {CLOUD_PRESETS.map((p) => (
@@ -222,7 +223,7 @@ export default function StepAgent({ onDone }: Props) {
               />
             </div>
             {testResult && (
-              <p style={{ color: testResult.ok ? "var(--success, green)" : "var(--error, red)" }}>
+              <p className={testResult.ok ? "onb-provider-status is-good" : "onb-provider-status is-bad"} role="status" aria-live="polite">
                 {testResult.ok ? `✓ Connected — ${testResult.latency_ms}ms` : `✗ ${testResult.error}`}
               </p>
             )}
@@ -258,11 +259,11 @@ export default function StepAgent({ onDone }: Props) {
     return (
       <div className="step-agent onb-split">
         <div className="onb-left">
-          <div className="num-step">005 · Self-hosted AI</div>          <h1>Checking for Ollama…</h1>
+          <div className="num-step">004 · Self-hosted AI</div>          <h1>Checking for Ollama…</h1>
           <p className="lead">Asking your FinSight server to connect to {probedBaseUrl}.</p>
         </div>
         <div className="onb-right">
-          <Card>Waiting for runtime probe…</Card>
+          <Card role="status" aria-live="polite">Waiting for runtime probe…</Card>
         </div>
       </div>
     );
@@ -275,7 +276,7 @@ export default function StepAgent({ onDone }: Props) {
     return (
       <div className="step-agent onb-split">
         <div className="onb-left">
-          <div className="num-step">005 · Self-hosted AI</div>          <h1>{urlNeedsCheck ? "Check this Ollama server." : "Connect Ollama."}</h1>
+          <div className="num-step">004 · Self-hosted AI</div>          <h1>{urlNeedsCheck ? "Check this Ollama server." : "Connect Ollama."}</h1>
           <p className="lead">
             {urlNeedsCheck
               ? "Test the address from FinSight before choosing a model."
@@ -313,7 +314,7 @@ export default function StepAgent({ onDone }: Props) {
   return (
     <div className="step-agent onb-split">
       <div className="onb-left">
-        <div className="num-step">005 · Self-hosted AI</div>        <h1>Ollama is ready.</h1>
+        <div className="num-step">004 · Self-hosted AI</div>        <h1>Ollama is ready.</h1>
         <p className="lead">Connected through your FinSight server at {probedBaseUrl}. Pick a completion model and finish setup.</p>
         <Select
           label="Completion model"

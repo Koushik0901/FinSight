@@ -2,6 +2,7 @@ import { createElement, type ReactNode } from "react";
 
 interface EmptyStateProps {
   icon?: ReactNode;
+  visual?: ReactNode;
   title: string;
   description?: string;
   details?: ReactNode;
@@ -12,6 +13,7 @@ interface EmptyStateProps {
 
 export default function EmptyState({
   icon,
+  visual,
   title,
   description,
   details,
@@ -24,6 +26,7 @@ export default function EmptyState({
   if (compact) {
     return (
       <div className="empty-panel">
+        {visual && <div className="empty-visual">{visual}</div>}
         {icon && <div style={{ color: "var(--ink-mute)" }}>{icon}</div>}
         {heading}
         {description && <p>{description}</p>}
@@ -36,6 +39,7 @@ export default function EmptyState({
   return (
     <div className="empty-state">
       <div className="empty-panel">
+        {visual && <div className="empty-visual">{visual}</div>}
         {icon && <div style={{ color: "var(--ink-mute)" }}>{icon}</div>}
         {heading}
         {description && <p>{description}</p>}

@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import StepAccounts from "./StepAccounts";
 import StepHistory from "./StepHistory";
-import StepWelcome from "./StepWelcome";
 
 const useAccounts = vi.hoisted(() => vi.fn());
 const useTransactions = vi.hoisted(() => vi.fn());
@@ -64,13 +63,6 @@ describe("Onboarding account-first flow", () => {
     useTransactions.mockReturnValue({ data: [], isLoading: false, error: null });
   });
 
-  it("describes self-hosting without claiming opted-in integrations keep data local", () => {
-    render(<StepWelcome onNext={() => {}} onSkipToToday={() => {}} />);
-
-    expect(screen.getByText(/stays on your server unless you choose an external service/i)).toBeInTheDocument();
-    expect(screen.queryByText(/nothing leaves your machine/i)).not.toBeInTheDocument();
-  });
-
   it("keeps account establishment separate from transaction history", () => {
     const onNext = vi.fn();
     render(<StepAccounts onNext={onNext} />);
@@ -82,7 +74,7 @@ describe("Onboarding account-first flow", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /^\+ add account$/i }));    expect(screen.getByRole("dialog", { name: /account editor/i })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /add accounts later/i }));
+    fireEvent.click(screen.getByRole("button", { name: /explore today/i }));
     expect(onNext).toHaveBeenCalledTimes(1);
   });
 
@@ -98,7 +90,7 @@ describe("Onboarding account-first flow", () => {
     expect(screen.getByText("Rainy Day")).toBeInTheDocument();
     expect(screen.getByText("Manual", { selector: "span" })).toBeInTheDocument();
     expect(screen.getByText("SimpleFIN")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /continue to history/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /continue to today/i })).toBeInTheDocument();
   });
 
   it("offers CSV import only for manual accounts and scopes it to that account", () => {

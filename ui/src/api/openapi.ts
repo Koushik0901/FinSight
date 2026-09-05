@@ -5134,6 +5134,7 @@ export interface components {
             color: string;
             group_id: string;
             group_label: string;
+            icon?: string | null;
             id: string;
             label: string;
             spending_type?: string | null;
@@ -5266,6 +5267,7 @@ export interface components {
             groupLabel: string;
             /** @description Free-text categorizer/Copilot guidance the user attached. */
             guidance?: string | null;
+            icon?: string | null;
             id: string;
             label: string;
             /**
@@ -8049,6 +8051,7 @@ export interface components {
         StarterCategory: {
             color: string;
             group_id: string;
+            icon: string;
             id: string;
             label: string;
         };

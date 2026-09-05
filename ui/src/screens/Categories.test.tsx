@@ -39,7 +39,7 @@ describe("Categories — empty state", () => {
     vi.mocked(useCategoriesWithSpending).mockReturnValueOnce({ data: [], isLoading: false, error: null } as unknown as ReturnType<typeof useCategoriesWithSpending>);
     render(<Categories />, { wrapper: createWrapper() });
     expect(screen.getByText("No categories yet")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Get started/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Add an account/i })).toBeInTheDocument();
   });
 });
 

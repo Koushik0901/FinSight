@@ -66,7 +66,7 @@ export default function SettingsAccounts() {
     setResetError(null);
     try {
       await reset.mutateAsync();
-      navigate("/onboarding");
+      navigate("/onboarding?focus=accounts");
     } catch (error) {
       setResetError(userErrorMessage(error, "Could not reopen setup."));
     }

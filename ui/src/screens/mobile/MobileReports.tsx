@@ -41,7 +41,6 @@ export default function MobileReports() {
                         minHeight: 8,
                         background: m === last ? "var(--accent)" : "var(--line-2)",
                         borderRadius: 6,
-                        transition: "height 300ms ease",
                       }}
                     />
                     <span style={{ fontSize: 10, color: "var(--ink-faint)", fontWeight: 600, whiteSpace: "nowrap" }}>{m.label.slice(0, 3)}</span>

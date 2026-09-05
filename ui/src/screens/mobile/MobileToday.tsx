@@ -93,7 +93,7 @@ export default function MobileToday() {
           title="No accounts yet"
           description="Add your first account to unlock Today — import a statement, connect a bank, or add it by hand."
           primaryAction={
-            <button className="btn primary" type="button" onClick={() => navigate("/onboarding")}>
+            <button className="btn primary" type="button" onClick={() => navigate("/onboarding?focus=accounts")}>
               Start setup
             </button>
           }

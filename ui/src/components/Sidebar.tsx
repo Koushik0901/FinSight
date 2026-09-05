@@ -81,7 +81,7 @@ export function Sidebar({ onOpenCmd }: Props) {
   const handleRunSetup = async () => {
     try {
       await resetOnboarding.mutateAsync();
-      navigate("/onboarding");
+      navigate("/onboarding?focus=accounts");
     } catch {
       toast.error("Failed to reset setup");
     }

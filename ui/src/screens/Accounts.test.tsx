@@ -100,6 +100,7 @@ describe("Accounts — navigation", () => {
 
     // The edit drawer opens with the household owner picker.
     expect(screen.getByRole("heading", { name: "Edit Account" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /More account details/i }));
     expect(screen.getByRole("checkbox", { name: "Owner Alex Doe" })).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "Owner Jamie Doe" })).toBeInTheDocument();
     expect(screen.getByLabelText("New household member name")).toBeInTheDocument();

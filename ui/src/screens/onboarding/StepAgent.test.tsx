@@ -44,7 +44,7 @@ describe("StepAgent", () => {
     fireEvent.click(screen.getByRole("button", { name: /self-hosted ollama/i }));
 
     const url = await screen.findByRole("textbox", { name: /ollama url/i });
-    expect(url).toHaveValue("http://localhost:11434");
+    expect(url).toHaveValue("http://ollama:11434");
     expect(screen.getByText(/http:\/\/ollama:11434/i)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /ollama setup guide/i })).toHaveAttribute("href", "https://ollama.com");
   });

@@ -3,7 +3,7 @@
  * If you change one side, change the other.
  */
 import type { ComponentType, SVGProps } from "react";
-import { Box, Bulb, Car, Cart, Fork, Gift, Heart, House, Plane, Tag } from "../components/Icons";
+import { Box, Bulb, Car, Cart, Fork, Gift, Goal, Heart, House, Plane, Sparkle, Tag, Wallet } from "../components/Icons";
 
 export const DEFAULT_CATEGORY_COLOR = "#94A3B8";
 
@@ -71,6 +71,85 @@ export function colorForCategoryLabel(label: string): string | null {
 
 type IconComponent = ComponentType<SVGProps<SVGSVGElement>>;
 
+export type CategoryIconId =
+  | "house"
+  | "cart"
+  | "fork"
+  | "car"
+  | "bulb"
+  | "box"
+  | "heart"
+  | "plane"
+  | "gift"
+  | "tag"
+  | "wallet"
+  | "goal"
+  | "sparkle";
+
+export interface CategoryIconChoice {
+  id: CategoryIconId;
+  label: string;
+  Icon: IconComponent;
+}
+
+export const CATEGORY_ICON_CHOICES: readonly CategoryIconChoice[] = [
+  { id: "house", label: "Home", Icon: House },
+  { id: "cart", label: "Groceries", Icon: Cart },
+  { id: "fork", label: "Dining", Icon: Fork },
+  { id: "car", label: "Transport", Icon: Car },
+  { id: "bulb", label: "Utilities", Icon: Bulb },
+  { id: "box", label: "Subscriptions", Icon: Box },
+  { id: "heart", label: "Health", Icon: Heart },
+  { id: "plane", label: "Travel", Icon: Plane },
+  { id: "gift", label: "Gifts", Icon: Gift },
+  { id: "tag", label: "Tag", Icon: Tag },
+  { id: "wallet", label: "Wallet", Icon: Wallet },
+  { id: "goal", label: "Goal", Icon: Goal },
+  { id: "sparkle", label: "Other", Icon: Sparkle },
+];
+
+const ICON_BY_ID: Record<CategoryIconId, IconComponent> = {
+  house: House,
+  cart: Cart,
+  fork: Fork,
+  car: Car,
+  bulb: Bulb,
+  box: Box,
+  heart: Heart,
+  plane: Plane,
+  gift: Gift,
+  tag: Tag,
+  wallet: Wallet,
+  goal: Goal,
+  sparkle: Sparkle,
+};
+
+const DEFAULT_ICON_BY_CATEGORY_ID: Record<string, CategoryIconId> = {
+  housing: "house",
+  groceries: "cart",
+  dining: "fork",
+  transport: "car",
+  utilities: "bulb",
+  subscriptions: "box",
+  subs: "box",
+  health: "heart",
+  shopping: "tag",
+  travel: "plane",
+  gifts: "gift",
+};
+
+export function iconIdForCategory(id: string): CategoryIconId {
+  return DEFAULT_ICON_BY_CATEGORY_ID[id] ?? "tag";
+}
+
+export function iconComponentFor(iconId: string | null | undefined): IconComponent {
+  return iconId && iconId in ICON_BY_ID ? ICON_BY_ID[iconId as CategoryIconId] : Tag;
+}
+
+export function iconForCategory(iconId: string | null | undefined, categoryId: string): IconComponent {
+  return iconId && iconId in ICON_BY_ID ? iconComponentFor(iconId) : iconComponentFor(iconIdForCategory(categoryId));
+}
+
 const CATEGORY_ICONS: Record<string, IconComponent> = {
   housing: House,
   groceries: Cart,
@@ -86,5 +165,5 @@ const CATEGORY_ICONS: Record<string, IconComponent> = {
 };
 
 export function iconFor(id: string): IconComponent {
-  return CATEGORY_ICONS[id] ?? Tag;
+  return CATEGORY_ICONS[id] ?? iconComponentFor(iconIdForCategory(id));
 }

@@ -9625,6 +9625,10 @@
           "group_label": {
             "type": "string"
           },
+          "icon": {
+            "type": "string",
+            "nullable": true
+          },
           "id": {
             "type": "string"
           },
@@ -9888,6 +9892,10 @@
           "guidance": {
             "type": "string",
             "description": "Free-text categorizer/Copilot guidance the user attached.",
+            "nullable": true
+          },
+          "icon": {
+            "type": "string",
             "nullable": true
           },
           "id": {
@@ -17506,13 +17514,17 @@
           "id",
           "label",
           "group_id",
-          "color"
+          "color",
+          "icon"
         ],
         "properties": {
           "color": {
             "type": "string"
           },
           "group_id": {
+            "type": "string"
+          },
+          "icon": {
             "type": "string"
           },
           "id": {

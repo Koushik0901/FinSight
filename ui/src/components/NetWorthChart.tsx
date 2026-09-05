@@ -3,6 +3,7 @@ import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import type { NetWorthPoint } from "../api/openapiClient";
 import { compactMoney } from "../utils/format";
 import { formatCalendarDate, parseCalendarDate } from "../utils/date";
+import SignalTrace from "./SignalTrace";
 
 const HEIGHT = 220;
 const PAD_TOP = 34; // room for the end-value callout
@@ -35,7 +36,16 @@ export default function NetWorthChart({ points, controls, rangeLabel = "6 months
   }, []);
 
   if (points.length < 2) {
-    return <div className="stub">{subject} history is still building. Check back after a few days.</div>;
+    return (
+      <div className="bigchart-empty">
+        <div className="bigchart-empty-head">
+          <span className="eyebrow"><span className="dot" /> Signal map</span>
+          <span className="muted">{subject} · {rangeLabel}</span>
+        </div>
+        <SignalTrace label="Waiting for your first real snapshot" />
+        <p className="bigchart-empty-copy">{subject} history is still building. Check back after a few days.</p>
+      </div>
+    );
   }
 
   const w = width || 800;

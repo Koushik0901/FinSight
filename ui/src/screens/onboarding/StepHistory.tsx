@@ -38,7 +38,7 @@ export default function StepHistory({ onBack, onNext }: Props) {
   return (
     <div className="step-history onb-split">
       <div className="onb-left">
-        <div className="num-step">003 · History</div>
+        <div className="num-step">002 · History</div>
         <h1>Bring in your history.</h1>
         <p className="lead">
           Import a CSV into a manual account. SimpleFIN accounts already receive their activity through sync.
@@ -71,7 +71,7 @@ export default function StepHistory({ onBack, onNext }: Props) {
 
         <div className="onb-actions">
           <Button variant="primary" onClick={onNext} disabled={isLoading}>
-            Continue to categories →
+            Back to Today →
           </Button>
           <Button variant="ghost" onClick={onNext}>
             Do this later

@@ -19,7 +19,7 @@ import {
 } from "../api/hooks/transactions";
 import type { CategoryWithSpending } from "../api/openapiClient";
 import { money } from "../utils/format";
-import { CATEGORY_COLOR_CHOICES, DEFAULT_CATEGORY_COLOR, iconFor, nextCategoryColor } from "../utils/categoryColor";
+import { CATEGORY_COLOR_CHOICES, DEFAULT_CATEGORY_COLOR, iconForCategory, nextCategoryColor } from "../utils/categoryColor";
 import Swatch from "../components/Swatch";
 function getRolloverEnabled(category: unknown): boolean {
   // Generated OpenAPI type may lag behind Rust DTO (rolloverEnabled added in V069);
@@ -193,7 +193,7 @@ export default function Categories() {
           headingLevel={1}
           title="No categories yet"
           description="Import a statement or add an account, and your spending is grouped into categories here automatically."
-          actions={<button className="btn primary" type="button" onClick={() => navigate("/onboarding")}>Get started</button>}
+          actions={<button className="btn primary" type="button" onClick={() => navigate("/onboarding?focus=accounts")}>Add an account</button>}
         />
       </div>
     );
@@ -330,7 +330,7 @@ export default function Categories() {
                 const pct = budget > 0 ? Math.min(100, (current / budget) * 100) : 0;
                 const over = budget > 0 && current > budget;
                 const colorPickerOpen = openColorId === category.id;
-                const CategoryIcon = iconFor(category.id);
+                const CategoryIcon = iconForCategory(category.icon, category.id);
                 return (
                   <Fragment key={category.id}>
                   <tr>

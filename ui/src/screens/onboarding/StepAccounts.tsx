@@ -8,9 +8,10 @@ import SimpleFinDialog from "./SimpleFinDialog";
 
 interface Props {
   onNext: () => void;
+  onOptional?: (step: "history" | "categories" | "agent") => void;
 }
 
-export default function StepAccounts({ onNext }: Props) {
+export default function StepAccounts({ onNext, onOptional }: Props) {
   const [accountOpen, setAccountOpen] = useState(false);
   const [simpleFinOpen, setSimpleFinOpen] = useState(false);
   const { data: accounts = [], isLoading, error } = useAccounts();
@@ -18,7 +19,7 @@ export default function StepAccounts({ onNext }: Props) {
   return (
     <div className="step-accounts onb-split">
       <div className="onb-left">
-        <div className="num-step">002 · Accounts</div>
+        <div className="num-step">001 · Accounts</div>
         <h1>Start with your accounts.</h1>
         <p className="lead">
           Add the places where you keep, spend, invest, or borrow money. Transactions come next.
@@ -27,7 +28,7 @@ export default function StepAccounts({ onNext }: Props) {
         <div className="onb-choice-grid">
           <Card className="onb-choice-card">
             <div className="eyebrow">Manual</div>
-            <h3>Create an account</h3>
+            <h2>Create an account</h2>
             <p>Add a checking, savings, credit, investment, cash, or loan account yourself.</p>
             <Button variant="primary" onClick={() => setAccountOpen(true)}>
               + Add account
@@ -35,7 +36,7 @@ export default function StepAccounts({ onNext }: Props) {
           </Card>
           <Card className="onb-choice-card">
             <div className="eyebrow">Automatic</div>
-            <h3>Discover with SimpleFIN</h3>
+            <h2>Discover with SimpleFIN</h2>
             <p>Connect once, choose your bank accounts, and let FinSight create them for you.</p>
             <Button variant="outline" onClick={() => setSimpleFinOpen(true)}>
               Connect SimpleFIN
@@ -58,11 +59,18 @@ export default function StepAccounts({ onNext }: Props) {
           <Button
             variant={accounts.length > 0 ? "primary" : "outline"}
             onClick={onNext}
-            disabled={isLoading}
           >
-            {accounts.length > 0 ? "Continue to history →" : "I’ll add accounts later →"}
+            {accounts.length > 0 ? "Continue to Today →" : "Explore Today →"}
           </Button>
         </div>
+        {onOptional && (
+          <div className="onb-optional-links" aria-label="Optional setup tasks">
+            <span>Do more later:</span>
+            <button type="button" onClick={() => onOptional("history")}>Import history</button>
+            <button type="button" onClick={() => onOptional("categories")}>Tune categories</button>
+            <button type="button" onClick={() => onOptional("agent")}>Set up AI</button>
+          </div>
+        )}
       </div>
 
       <div className="onb-right">
@@ -82,7 +90,7 @@ export default function StepAccounts({ onNext }: Props) {
             <div className="onb-empty-state">
               <div className="onb-empty-mark" aria-hidden="true">+</div>
               <strong>No accounts yet</strong>
-              <p>Add one manually or let SimpleFIN discover your connected accounts.</p>
+              <p>Add one manually or let SimpleFIN discover your connected accounts. You can always change this from Settings.</p>
             </div>
           )}
           {accounts.length > 0 && (
